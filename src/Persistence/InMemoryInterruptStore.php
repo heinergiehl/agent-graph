@@ -31,6 +31,22 @@ class InMemoryInterruptStore implements InterruptStore
         return $this->interrupts[$interruptId] ?? null;
     }
 
+    public function listForRun(string $runId): array
+    {
+        return array_values(array_filter($this->interrupts, fn (array $interrupt): bool => $interrupt['run_id'] === $runId));
+    }
+
+    public function latestForRun(string $runId): ?array
+    {
+        foreach (array_reverse($this->interrupts) as $interrupt) {
+            if ($interrupt['run_id'] === $runId) {
+                return $interrupt;
+            }
+        }
+
+        return null;
+    }
+
     public function pendingForRun(string $runId): ?array
     {
         foreach (array_reverse($this->interrupts) as $interrupt) {

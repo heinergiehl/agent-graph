@@ -17,6 +17,9 @@ class NodeContext
         protected MemoryStore $memory,
         protected TraceStore $traces,
         protected TaskRunner $tasks,
+        protected array $resumePayload = [],
+        protected ?array $pendingInterrupt = null,
+        protected ?array $resolvedInterrupt = null,
     ) {}
 
     public function state(?string $key = null, mixed $default = null): mixed
@@ -66,5 +69,48 @@ class NodeContext
     public function tasks(): TaskRunner
     {
         return $this->tasks;
+    }
+
+    public function hasResumePayload(?string $key = null): bool
+    {
+        if ($key === null) {
+            return $this->resumePayload !== [];
+        }
+
+        return array_key_exists($key, $this->resumePayload);
+    }
+
+    public function resumePayload(?string $key = null, mixed $default = null): mixed
+    {
+        if ($key === null) {
+            return $this->resumePayload;
+        }
+
+        return $this->resumePayload[$key] ?? $default;
+    }
+
+    public function pendingInterrupt(): ?array
+    {
+        return $this->pendingInterrupt;
+    }
+
+    public function resolvedInterrupt(): ?array
+    {
+        return $this->resolvedInterrupt;
+    }
+
+    public function resolvedInterruptResponse(?string $key = null, mixed $default = null): mixed
+    {
+        $response = $this->resolvedInterrupt['response'] ?? null;
+
+        if (! is_array($response)) {
+            return $key === null ? null : $default;
+        }
+
+        if ($key === null) {
+            return $response;
+        }
+
+        return $response[$key] ?? $default;
     }
 }

@@ -21,6 +21,7 @@ return [
 
     'tracing' => [
         'enabled' => true,
+        'record_state' => false,
         'redact_keys' => [
             'password',
             'token',
