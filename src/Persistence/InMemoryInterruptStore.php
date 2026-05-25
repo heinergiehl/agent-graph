@@ -1,0 +1,55 @@
+<?php
+
+namespace Heiner\AgentGraph\Persistence;
+
+use Heiner\AgentGraph\Contracts\InterruptStore;
+
+class InMemoryInterruptStore implements InterruptStore
+{
+    protected array $interrupts = [];
+
+    public function create(array $interrupt): array
+    {
+        $interrupt = array_merge([
+            'id' => count($this->interrupts) + 1,
+            'interrupt_id' => 'int_'.str()->ulid(),
+            'status' => 'pending',
+            'response' => null,
+            'resolved_by' => null,
+            'resolved_at' => null,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ], $interrupt);
+
+        $this->interrupts[$interrupt['interrupt_id']] = $interrupt;
+
+        return $interrupt;
+    }
+
+    public function find(string $interruptId): ?array
+    {
+        return $this->interrupts[$interruptId] ?? null;
+    }
+
+    public function pendingForRun(string $runId): ?array
+    {
+        foreach (array_reverse($this->interrupts) as $interrupt) {
+            if ($interrupt['run_id'] === $runId && $interrupt['status'] === 'pending') {
+                return $interrupt;
+            }
+        }
+
+        return null;
+    }
+
+    public function resolve(string $interruptId, array $response, ?string $resolvedBy = null): array
+    {
+        $this->interrupts[$interruptId]['status'] = 'resolved';
+        $this->interrupts[$interruptId]['response'] = $response;
+        $this->interrupts[$interruptId]['resolved_by'] = $resolvedBy;
+        $this->interrupts[$interruptId]['resolved_at'] = now();
+        $this->interrupts[$interruptId]['updated_at'] = now();
+
+        return $this->interrupts[$interruptId];
+    }
+}

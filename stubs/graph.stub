@@ -1,0 +1,15 @@
+<?php
+
+namespace {{ namespace }};
+
+use Heiner\AgentGraph\Graph\StateGraph;
+
+class {{ class }}
+{
+    public function __invoke(): StateGraph
+    {
+        return StateGraph::make('{{ class }}')
+            ->state([])
+            ->edge(StateGraph::START, StateGraph::END);
+    }
+}

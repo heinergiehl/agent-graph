@@ -1,0 +1,15 @@
+<?php
+
+namespace {{ namespace }};
+
+use Heiner\AgentGraph\Contracts\Node;
+use Heiner\AgentGraph\Runtime\NodeContext;
+use Heiner\AgentGraph\Runtime\NodeResult;
+
+class {{ class }} implements Node
+{
+    public function __invoke(NodeContext $context): NodeResult
+    {
+        return NodeResult::write([]);
+    }
+}

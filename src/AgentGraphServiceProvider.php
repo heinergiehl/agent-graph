@@ -1,0 +1,102 @@
+<?php
+
+namespace Heiner\AgentGraph;
+
+use Heiner\AgentGraph\Console\DoctorCommand;
+use Heiner\AgentGraph\Console\InstallCommand;
+use Heiner\AgentGraph\Console\MakeGraphCommand;
+use Heiner\AgentGraph\Console\MakeNodeCommand;
+use Heiner\AgentGraph\Console\PruneCommand;
+use Heiner\AgentGraph\Contracts\CheckpointStore;
+use Heiner\AgentGraph\Contracts\Clock;
+use Heiner\AgentGraph\Contracts\InterruptStore;
+use Heiner\AgentGraph\Contracts\LockProvider;
+use Heiner\AgentGraph\Contracts\MemoryStore;
+use Heiner\AgentGraph\Contracts\RunStore;
+use Heiner\AgentGraph\Contracts\TaskStore;
+use Heiner\AgentGraph\Contracts\TraceStore;
+use Heiner\AgentGraph\Contracts\WriteStore;
+use Heiner\AgentGraph\Persistence\DatabaseCheckpointStore;
+use Heiner\AgentGraph\Persistence\DatabaseInterruptStore;
+use Heiner\AgentGraph\Persistence\DatabaseMemoryStore;
+use Heiner\AgentGraph\Persistence\DatabaseRunStore;
+use Heiner\AgentGraph\Persistence\DatabaseTaskStore;
+use Heiner\AgentGraph\Persistence\DatabaseTraceStore;
+use Heiner\AgentGraph\Persistence\DatabaseWriteStore;
+use Heiner\AgentGraph\Persistence\InMemoryCheckpointStore;
+use Heiner\AgentGraph\Persistence\InMemoryInterruptStore;
+use Heiner\AgentGraph\Persistence\InMemoryMemoryStore;
+use Heiner\AgentGraph\Persistence\InMemoryRunStore;
+use Heiner\AgentGraph\Persistence\InMemoryTaskStore;
+use Heiner\AgentGraph\Persistence\InMemoryTraceStore;
+use Heiner\AgentGraph\Persistence\InMemoryWriteStore;
+use Heiner\AgentGraph\Runtime\GraphRuntime;
+use Heiner\AgentGraph\Support\CacheLockProvider;
+use Heiner\AgentGraph\Support\SystemClock;
+use Illuminate\Support\ServiceProvider;
+
+class AgentGraphServiceProvider extends ServiceProvider
+{
+    public function register(): void
+    {
+        $this->mergeConfigFrom(__DIR__.'/../config/agent-graph.php', 'agent-graph');
+
+        $this->app->singleton(Clock::class, SystemClock::class);
+        $this->app->singleton(LockProvider::class, CacheLockProvider::class);
+
+        $this->registerStores();
+
+        $this->app->singleton(GraphRuntime::class);
+        $this->app->singleton(AgentGraphManager::class);
+        $this->app->alias(AgentGraphManager::class, 'agent-graph');
+    }
+
+    public function boot(): void
+    {
+        $this->publishes([
+            __DIR__.'/../config/agent-graph.php' => config_path('agent-graph.php'),
+        ], 'agent-graph-config');
+
+        $this->publishes([
+            __DIR__.'/../database/migrations' => database_path('migrations'),
+        ], 'agent-graph-migrations');
+
+        if ($this->app->runningInConsole()) {
+            $this->commands([
+                InstallCommand::class,
+                MakeGraphCommand::class,
+                MakeNodeCommand::class,
+                DoctorCommand::class,
+                PruneCommand::class,
+            ]);
+        }
+    }
+
+    protected function registerStores(): void
+    {
+        $memory = config('agent-graph.store') === 'memory'
+            || ($this->app->environment('testing') && config('agent-graph.store') === 'database');
+
+        $bindings = [
+            RunStore::class => $memory ? InMemoryRunStore::class : DatabaseRunStore::class,
+            CheckpointStore::class => $memory ? InMemoryCheckpointStore::class : DatabaseCheckpointStore::class,
+            WriteStore::class => $memory ? InMemoryWriteStore::class : DatabaseWriteStore::class,
+            TaskStore::class => $memory ? InMemoryTaskStore::class : DatabaseTaskStore::class,
+            InterruptStore::class => $memory ? InMemoryInterruptStore::class : DatabaseInterruptStore::class,
+            MemoryStore::class => $memory ? InMemoryMemoryStore::class : DatabaseMemoryStore::class,
+            TraceStore::class => $memory ? InMemoryTraceStore::class : DatabaseTraceStore::class,
+        ];
+
+        foreach ($bindings as $contract => $implementation) {
+            $this->app->singleton($contract, $implementation);
+        }
+
+        $this->app->alias(RunStore::class, 'agent-graph.runs');
+        $this->app->alias(CheckpointStore::class, 'agent-graph.checkpoints');
+        $this->app->alias(WriteStore::class, 'agent-graph.writes');
+        $this->app->alias(TaskStore::class, 'agent-graph.tasks');
+        $this->app->alias(InterruptStore::class, 'agent-graph.interrupts');
+        $this->app->alias(MemoryStore::class, 'agent-graph.memory');
+        $this->app->alias(TraceStore::class, 'agent-graph.traces');
+    }
+}

@@ -1,0 +1,12 @@
+/references export-ignore
+/.github export-ignore
+/.idea export-ignore
+/.vscode export-ignore
+/.phpunit.cache export-ignore
+/.pest.cache export-ignore
+/coverage export-ignore
+/tests export-ignore
+/phpstan.neon.dist export-ignore
+/phpunit.xml.dist export-ignore
+/pint.json export-ignore
+/.gitignore export-ignore

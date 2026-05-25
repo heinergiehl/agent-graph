@@ -1,0 +1,13 @@
+/vendor/
+/composer.lock
+/.phpunit.cache/
+/.pest.cache/
+/coverage/
+/.idea/
+/.vscode/
+/.env
+/.env.*
+
+# Local read-only upstream references. These are useful for implementation
+# research but must never become package dependencies or tracked source.
+/references/
