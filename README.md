@@ -197,7 +197,7 @@ Interrupted runs return a machine-readable `interrupt` payload. Failed runs retu
 
 ## Stable v1 Public APIs
 
-The intended v1-stable API surface is:
+The intended v1-stable API surface is documented in [`docs/api-reference.md`](docs/api-reference.md). In short:
 
 - `StateGraph` for fluent graph definitions.
 - `Node` and `NodeContext` for runtime node implementation.
@@ -208,6 +208,8 @@ The intended v1-stable API surface is:
 - `AgentNode` for Laravel AI agent execution.
 - `GraphTool` for Laravel AI tool integration.
 - Store contracts for production adapters and tests.
+
+`checkpoint()`, `replay()`, `fork()`, and `timeTravelChildren()` are public experimental APIs. They are documented and tested, but remain outside the stable v1 core until time-travel workflows have more production mileage.
 
 ## Production Checklist
 
