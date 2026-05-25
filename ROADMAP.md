@@ -19,22 +19,32 @@ Implemented and ready for sandbox testing:
 - Laravel AI `AgentNode`, including streamed `TextDelta` handling.
 - `GraphTool` for durable graph execution from Laravel AI tools.
 - Queue jobs, cache locks, install/make/doctor/prune commands.
+- Runtime inspection with run snapshots, run listing, checkpoint writes, pending interrupts, and optional traces.
+- Experimental checkpoint inspection, replay, fork, and lineage APIs for time-travel workflows.
+- State schema key/type validation for run input, resume, state edit, fork, and node writes.
+- Safe state-edit resume with graph-schema validation.
+- Delayed continuation retry guards for final runs and stale delay interrupts.
 - Fresh Laravel sandbox validation through a local path repository.
 
 ## v1 Hardening Checklist
 
 These items should be completed before tagging `v1.0.0`:
 
-- Freeze and document the public API for `StateGraph`, `Node`, `NodeContext`, `NodeResult`, `AgentGraph`, `AgentNode`, `GraphTool`, and store contracts.
-- Add API docs for every v1-stable method, including return shapes and failure behavior.
-- Add more crash/retry coverage around queue workers, latest-checkpoint resume, delayed continuation, and interrupted runs.
-- Add explicit state-inspection APIs for active and completed runs.
-- Add a safe state-edit resume flow that validates edited state against the graph schema.
+- Review the documented public API in `docs/api-reference.md` before tagging.
 - Add tenant/actor memory examples that make cross-tenant boundaries unambiguous.
 - Add a compatibility CI matrix for PHP 8.3/8.4, Laravel 12/13, and `laravel/ai ^0.7 || ^1.0`.
   `laravel/ai ^1.0` is declared in `composer.json` for forward compatibility, but should only be enabled in blocking CI after a 1.x release exists upstream.
 - Test the Filament Agentic Chatbot refactor against the 0.9 package before locking v1.
-- Document any breaking changes from 0.9 in `CHANGELOG.md` and `UPGRADE.md`.
+- Review `CHANGELOG.md` and `UPGRADE.md` before tagging.
+
+Implemented v1 hardening:
+
+- Public API reference for `StateGraph`, `Node`, `NodeContext`, `NodeResult`, `AgentGraph`, `AgentNode`, `GraphTool`, runtime DTOs, and store contracts.
+- Runtime inspection APIs for active, completed, interrupted, delayed, failed, and cancelled runs.
+- Safe state-edit resume with schema key/type validation.
+- Queue retry guards for final runs, stale delay interrupts, latest-checkpoint resume, and duplicate delayed jobs.
+- Experimental checkpoint inspection, replay, fork, and lineage APIs.
+- Graph version compatibility checks for resume, replay, and fork.
 
 ## Post-v1 Features
 
@@ -44,7 +54,7 @@ These are useful but intentionally outside the v1 MVP:
 - Reducer conflict handling for concurrent branch writes.
 - Stateful subgraphs with inherited or isolated checkpoint stores.
 - Graph-as-subgraph composition separate from graph-as-tool.
-- Time travel, replay, checkpoint history APIs, and checkpoint forking.
+- Visual timeline tooling and advanced time-travel controls beyond the experimental replay/fork/lineage APIs.
 - Visual state inspection and state editing UI.
 - JSON graph import/export and schema serialization.
 - Semantic/vector memory adapters, including optional pgvector support.

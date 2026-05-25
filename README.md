@@ -8,7 +8,7 @@ AgentGraph does not replace Laravel AI providers, agents, tools, streaming, or s
 
 `0.9.x` is a public beta intended for sandbox and real chatbot integration testing. Breaking changes are allowed before v1, but they will be documented in `CHANGELOG.md` and `UPGRADE.md`.
 
-The v1 target is a hardened MVP: stable graph execution, checkpoints, interrupts/resume, idempotent tasks, scoped memory, traces, queues, Laravel AI agent nodes, and graphs as tools. True parallel execution, checkpoint forking, full time travel, pgvector semantic memory, OpenTelemetry export, and visual workflow editing are intentionally outside v1.
+The v1 target is a hardened MVP: stable graph execution, checkpoints, interrupts/resume, idempotent tasks, scoped memory, traces, queues, Laravel AI agent nodes, and graphs as tools. Experimental checkpoint inspection, replay, and forking APIs are available for post-v1-style workflows. True parallel execution, pgvector semantic memory, OpenTelemetry export, and visual workflow editing are intentionally outside v1.
 
 ## Installation
 
@@ -73,6 +73,85 @@ $run = AgentGraph::resume($runId, [
 ]);
 ```
 
+For manual state correction flows, use the explicit state-edit resume API. The patch is validated against the graph state schema before the interrupt is resolved.
+
+```php
+$run = AgentGraph::resumeWithStateEdit(
+    runId: $runId,
+    interruptId: $interruptId,
+    statePatch: ['answer' => 'Corrected answer'],
+    resolvedBy: (string) $user->id,
+);
+```
+
+## Runtime Inspection
+
+Inspect a run without resuming it:
+
+```php
+$snapshot = AgentGraph::inspect($runId, withHistory: true, withTraces: true);
+
+$snapshot->status();       // completed, interrupted, delayed, failed, cancelled
+$snapshot->state();        // latest checkpoint state
+$snapshot->checkpoint();   // latest checkpoint
+$snapshot->checkpoints();  // populated when withHistory is true
+$snapshot->writes();       // persisted checkpoint writes
+$snapshot->interrupt();    // current pending interrupt, if any
+$snapshot->traces();       // populated when withTraces is true
+```
+
+List recent runs for dashboards, admin screens, or recovery tools:
+
+```php
+$interruptedRuns = AgentGraph::runs([
+    'status' => 'interrupted',
+    'thread_id' => $conversationId,
+], limit: 25);
+```
+
+## Time Travel
+
+Checkpoint inspection, replay, and forking are exposed as experimental public APIs. They create new runs and never mutate the original run history.
+
+Inspect a specific checkpoint:
+
+```php
+$checkpoint = AgentGraph::checkpoint($checkpointId, withWrites: true);
+
+$checkpoint->state();
+$checkpoint->nextNodes();
+$checkpoint->writes();
+```
+
+Replay from a checkpoint:
+
+```php
+$replayed = AgentGraph::replay(
+    checkpointId: $checkpointId,
+    threadId: $conversationId,
+    meta: ['reason' => 'support_recheck'],
+);
+```
+
+Fork from a checkpoint with a reducer-aware state patch:
+
+```php
+$forked = AgentGraph::fork(
+    checkpointId: $checkpointId,
+    statePatch: ['category' => 'technical'],
+    asNode: 'classify',
+    meta: ['reason' => 'manual_branch'],
+);
+```
+
+List replay and fork children for a source checkpoint:
+
+```php
+$branches = AgentGraph::timeTravelChildren($checkpointId, limit: 25);
+```
+
+Replay and fork can execute downstream nodes again. Wrap external side effects such as CRM writes, email, payments, and API calls in idempotent `$context->tasks()->once()` blocks before using time travel in production.
+
 ## Laravel AI Agent Node
 
 ```php
@@ -118,15 +197,19 @@ Interrupted runs return a machine-readable `interrupt` payload. Failed runs retu
 
 ## Stable v1 Public APIs
 
-The intended v1-stable API surface is:
+The intended v1-stable API surface is documented in [`docs/api-reference.md`](docs/api-reference.md). In short:
 
 - `StateGraph` for fluent graph definitions.
 - `Node` and `NodeContext` for runtime node implementation.
 - `NodeResult` for writes, gotos, interrupts, completion, and failures.
-- `AgentGraph` facade for defining, running, resuming, cancelling, and exposing tools.
+- `AgentGraph` facade for defining, running, resuming, state-edit resuming, inspecting, listing, cancelling, and exposing tools.
+- `RunSnapshot` for read-only runtime inspection.
+- `CheckpointSnapshot` for read-only checkpoint inspection and experimental time-travel workflows.
 - `AgentNode` for Laravel AI agent execution.
 - `GraphTool` for Laravel AI tool integration.
 - Store contracts for production adapters and tests.
+
+`checkpoint()`, `replay()`, `fork()`, and `timeTravelChildren()` are public experimental APIs. They are documented and tested, but remain outside the stable v1 core until time-travel workflows have more production mileage.
 
 ## Production Checklist
 
@@ -136,10 +219,13 @@ The intended v1-stable API surface is:
 - Keep trace redaction keys current for your domain.
 - Scope memory by tenant or actor before using it in multi-tenant apps.
 - Use idempotent task keys for every external side effect.
+- Use `inspect()` and `runs()` for recovery/admin UIs instead of reading package tables directly.
+- Use `timeTravelChildren()` to inspect replay/fork lineage for a source checkpoint.
+- Use `resumeWithStateEdit()` for manual state correction flows.
 - Keep graph definitions generic; product-specific UI belongs in consuming apps.
 - For multi-tenant memory, always include tenant or actor scope in reads and writes.
 - Run `php artisan agent-graph:doctor` after deploys and before release validation.
 
 ## Status
 
-This MVP includes the durable runtime core, database and in-memory stores, scoped memory, interrupts, tasks, traces, queue jobs, Laravel AI adapter, graph tool adapter, commands, tests, and docs. Post-MVP work includes true parallel fan-out/fan-in, checkpoint forking, full time travel, pgvector semantic memory, OpenTelemetry export, and visual editor serialization.
+This MVP includes the durable runtime core, database and in-memory stores, scoped memory, interrupts, tasks, traces, queue jobs, Laravel AI adapter, graph tool adapter, commands, tests, docs, and experimental checkpoint replay/fork APIs. Post-MVP work includes true parallel fan-out/fan-in, visual timeline tooling, pgvector semantic memory, OpenTelemetry export, and visual editor serialization.

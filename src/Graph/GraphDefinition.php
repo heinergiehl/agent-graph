@@ -50,9 +50,32 @@ class GraphDefinition
         return $this->nodes;
     }
 
+    public function hasNode(string $id): bool
+    {
+        return isset($this->nodes[$id]);
+    }
+
+    public function hasEndpoint(string $id): bool
+    {
+        return $this->isKnownEndpoint($id);
+    }
+
     public function entryNode(): string
     {
         return $this->edges[StateGraph::START][0] ?? throw new InvalidArgumentException('Graph has no entry node.');
+    }
+
+    public function successorsOf(string $id, array $state): array
+    {
+        if ($id === StateGraph::START) {
+            return [$this->entryNode()];
+        }
+
+        if ($id === StateGraph::END) {
+            return [StateGraph::END];
+        }
+
+        return $this->resolveNext($id, $state);
     }
 
     public function resolveNext(string $nodeId, array $state): array

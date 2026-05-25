@@ -5,6 +5,7 @@ namespace Heiner\AgentGraph\Persistence;
 use Heiner\AgentGraph\Contracts\CheckpointStore;
 use Heiner\AgentGraph\Persistence\Concerns\SerializesDatabaseValues;
 use Illuminate\Database\DatabaseManager;
+use RuntimeException;
 
 class DatabaseCheckpointStore implements CheckpointStore
 {
@@ -37,6 +38,13 @@ class DatabaseCheckpointStore implements CheckpointStore
         return $this->byCheckpointId($checkpointId);
     }
 
+    public function find(string $checkpointId): ?array
+    {
+        $record = $this->db->table($this->table())->where('checkpoint_id', $checkpointId)->first();
+
+        return $record ? $this->decodeRecord($record, ['state', 'next_nodes', 'completed_nodes', 'interrupts', 'meta']) : null;
+    }
+
     public function latestForRun(string $runId): ?array
     {
         $record = $this->db->table($this->table())->where('run_id', $runId)->orderByDesc('step')->first();
@@ -56,10 +64,7 @@ class DatabaseCheckpointStore implements CheckpointStore
 
     protected function byCheckpointId(string $checkpointId): array
     {
-        return $this->decodeRecord(
-            $this->db->table($this->table())->where('checkpoint_id', $checkpointId)->first(),
-            ['state', 'next_nodes', 'completed_nodes', 'interrupts', 'meta'],
-        );
+        return $this->find($checkpointId) ?? throw new RuntimeException("Checkpoint [{$checkpointId}] was not found after creation.");
     }
 
     protected function table(): string

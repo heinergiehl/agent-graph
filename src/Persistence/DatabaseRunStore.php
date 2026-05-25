@@ -40,6 +40,39 @@ class DatabaseRunStore implements RunStore
         return $record ? $this->decodeRecord($record, ['input', 'error', 'meta']) : null;
     }
 
+    public function list(array $filters = [], int $limit = 50): array
+    {
+        $query = $this->db->table($this->table());
+
+        foreach (['status', 'thread_id', 'graph_key', 'graph_version'] as $field) {
+            if (isset($filters[$field])) {
+                $query->where($field, $filters[$field]);
+            }
+        }
+
+        return $query
+            ->orderByDesc('id')
+            ->limit(max(1, min($limit, 500)))
+            ->get()
+            ->map(fn ($record) => $this->decodeRecord($record, ['input', 'error', 'meta']))
+            ->all();
+    }
+
+    public function listTimeTravelChildren(string $checkpointId, int $limit = 50): array
+    {
+        $limit = max(1, min($limit, 500));
+
+        return $this->db->table($this->table())
+            ->orderByDesc('id')
+            ->limit(1000)
+            ->get()
+            ->map(fn ($record) => $this->decodeRecord($record, ['input', 'error', 'meta']))
+            ->filter(fn (array $run): bool => ($run['meta']['time_travel']['source_checkpoint_id'] ?? null) === $checkpointId)
+            ->take($limit)
+            ->values()
+            ->all();
+    }
+
     public function update(string $runId, array $attributes): array
     {
         foreach (['input', 'error', 'meta'] as $field) {

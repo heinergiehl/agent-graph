@@ -27,6 +27,11 @@ class InMemoryWriteStore implements WriteStore
         }
     }
 
+    public function listForCheckpoint(string $checkpointId): array
+    {
+        return array_values(array_filter($this->writes, fn (array $write): bool => $write['checkpoint_id'] === $checkpointId));
+    }
+
     public function listForRun(string $runId): array
     {
         return array_values(array_filter($this->writes, fn (array $write): bool => $write['run_id'] === $runId));

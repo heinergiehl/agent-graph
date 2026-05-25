@@ -8,5 +8,9 @@ interface RunStore
 
     public function find(string $runId): ?array;
 
+    public function list(array $filters = [], int $limit = 50): array;
+
+    public function listTimeTravelChildren(string $checkpointId, int $limit = 50): array;
+
     public function update(string $runId, array $attributes): array;
 }
