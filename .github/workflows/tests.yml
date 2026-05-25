@@ -14,7 +14,9 @@ jobs:
       matrix:
         php: ['8.3', '8.4']
         laravel: ['12.*', '13.*']
-        laravel-ai: ['^0.7', '^1.0']
+        # laravel/ai ^1.0 is allowed by composer.json for forward compatibility,
+        # but no 1.x release exists yet. Add it back here once upstream tags it.
+        laravel-ai: ['^0.7']
 
     steps:
       - name: Checkout

@@ -32,6 +32,7 @@ These items should be completed before tagging `v1.0.0`:
 - Add a safe state-edit resume flow that validates edited state against the graph schema.
 - Add tenant/actor memory examples that make cross-tenant boundaries unambiguous.
 - Add a compatibility CI matrix for PHP 8.3/8.4, Laravel 12/13, and `laravel/ai ^0.7 || ^1.0`.
+  `laravel/ai ^1.0` is declared in `composer.json` for forward compatibility, but should only be enabled in blocking CI after a 1.x release exists upstream.
 - Test the Filament Agentic Chatbot refactor against the 0.9 package before locking v1.
 - Document any breaking changes from 0.9 in `CHANGELOG.md` and `UPGRADE.md`.
 
