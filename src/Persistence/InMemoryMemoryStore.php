@@ -2,12 +2,12 @@
 
 namespace Heiner\AgentGraph\Persistence;
 
-use Heiner\AgentGraph\Contracts\MemoryStore;
+use Heiner\AgentGraph\Contracts\EnumerableMemoryStore;
 use Heiner\AgentGraph\Events\GraphMemoryRead;
 use Heiner\AgentGraph\Events\GraphMemoryWritten;
 use Heiner\AgentGraph\Memory\MemoryScope;
 
-class InMemoryMemoryStore implements MemoryStore
+class InMemoryMemoryStore implements EnumerableMemoryStore
 {
     protected array $memories = [];
 
@@ -92,6 +92,53 @@ class InMemoryMemoryStore implements MemoryStore
 
             return $this->memories[$id];
         }, $results);
+    }
+
+    public function listNamespace(array $scopes, string $namespace): array
+    {
+        $scopeKeys = array_map(
+            fn (MemoryScope $scope): string => $scope->type.':'.$scope->id.':'.$scope->tenantId,
+            $this->orderScopes($scopes),
+        );
+        $scopeOrder = array_flip($scopeKeys);
+        $seen = [];
+        $results = [];
+
+        foreach ($this->memories as $id => $memory) {
+            $scopeKey = $memory['scope_type'].':'.$memory['scope_id'].':'.$memory['tenant_id'];
+
+            if (! array_key_exists($scopeKey, $scopeOrder)) {
+                continue;
+            }
+
+            if ($memory['namespace'] !== $namespace || $this->isExpired($memory)) {
+                continue;
+            }
+
+            $results[$id] = $memory + ['__scope_order' => $scopeOrder[$scopeKey]];
+        }
+
+        uasort($results, static function (array $left, array $right): int {
+            return ($left['__scope_order'] <=> $right['__scope_order'])
+                ?: strcmp((string) $left['key'], (string) $right['key']);
+        });
+
+        $records = [];
+
+        foreach (array_keys($results) as $id) {
+            $key = (string) $this->memories[$id]['key'];
+
+            if (isset($seen[$key])) {
+                continue;
+            }
+
+            $seen[$key] = true;
+            $this->memories[$id]['usage_count']++;
+            $this->memories[$id]['last_used_at'] = now();
+            $records[] = $this->memories[$id];
+        }
+
+        return $records;
     }
 
     protected function identity(MemoryScope $scope, string $namespace, string $key): string

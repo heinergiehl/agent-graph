@@ -83,6 +83,44 @@ it('dispatches AgentGraph stream events for streamed Laravel AI deltas', functio
         ->and($streamTraces[0]['payload'])->toHaveKeys(['delta', 'message_id', 'invocation_id']);
 });
 
+it('invokes AgentNode text delta callbacks while still dispatching stream events', function () {
+    Event::fake([GraphStreamDelta::class]);
+    app()->bind(FakeStreamingSupportAgent::class, fn () => new FakeStreamingSupportAgent);
+    $deltas = [];
+
+    AgentGraph::define(
+        StateGraph::make('streaming_agent_callback_answer')
+            ->state(['input' => 'string', 'answer' => 'string|null'])
+            ->node('answer', AgentNode::make('streaming_callback_answer')
+                ->agent(FakeStreamingSupportAgent::class)
+                ->prompt(fn (array $state) => $state['input'])
+                ->stream()
+                ->onTextDelta(function (string $delta, array $payload, NodeContext $context) use (&$deltas): void {
+                    $deltas[] = [
+                        'delta' => $delta,
+                        'node_id' => $context->nodeId(),
+                        'payload_delta' => $payload['delta'] ?? null,
+                    ];
+                })
+                ->writeTextTo('answer'))
+            ->edge(StateGraph::START, 'answer')
+            ->edge('answer', StateGraph::END)
+    );
+
+    $run = AgentGraph::graph('streaming_agent_callback_answer')
+        ->thread('stream-callback-thread')
+        ->input(['input' => 'Hello'])
+        ->run();
+
+    expect($run->completed())->toBeTrue()
+        ->and($run->state('answer'))->toBe('Hello from stream')
+        ->and(array_column($deltas, 'delta'))->toBe(['Hello ', 'from ', 'stream'])
+        ->and($deltas[0]['node_id'])->toBe('answer')
+        ->and($deltas[2]['payload_delta'])->toBe('stream');
+
+    Event::assertDispatched(GraphStreamDelta::class, 3);
+});
+
 it('exposes a graph as a Laravel AI tool and returns structured json', function () {
     AgentGraph::define(
         StateGraph::make('tool_graph')

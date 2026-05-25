@@ -1,6 +1,38 @@
 <?php
 
+use Heiner\AgentGraph\Contracts\EnumerableMemoryStore;
 use Heiner\AgentGraph\Memory\MemoryScope;
+
+it('lists namespace memories using fallback order and ignoring expired records', function () {
+    $memory = app('agent-graph.memory');
+    config()->set('agent-graph.memory.fallback_order', ['actor', 'thread']);
+
+    expect($memory)->toBeInstanceOf(EnumerableMemoryStore::class);
+
+    $thread = MemoryScope::thread('thread-namespace');
+    $actor = MemoryScope::actor('tenant-namespace', 'user-namespace');
+
+    $memory->write($thread, 'profile', 'language', 'en', 'preference', 'Thread language.');
+    $memory->write($thread, 'profile', 'timezone', 'UTC', 'preference', 'Thread timezone.');
+    $memory->write($actor, 'profile', 'language', 'de', 'preference', 'Actor language.');
+    $memory->write($actor, 'profile', 'expired', 'old', 'preference', 'Expired.', [
+        'expires_at' => now()->subMinute(),
+    ]);
+
+    $records = $memory->listNamespace([
+        'thread' => $thread,
+        'actor' => $actor,
+    ], 'profile');
+
+    expect($records)->toHaveCount(2)
+        ->and($records[0]['key'])->toBe('language')
+        ->and($records[0]['value'])->toBe('de')
+        ->and($records[0]['usage_count'])->toBe(1)
+        ->and($records[0]['last_used_at'])->not->toBeNull()
+        ->and($records[1]['key'])->toBe('timezone')
+        ->and($records[1]['value'])->toBe('UTC')
+        ->and(collect($records)->pluck('key')->all())->not->toContain('expired');
+});
 
 it('writes and reads scoped memory with fallback order', function () {
     $memory = app('agent-graph.memory');

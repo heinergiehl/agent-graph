@@ -2,14 +2,14 @@
 
 namespace Heiner\AgentGraph\Persistence;
 
-use Heiner\AgentGraph\Contracts\MemoryStore;
+use Heiner\AgentGraph\Contracts\EnumerableMemoryStore;
 use Heiner\AgentGraph\Events\GraphMemoryRead;
 use Heiner\AgentGraph\Events\GraphMemoryWritten;
 use Heiner\AgentGraph\Memory\MemoryScope;
 use Heiner\AgentGraph\Persistence\Concerns\SerializesDatabaseValues;
 use Illuminate\Database\DatabaseManager;
 
-class DatabaseMemoryStore implements MemoryStore
+class DatabaseMemoryStore implements EnumerableMemoryStore
 {
     use SerializesDatabaseValues;
 
@@ -109,6 +109,41 @@ class DatabaseMemoryStore implements MemoryStore
             }
 
             foreach ($builder->get() as $record) {
+                $this->db->table($this->table())->where('id', $record->id)->update([
+                    'usage_count' => $record->usage_count + 1,
+                    'last_used_at' => now(),
+                    'updated_at' => now(),
+                ]);
+
+                $record = $this->db->table($this->table())->where('id', $record->id)->first();
+                $results[] = $this->decodeRecord($record, ['value', 'meta']);
+            }
+        }
+
+        return $results;
+    }
+
+    public function listNamespace(array $scopes, string $namespace): array
+    {
+        $results = [];
+        $seen = [];
+
+        foreach ($this->orderScopes($scopes) as $scope) {
+            $records = $this->queryForScope($scope)
+                ->where(function ($builder): void {
+                    $builder->whereNull('expires_at')
+                        ->orWhere('expires_at', '>', now());
+                })
+                ->where('namespace', $namespace)
+                ->orderBy('key')
+                ->get();
+
+            foreach ($records as $record) {
+                if (isset($seen[$record->key])) {
+                    continue;
+                }
+
+                $seen[$record->key] = true;
                 $this->db->table($this->table())->where('id', $record->id)->update([
                     'usage_count' => $record->usage_count + 1,
                     'last_used_at' => now(),
