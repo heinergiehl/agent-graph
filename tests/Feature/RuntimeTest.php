@@ -78,6 +78,26 @@ it('executes side effect tasks once per idempotency key', function () {
         ->and($second->state('count'))->toBe(1);
 });
 
+it('preserves exception metadata on failed node runs', function () {
+    AgentGraph::define(
+        StateGraph::make('failing_node')
+            ->state([])
+            ->node('fail', FailingNode::class)
+            ->edge(StateGraph::START, 'fail')
+            ->edge('fail', StateGraph::END)
+    );
+
+    $run = AgentGraph::graph('failing_node')->thread('thread-4')->input([])->run();
+
+    expect($run->failed())->toBeTrue()
+        ->and($run->error()['message'])->toBe('Runtime metadata failure.')
+        ->and($run->error()['exception_class'])->toBe(RuntimeMetadataException::class)
+        ->and($run->error()['exception_code'])->toBe(42)
+        ->and($run->error()['error_code'])->toBe('runtime_metadata_failed')
+        ->and($run->error()['http_status'])->toBe(422)
+        ->and($run->error()['details'])->toBe(['field' => 'value']);
+});
+
 final class ClassifyNode implements Node
 {
     public function __invoke(NodeContext $context): NodeResult
@@ -127,5 +147,34 @@ final class TaskNode implements Node
         );
 
         return NodeResult::write(['count' => $count]);
+    }
+}
+
+final class FailingNode implements Node
+{
+    public function __invoke(NodeContext $context): NodeResult
+    {
+        throw new RuntimeMetadataException('Runtime metadata failure.', 42);
+    }
+}
+
+final class RuntimeMetadataException extends RuntimeException
+{
+    public function errorCode(): string
+    {
+        return 'runtime_metadata_failed';
+    }
+
+    public function httpStatus(): int
+    {
+        return 422;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function details(): array
+    {
+        return ['field' => 'value'];
     }
 }

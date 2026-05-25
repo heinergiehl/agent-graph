@@ -129,12 +129,14 @@ class GraphRuntime
                 try {
                     $result = $this->invokeNode($graph, $nodeId, $state, $run, $checkpointId, $nodeResumeContext);
                 } catch (Throwable $exception) {
-                    $run = $this->runs->update($run['public_id'], ['status' => 'failed', 'error' => ['message' => $exception->getMessage()]]);
+                    $error = $this->exceptionErrorPayload($exception);
+                    $run = $this->runs->update($run['public_id'], ['status' => 'failed', 'error' => $error]);
                     $this->recordTrace($run['public_id'], 'node.failed', array_merge([
                         'node' => $nodeId,
                         'message' => $exception->getMessage(),
+                        'exception_class' => $error['exception_class'],
                     ], $this->stateTracePayload('state_before', $stateBeforeNode)));
-                    event(new GraphNodeFailed($run['public_id'], $run['thread_id'], $graph->key(), $nodeId, ['message' => $exception->getMessage()]));
+                    event(new GraphNodeFailed($run['public_id'], $run['thread_id'], $graph->key(), $nodeId, $error));
                     event(new GraphRunFailed($run['public_id'], $run['thread_id'], $graph->key(), payload: $run['error']));
 
                     return new RunResult($run, $state);
@@ -284,17 +286,44 @@ class GraphRuntime
     {
         $run = $this->transaction(fn () => $this->runs->update($run['public_id'], [
             'status' => 'failed',
-            'error' => ['message' => $exception->getMessage()],
+            'error' => $this->exceptionErrorPayload($exception),
         ]));
 
         $this->recordTrace($run['public_id'], 'node.failed', array_merge([
             'node' => $nodeId,
             'message' => $exception->getMessage(),
+            'exception_class' => $run['error']['exception_class'],
         ], $this->stateTracePayload('state_before', $state)));
-        event(new GraphNodeFailed($run['public_id'], $run['thread_id'], $graph->key(), $nodeId, ['message' => $exception->getMessage()]));
+        event(new GraphNodeFailed($run['public_id'], $run['thread_id'], $graph->key(), $nodeId, $run['error']));
         event(new GraphRunFailed($run['public_id'], $run['thread_id'], $graph->key(), payload: $run['error']));
 
         return new RunResult($run, $state);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function exceptionErrorPayload(Throwable $exception): array
+    {
+        $payload = [
+            'message' => $exception->getMessage(),
+            'exception_class' => $exception::class,
+            'exception_code' => $exception->getCode(),
+        ];
+
+        if (method_exists($exception, 'errorCode')) {
+            $payload['error_code'] = $exception->errorCode();
+        }
+
+        if (method_exists($exception, 'httpStatus')) {
+            $payload['http_status'] = $exception->httpStatus();
+        }
+
+        if (method_exists($exception, 'details')) {
+            $payload['details'] = $exception->details();
+        }
+
+        return $payload;
     }
 
     protected function recordTrace(string $runId, string $event, array $payload = [], array $meta = []): void
