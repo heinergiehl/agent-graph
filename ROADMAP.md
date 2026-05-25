@@ -19,6 +19,9 @@ Implemented and ready for sandbox testing:
 - Laravel AI `AgentNode`, including streamed `TextDelta` handling.
 - `GraphTool` for durable graph execution from Laravel AI tools.
 - Queue jobs, cache locks, install/make/doctor/prune commands.
+- Runtime inspection with run snapshots, run listing, checkpoint writes, pending interrupts, and optional traces.
+- Safe state-edit resume with graph-schema key validation.
+- Delayed continuation retry guards for final runs and stale delay interrupts.
 - Fresh Laravel sandbox validation through a local path repository.
 
 ## v1 Hardening Checklist
@@ -27,9 +30,9 @@ These items should be completed before tagging `v1.0.0`:
 
 - Freeze and document the public API for `StateGraph`, `Node`, `NodeContext`, `NodeResult`, `AgentGraph`, `AgentNode`, `GraphTool`, and store contracts.
 - Add API docs for every v1-stable method, including return shapes and failure behavior.
-- Add more crash/retry coverage around queue workers, latest-checkpoint resume, delayed continuation, and interrupted runs.
-- Add explicit state-inspection APIs for active and completed runs.
-- Add a safe state-edit resume flow that validates edited state against the graph schema.
+- Add more crash/retry coverage around queue workers, latest-checkpoint resume, delayed continuation, and interrupted runs. Initial delayed continuation and latest-checkpoint coverage is in place.
+- Add explicit state-inspection APIs for active and completed runs. Initial `inspect()` and `runs()` APIs are in place.
+- Add a safe state-edit resume flow that validates edited state against the graph schema. Initial `resumeWithStateEdit()` API is in place.
 - Add tenant/actor memory examples that make cross-tenant boundaries unambiguous.
 - Add a compatibility CI matrix for PHP 8.3/8.4, Laravel 12/13, and `laravel/ai ^0.7 || ^1.0`.
   `laravel/ai ^1.0` is declared in `composer.json` for forward compatibility, but should only be enabled in blocking CI after a 1.x release exists upstream.

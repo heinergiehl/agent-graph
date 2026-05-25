@@ -29,6 +29,7 @@ use Heiner\AgentGraph\Queue\ContinueDelayedGraphJob;
 use Heiner\AgentGraph\State\Reducer;
 use Heiner\AgentGraph\State\StateReducer;
 use Illuminate\Contracts\Container\Container;
+use InvalidArgumentException;
 use RuntimeException;
 use Throwable;
 
@@ -63,8 +64,11 @@ class GraphRuntime
         $checkpoint = $this->checkpoints->latestForRun($runId) ?? throw new RuntimeException("Run [{$runId}] has no checkpoint.");
         $interrupt = $this->interrupts->pendingForRun($runId);
 
-        if ($interrupt !== null && isset($payload['interrupt_id'])) {
+        if (isset($payload['interrupt_id'])) {
+            $this->assertMatchingPendingInterrupt($runId, (string) $payload['interrupt_id'], $interrupt);
             $this->interrupts->resolve($payload['interrupt_id'], $payload);
+        } elseif ($interrupt !== null && in_array($run['status'], ['interrupted', 'delayed'], true)) {
+            throw new InvalidArgumentException("Run [{$runId}] requires interrupt_id to resume.");
         }
 
         unset($payload['interrupt_id']);
@@ -73,6 +77,38 @@ class GraphRuntime
         $next = $checkpoint['next_nodes'] ?: [$graph->entryNode()];
         $run = $this->runs->update($runId, ['status' => 'running']);
         event(new GraphResumed($runId, $run['thread_id'], $graph->key(), payload: $payload));
+
+        return $this->continue($graph, $run, $state, $next);
+    }
+
+    /**
+     * @param  array<string, GraphDefinition>  $graphs
+     */
+    public function resumeWithStateEdit(string $runId, string $interruptId, array $statePatch, array $graphs, ?string $resolvedBy = null): RunResult
+    {
+        $run = $this->runs->find($runId) ?? throw new RuntimeException("Run [{$runId}] was not found.");
+        $graph = $graphs[$run['graph_key']] ?? throw new RuntimeException("Graph [{$run['graph_key']}] is not defined.");
+        $checkpoint = $this->checkpoints->latestForRun($runId) ?? throw new RuntimeException("Run [{$runId}] has no checkpoint.");
+        $interrupt = $this->interrupts->pendingForRun($runId);
+
+        $this->assertMatchingPendingInterrupt($runId, $interruptId, $interrupt);
+
+        if (($interrupt['type'] ?? null) !== 'state_edit') {
+            throw new InvalidArgumentException("Interrupt [{$interruptId}] is not a state_edit interrupt.");
+        }
+
+        $this->assertStatePatchMatchesSchema($graph, $statePatch);
+
+        $this->interrupts->resolve(
+            $interruptId,
+            ['interrupt_id' => $interruptId, 'state' => $statePatch],
+            $resolvedBy,
+        );
+
+        $state = array_merge($checkpoint['state'], $statePatch);
+        $next = $checkpoint['next_nodes'] ?: [$graph->entryNode()];
+        $run = $this->runs->update($runId, ['status' => 'running']);
+        event(new GraphResumed($runId, $run['thread_id'], $graph->key(), payload: $statePatch));
 
         return $this->continue($graph, $run, $state, $next);
     }
@@ -90,6 +126,31 @@ class GraphRuntime
         event(new GraphRunCancelled($runId, $run['thread_id'], $run['graph_key'], payload: $meta));
 
         return new RunResult($run, $checkpoint['state'] ?? []);
+    }
+
+    public function inspect(string $runId, bool $withHistory = false, bool $withTraces = false): ?RunSnapshot
+    {
+        $run = $this->runs->find($runId);
+
+        if ($run === null) {
+            return null;
+        }
+
+        $checkpoint = $this->checkpoints->latestForRun($runId);
+
+        return new RunSnapshot(
+            run: $run,
+            checkpoint: $checkpoint,
+            checkpoints: $withHistory ? $this->checkpoints->listForRun($runId) : [],
+            writes: $this->writes->listForRun($runId),
+            interrupt: $this->interrupts->pendingForRun($runId),
+            traces: $withTraces ? $this->traces->listForRun($runId) : [],
+        );
+    }
+
+    public function runs(array $filters = [], int $limit = 50): array
+    {
+        return $this->runs->list($filters, $limit);
     }
 
     protected function continue(GraphDefinition $graph, array $run, array $state, array $nextNodes): RunResult
@@ -110,7 +171,6 @@ class GraphRuntime
 
                 $nodeId = array_shift($nextNodes);
                 event(new GraphNodeStarted($run['public_id'], $run['thread_id'], $graph->key(), $nodeId));
-
                 try {
                     $result = $this->invokeNode($graph, $nodeId, $state, $run, $checkpointId);
                 } catch (Throwable $exception) {
@@ -291,6 +351,28 @@ class GraphRuntime
         }
 
         return $graph->resolveNext($nodeId, $state);
+    }
+
+    protected function assertMatchingPendingInterrupt(string $runId, string $interruptId, ?array $interrupt): void
+    {
+        if ($interrupt === null) {
+            throw new InvalidArgumentException("Run [{$runId}] has no pending interrupt.");
+        }
+
+        if (($interrupt['interrupt_id'] ?? null) !== $interruptId) {
+            throw new InvalidArgumentException("Interrupt [{$interruptId}] does not match the pending interrupt for run [{$runId}].");
+        }
+    }
+
+    protected function assertStatePatchMatchesSchema(GraphDefinition $graph, array $statePatch): void
+    {
+        $schema = $graph->schema();
+
+        foreach (array_keys($statePatch) as $key) {
+            if (! array_key_exists($key, $schema)) {
+                throw new InvalidArgumentException("State patch contains unknown state key [{$key}].");
+            }
+        }
     }
 
     protected function inferReducers(GraphDefinition $graph): array

@@ -73,6 +73,42 @@ $run = AgentGraph::resume($runId, [
 ]);
 ```
 
+For manual state correction flows, use the explicit state-edit resume API. The patch is validated against the graph state schema before the interrupt is resolved.
+
+```php
+$run = AgentGraph::resumeWithStateEdit(
+    runId: $runId,
+    interruptId: $interruptId,
+    statePatch: ['answer' => 'Corrected answer'],
+    resolvedBy: (string) $user->id,
+);
+```
+
+## Runtime Inspection
+
+Inspect a run without resuming it:
+
+```php
+$snapshot = AgentGraph::inspect($runId, withHistory: true, withTraces: true);
+
+$snapshot->status();       // completed, interrupted, delayed, failed, cancelled
+$snapshot->state();        // latest checkpoint state
+$snapshot->checkpoint();   // latest checkpoint
+$snapshot->checkpoints();  // populated when withHistory is true
+$snapshot->writes();       // persisted checkpoint writes
+$snapshot->interrupt();    // current pending interrupt, if any
+$snapshot->traces();       // populated when withTraces is true
+```
+
+List recent runs for dashboards, admin screens, or recovery tools:
+
+```php
+$interruptedRuns = AgentGraph::runs([
+    'status' => 'interrupted',
+    'thread_id' => $conversationId,
+], limit: 25);
+```
+
 ## Laravel AI Agent Node
 
 ```php
@@ -123,7 +159,8 @@ The intended v1-stable API surface is:
 - `StateGraph` for fluent graph definitions.
 - `Node` and `NodeContext` for runtime node implementation.
 - `NodeResult` for writes, gotos, interrupts, completion, and failures.
-- `AgentGraph` facade for defining, running, resuming, cancelling, and exposing tools.
+- `AgentGraph` facade for defining, running, resuming, state-edit resuming, inspecting, listing, cancelling, and exposing tools.
+- `RunSnapshot` for read-only runtime inspection.
 - `AgentNode` for Laravel AI agent execution.
 - `GraphTool` for Laravel AI tool integration.
 - Store contracts for production adapters and tests.
@@ -136,6 +173,8 @@ The intended v1-stable API surface is:
 - Keep trace redaction keys current for your domain.
 - Scope memory by tenant or actor before using it in multi-tenant apps.
 - Use idempotent task keys for every external side effect.
+- Use `inspect()` and `runs()` for recovery/admin UIs instead of reading package tables directly.
+- Use `resumeWithStateEdit()` for manual state correction flows.
 - Keep graph definitions generic; product-specific UI belongs in consuming apps.
 - For multi-tenant memory, always include tenant or actor scope in reads and writes.
 - Run `php artisan agent-graph:doctor` after deploys and before release validation.

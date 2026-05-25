@@ -8,6 +8,7 @@ use Heiner\AgentGraph\LaravelAi\GraphTool;
 use Heiner\AgentGraph\Runtime\GraphRuntime;
 use Heiner\AgentGraph\Runtime\PendingGraphRun;
 use Heiner\AgentGraph\Runtime\RunResult;
+use Heiner\AgentGraph\Runtime\RunSnapshot;
 use InvalidArgumentException;
 
 class AgentGraphManager
@@ -45,9 +46,24 @@ class AgentGraphManager
         return $this->runtime->resume($runId, $payload, $this->graphs);
     }
 
+    public function resumeWithStateEdit(string $runId, string $interruptId, array $statePatch, ?string $resolvedBy = null): RunResult
+    {
+        return $this->runtime->resumeWithStateEdit($runId, $interruptId, $statePatch, $this->graphs, $resolvedBy);
+    }
+
     public function cancel(string $runId, array $meta = []): RunResult
     {
         return $this->runtime->cancel($runId, $meta);
+    }
+
+    public function inspect(string $runId, bool $withHistory = false, bool $withTraces = false): ?RunSnapshot
+    {
+        return $this->runtime->inspect($runId, $withHistory, $withTraces);
+    }
+
+    public function runs(array $filters = [], int $limit = 50): array
+    {
+        return $this->runtime->runs($filters, $limit);
     }
 
     public function tool(string $graphKey): GraphTool

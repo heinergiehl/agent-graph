@@ -39,6 +39,16 @@ class DatabaseInterruptStore implements InterruptStore
         return $record ? $this->decodeRecord($record, ['payload', 'response']) : null;
     }
 
+    public function listForRun(string $runId): array
+    {
+        return $this->db->table($this->table())
+            ->where('run_id', $runId)
+            ->orderBy('id')
+            ->get()
+            ->map(fn ($record) => $this->decodeRecord($record, ['payload', 'response']))
+            ->all();
+    }
+
     public function pendingForRun(string $runId): ?array
     {
         $record = $this->db->table($this->table())
