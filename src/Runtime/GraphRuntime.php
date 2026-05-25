@@ -225,6 +225,7 @@ class GraphRuntime
                     if ($resumeAt instanceof DateTimeInterface) {
                         $this->delayScheduler->schedule($run['public_id'], [
                             'interrupt_id' => $interrupt['interrupt_id'],
+                            'run_meta' => $run['meta'] ?? [],
                         ], $resumeAt);
                     }
 

@@ -45,12 +45,17 @@ it('allows applications to replace delay scheduling without replacing the runtim
             ->edge('wait', StateGraph::END)
     );
 
-    $run = AgentGraph::graph('custom_delay_scheduler_graph')->thread('delay-thread')->input([])->run();
+    $run = AgentGraph::graph('custom_delay_scheduler_graph')
+        ->thread('delay-thread')
+        ->input([])
+        ->meta(['workflow_run_id' => 123])
+        ->run();
 
     expect($run->status())->toBe('delayed')
         ->and(RecordingDelayScheduler::$scheduled)->toHaveCount(1)
         ->and(RecordingDelayScheduler::$scheduled[0]['run_id'])->toBe($run->runId())
         ->and(RecordingDelayScheduler::$scheduled[0]['payload']['interrupt_id'] ?? null)->toBe($run->interrupt()['interrupt_id'])
+        ->and(RecordingDelayScheduler::$scheduled[0]['payload']['run_meta']['workflow_run_id'] ?? null)->toBe(123)
         ->and(RecordingDelayScheduler::$scheduled[0]['resume_at'])->toBeInstanceOf(DateTimeInterface::class);
 
     Queue::assertNotPushed(ContinueDelayedGraphJob::class);
