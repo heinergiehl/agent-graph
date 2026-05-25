@@ -5,6 +5,7 @@ namespace Heiner\AgentGraph\Runtime;
 use Carbon\CarbonImmutable;
 use DateTimeInterface;
 use Heiner\AgentGraph\Contracts\CheckpointStore;
+use Heiner\AgentGraph\Contracts\DelayScheduler;
 use Heiner\AgentGraph\Contracts\InterruptStore;
 use Heiner\AgentGraph\Contracts\LockProvider;
 use Heiner\AgentGraph\Contracts\MemoryStore;
@@ -25,7 +26,6 @@ use Heiner\AgentGraph\Events\GraphRunFailed;
 use Heiner\AgentGraph\Events\GraphRunStarted;
 use Heiner\AgentGraph\Graph\GraphDefinition;
 use Heiner\AgentGraph\Graph\StateGraph;
-use Heiner\AgentGraph\Queue\ContinueDelayedGraphJob;
 use Heiner\AgentGraph\State\Reducer;
 use Heiner\AgentGraph\State\StateReducer;
 use Illuminate\Contracts\Container\Container;
@@ -43,6 +43,7 @@ class GraphRuntime
         protected MemoryStore $memory,
         protected TraceStore $traces,
         protected LockProvider $locks,
+        protected DelayScheduler $delayScheduler,
     ) {}
 
     public function run(GraphDefinition $graph, string $threadId, array $input = [], array $meta = []): RunResult
@@ -222,9 +223,9 @@ class GraphRuntime
                     }
 
                     if ($resumeAt instanceof DateTimeInterface) {
-                        ContinueDelayedGraphJob::dispatch($run['public_id'], [
+                        $this->delayScheduler->schedule($run['public_id'], [
                             'interrupt_id' => $interrupt['interrupt_id'],
-                        ])->delay($resumeAt);
+                        ], $resumeAt);
                     }
 
                     event(new GraphInterrupted($run['public_id'], $run['thread_id'], $graph->key(), $nodeId, $interrupt));

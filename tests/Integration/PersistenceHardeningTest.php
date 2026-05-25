@@ -1,5 +1,6 @@
 <?php
 
+use Heiner\AgentGraph\Contracts\DelayScheduler;
 use Heiner\AgentGraph\Contracts\LockProvider;
 use Heiner\AgentGraph\Contracts\Node;
 use Heiner\AgentGraph\Contracts\WriteStore;
@@ -52,6 +53,7 @@ it('rolls back checkpoint creation when write persistence fails', function () {
         memory: new DatabaseMemoryStore(app('db')),
         traces: new DatabaseTraceStore(app('db')),
         locks: app(LockProvider::class),
+        delayScheduler: app(DelayScheduler::class),
     );
 
     $graph = StateGraph::make('rollback_graph')
