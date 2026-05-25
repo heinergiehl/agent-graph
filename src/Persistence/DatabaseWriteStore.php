@@ -32,6 +32,16 @@ class DatabaseWriteStore implements WriteStore
         }
     }
 
+    public function listForCheckpoint(string $checkpointId): array
+    {
+        return $this->db->table($this->table())
+            ->where('checkpoint_id', $checkpointId)
+            ->orderBy('id')
+            ->get()
+            ->map(fn ($record) => $this->decodeRecord($record, ['value', 'meta']))
+            ->all();
+    }
+
     public function listForRun(string $runId): array
     {
         return $this->db->table($this->table())

@@ -52,6 +52,15 @@ class InMemoryRunStore implements RunStore
         return array_slice($runs, 0, max(1, min($limit, 500)));
     }
 
+    public function listTimeTravelChildren(string $checkpointId, int $limit = 50): array
+    {
+        $runs = array_values(array_filter($this->runs, fn (array $run): bool => ($run['meta']['time_travel']['source_checkpoint_id'] ?? null) === $checkpointId));
+
+        usort($runs, fn (array $a, array $b): int => ($b['id'] ?? 0) <=> ($a['id'] ?? 0));
+
+        return array_slice($runs, 0, max(1, min($limit, 500)));
+    }
+
     public function update(string $runId, array $attributes): array
     {
         $this->runs[$runId] = array_merge($this->runs[$runId], $attributes, ['updated_at' => now()]);

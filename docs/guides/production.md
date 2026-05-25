@@ -29,3 +29,11 @@ Normal input and approval resumes should continue to use `AgentGraph::resume($ru
 Delayed continuation jobs are safe to retry. A delayed job no-ops when the run is already `completed`, `cancelled`, or `failed`, or when its interrupt is no longer the pending delay interrupt.
 
 Keep external side effects inside `$context->tasks()->once()` so queue retries do not repeat irreversible work.
+
+## Replay and fork safety
+
+`AgentGraph::replay()` and `AgentGraph::fork()` create new runs from old checkpoint state. They may execute LLM, API, CRM, payment, email, or webhook nodes again.
+
+Before enabling time travel for a graph in production, wrap every irreversible node side effect in `$context->tasks()->once()` with a stable task key and input hash. Use `AgentGraph::timeTravelChildren($checkpointId)` to audit replay and fork branches created from a source checkpoint.
+
+Replay and fork require the persisted checkpoint or run `graph_version` to match the currently registered graph definition. Register a new graph version when node routing or state semantics change.

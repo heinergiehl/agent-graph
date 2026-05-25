@@ -26,6 +26,11 @@ class InMemoryCheckpointStore implements CheckpointStore
         return $checkpoint;
     }
 
+    public function find(string $checkpointId): ?array
+    {
+        return $this->checkpoints[$checkpointId] ?? null;
+    }
+
     public function latestForRun(string $runId): ?array
     {
         $items = $this->listForRun($runId);

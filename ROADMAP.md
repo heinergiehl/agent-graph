@@ -20,7 +20,9 @@ Implemented and ready for sandbox testing:
 - `GraphTool` for durable graph execution from Laravel AI tools.
 - Queue jobs, cache locks, install/make/doctor/prune commands.
 - Runtime inspection with run snapshots, run listing, checkpoint writes, pending interrupts, and optional traces.
-- Safe state-edit resume with graph-schema key validation.
+- Experimental checkpoint inspection, replay, fork, and lineage APIs for time-travel workflows.
+- State schema key/type validation for run input, resume, state edit, fork, and node writes.
+- Safe state-edit resume with graph-schema validation.
 - Delayed continuation retry guards for final runs and stale delay interrupts.
 - Fresh Laravel sandbox validation through a local path repository.
 
@@ -47,7 +49,7 @@ These are useful but intentionally outside the v1 MVP:
 - Reducer conflict handling for concurrent branch writes.
 - Stateful subgraphs with inherited or isolated checkpoint stores.
 - Graph-as-subgraph composition separate from graph-as-tool.
-- Time travel, replay, checkpoint history APIs, and checkpoint forking.
+- Visual timeline tooling and advanced time-travel controls beyond the experimental replay/fork/lineage APIs.
 - Visual state inspection and state editing UI.
 - JSON graph import/export and schema serialization.
 - Semantic/vector memory adapters, including optional pgvector support.

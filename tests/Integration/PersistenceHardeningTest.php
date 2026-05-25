@@ -80,6 +80,11 @@ final class FailingWriteStore implements WriteStore
     {
         return [];
     }
+
+    public function listForCheckpoint(string $checkpointId): array
+    {
+        return [];
+    }
 }
 
 final class RollbackAnswerNode implements Node

@@ -23,6 +23,13 @@ it('persists runs checkpoints writes tasks and memory in the database', function
 
     $run = $runs->create('support_triage', '1', 'thread-db', ['input' => 'Hi'], ['tenant' => 'acme']);
     $run = $runs->update($run['public_id'], ['status' => 'running']);
+    $childRun = $runs->create('support_triage', '1', 'thread-db', ['input' => 'Replay'], [
+        'time_travel' => [
+            'mode' => 'replay',
+            'source_run_id' => $run['public_id'],
+            'source_checkpoint_id' => 'chk_source',
+        ],
+    ]);
 
     $checkpoint = $checkpoints->create([
         'run_id' => $run['public_id'],
@@ -52,9 +59,13 @@ it('persists runs checkpoints writes tasks and memory in the database', function
     $memory->write(MemoryScope::actor('tenant-db', 'user-db'), 'preferences', 'language', 'de', 'preference', 'Prefers German.');
 
     expect($runs->find($run['public_id'])['status'])->toBe('running')
-        ->and($runs->list(['thread_id' => 'thread-db']))->toHaveCount(1)
+        ->and($runs->list(['thread_id' => 'thread-db']))->toHaveCount(2)
+        ->and($runs->listTimeTravelChildren('chk_source'))->toHaveCount(1)
+        ->and($runs->listTimeTravelChildren('chk_source')[0]['public_id'])->toBe($childRun['public_id'])
+        ->and($checkpoints->find($checkpoint['checkpoint_id'])['state'])->toBe(['answer' => 'Hello'])
         ->and($checkpoints->latestForRun($run['public_id'])['state'])->toBe(['answer' => 'Hello'])
         ->and($interrupts->listForRun($run['public_id']))->toHaveCount(1)
+        ->and($writes->listForCheckpoint($checkpoint['checkpoint_id']))->toHaveCount(1)
         ->and($writes->listForRun($run['public_id']))->toHaveCount(1)
         ->and($tasks->findByKey('task-key')['result'])->toBe(['ok' => true])
         ->and($memory->read([MemoryScope::actor('tenant-db', 'user-db')], 'preferences', 'language')['value'])->toBe('de');
