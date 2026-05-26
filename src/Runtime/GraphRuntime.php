@@ -259,6 +259,11 @@ class GraphRuntime
         return $this->runs->list($filters, $limit);
     }
 
+    public function childRuns(string $parentRunId, int $limit = 50): array
+    {
+        return $this->runs->listChildRuns($parentRunId, $limit);
+    }
+
     public function tasks(array $filters = [], int $limit = 50): array
     {
         return $this->tasks->list($filters, $limit);
@@ -733,6 +738,8 @@ class GraphRuntime
 
     protected function createTimeTravelRun(array $checkpoint, ?string $threadId, string $mode, array $meta): array
     {
+        $sourceRun = $this->runs->find((string) $checkpoint['run_id']);
+
         return $this->runs->create(
             $checkpoint['graph_key'],
             $checkpoint['graph_version'],
@@ -744,8 +751,20 @@ class GraphRuntime
                     'source_run_id' => $checkpoint['run_id'],
                     'source_checkpoint_id' => $checkpoint['checkpoint_id'],
                 ],
+                'parent' => [
+                    'run_id' => $checkpoint['run_id'],
+                    'checkpoint_id' => $checkpoint['checkpoint_id'],
+                    'node_id' => null,
+                    'depth' => $this->childDepthFor($sourceRun),
+                    'relationship' => $mode,
+                ],
             ]),
         );
+    }
+
+    protected function childDepthFor(?array $parentRun): int
+    {
+        return max(1, (int) data_get($parentRun, 'meta.parent.depth', 0) + 1);
     }
 
     protected function createSyntheticCheckpoint(array $run, array $sourceCheckpoint, array $state, array $nextNodes, array $meta, array $nextSchedule = []): array

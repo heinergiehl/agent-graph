@@ -162,6 +162,23 @@ $tasks = AgentGraph::tasks([
 ], limit: 25);
 ```
 
+Record generic parent/child run lineage for delegated tools, nested workflows, or inspector UIs:
+
+```php
+$child = AgentGraph::graph('support_triage')
+    ->thread($conversationId)
+    ->input(['input' => $delegatedRequest])
+    ->meta(['tenant' => 'acme'])
+    ->parent($parentRunId, $parentCheckpointId, 'delegate', relationship: 'tool')
+    ->run();
+
+$child->meta()['parent'];
+AgentGraph::inspect($child->runId())->parent();
+AgentGraph::childRuns($parentRunId, limit: 25);
+```
+
+Parent metadata is stored under `run.meta.parent`. It is an inspection convention only; AgentGraph does not yet schedule, cancel, or orchestrate full subgraphs through this API.
+
 ## Supersteps and Send
 
 Multiple static or conditional next nodes run as one deterministic superstep. Each node in the same frontier sees the same base state; writes are merged after the whole superstep completes.
@@ -243,6 +260,8 @@ List replay and fork children for a source checkpoint:
 ```php
 $branches = AgentGraph::timeTravelChildren($checkpointId, limit: 25);
 ```
+
+Replay and fork runs also store `run.meta.parent` with `relationship` set to `replay` or `fork`, so `AgentGraph::childRuns($sourceRunId)` can visualize run-level lineage while `timeTravelChildren()` remains checkpoint-specific.
 
 Replay and fork can execute downstream nodes again. Wrap external side effects such as CRM writes, email, payments, and API calls in idempotent `$context->tasks()->once()` blocks before using time travel in production.
 

@@ -102,6 +102,11 @@ class AgentGraphManager
         return $this->runtime->runs($filters, $limit);
     }
 
+    public function childRuns(string $parentRunId, int $limit = 50): array
+    {
+        return $this->runtime->childRuns($parentRunId, $limit);
+    }
+
     public function tasks(array $filters = [], int $limit = 50): array
     {
         return $this->runtime->tasks($filters, $limit);

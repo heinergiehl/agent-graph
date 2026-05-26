@@ -51,6 +51,7 @@ All methods are available through the `AgentGraph` facade and `AgentGraphManager
 - `inspect(string $runId, bool $withHistory = false, bool $withTraces = false): ?RunSnapshot` returns a read-only run snapshot without mutating runtime state.
 - `timeline(string $runId, bool $includeState = false, bool $includeDiff = true): ?RunTimeline` returns ordered, read-only timeline steps built from checkpoints, writes, interrupts, failures, and state diffs.
 - `runs(array $filters = [], int $limit = 50): array` lists recent runs. Supported filters are `status`, `thread_id`, `graph_key`, and `graph_version`.
+- `childRuns(string $parentRunId, int $limit = 50): array` lists runs whose metadata points to a parent run under `meta.parent.run_id`.
 - `tasks(array $filters = [], int $limit = 50): array` lists idempotent task records for inspection. Supported filters are `run_id`, `node_id`, `checkpoint_id`, and `status`.
 - `tool(string $graphKey): GraphTool` exposes a graph as a Laravel AI tool.
 
@@ -64,6 +65,8 @@ Stability: stable.
 - `replay(string $checkpointId, ?string $threadId = null, array $meta = [], ?callable $onEvent = null, bool $collectEvents = false): RunResult` creates a new run from a checkpoint and continues through recorded `next_nodes`.
 - `fork(string $checkpointId, array $statePatch = [], ?string $threadId = null, ?string $asNode = null, array $meta = [], ?callable $onEvent = null, bool $collectEvents = false): RunResult` creates a new run from a checkpoint with a reducer-aware state patch.
 - `timeTravelChildren(string $checkpointId, int $limit = 50): array` lists replay and fork runs created from a source checkpoint.
+
+Replay and fork preserve `meta.time_travel` and also store `meta.parent` with `relationship` set to `replay` or `fork`.
 
 Errors: missing checkpoints, missing graph definitions, invalid state patches, unknown fork endpoints, and graph version mismatches throw `RuntimeException` or `InvalidArgumentException`.
 
@@ -143,7 +146,9 @@ Stability: stable.
 
 Returned by `AgentGraph::graph($key)`.
 
-Methods: `thread()`, `input()`, `meta()`, `onEvent()`, `collectEvents()`, and `run()`.
+Methods: `thread()`, `input()`, `meta()`, `parent()`, `onEvent()`, `collectEvents()`, and `run()`.
+
+`parent(string $runId, ?string $checkpointId = null, ?string $nodeId = null, int $depth = 1, string $relationship = 'child')` stores generic parent lineage under `run.meta.parent`.
 
 `onEvent(callable $listener)` receives `RunEvent` objects synchronously for that run. `collectEvents(bool $collect = true)` stores the same normalized events on the returned `RunResult`.
 
@@ -153,7 +158,7 @@ Stability: stable.
 
 Returned by run, resume, cancel, replay, and fork operations.
 
-Methods: `runId()`, `threadId()`, `status()`, `completed()`, `interrupted()`, `failed()`, `cancelled()`, `error()`, `resumeAt()`, `state()`, `interrupt()`, and `events()`.
+Methods: `runId()`, `threadId()`, `status()`, `completed()`, `interrupted()`, `failed()`, `cancelled()`, `error()`, `meta()`, `resumeAt()`, `state()`, `interrupt()`, and `events()`.
 
 `events()` returns an array of `RunEvent` objects when collection was enabled, otherwise an empty array.
 
@@ -175,7 +180,9 @@ Stability: stable.
 
 Returned by `inspect()`.
 
-Methods: `run()`, `runId()`, `threadId()`, `graphKey()`, `graphVersion()`, `status()`, `state()`, `checkpoint()`, `checkpoints()`, `writes()`, `interrupt()`, `traces()`, `error()`, `meta()`, and `toRunResult()`.
+Methods: `run()`, `runId()`, `threadId()`, `graphKey()`, `graphVersion()`, `status()`, `state()`, `checkpoint()`, `checkpoints()`, `writes()`, `interrupt()`, `traces()`, `error()`, `meta()`, `parent()`, and `toRunResult()`.
+
+`parent()` returns normalized `run.meta.parent` lineage or `null` when a run has no parent.
 
 Stability: stable.
 
@@ -245,7 +252,7 @@ Stability: stable.
 
 Production adapters may implement these contracts:
 
-- `RunStore`: create, find, list, list time-travel children, update.
+- `RunStore`: create, find, list, list child runs, list time-travel children, update.
 - `CheckpointStore`: create, find, latest for run, list for run.
 - `InterruptStore`: create, find, list for run, pending for run, resolve.
 - `WriteStore`: create many, list for checkpoint, list for run.
@@ -272,5 +279,5 @@ Stability: stable, with v1 contract changes documented in `UPGRADE.md`.
 - Per-node retry policies are synchronous inside the current runtime. They retry thrown node exceptions only and may repeat side effects unless nodes use `tasks()->once()`.
 - Run-event observation is additive and does not change `GraphStreamDelta`, Laravel AI `StreamableAgentResponse`, `GraphTool` JSON shape, or provider behavior.
 - GraphTool mapping hooks are adapter conveniences; durable lifecycle observation belongs in `RunEvent` callbacks.
-- Parent/child run metadata keys are reserved for future subgraph and child-run workflows, but full graph-as-subgraph orchestration remains post-v1.
+- Parent/child run metadata is stored under `run.meta.parent` for inspection and lineage. Full graph-as-subgraph orchestration remains post-v1.
 - No new database migrations are required for v1 hardening, supersteps, or experimental time travel.

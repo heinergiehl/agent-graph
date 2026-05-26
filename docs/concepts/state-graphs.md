@@ -38,3 +38,18 @@ return NodeResult::write(['answer' => $answer])
 ```
 
 Stable `meta.node` keys are `id`, `label`, `type`, `status`, `category`, `source`, and `description`.
+
+## Child Run Lineage
+
+Applications can record delegated or nested run relationships without enabling full subgraph orchestration:
+
+```php
+$child = AgentGraph::graph('support_triage')
+    ->input(['input' => $delegatedRequest])
+    ->parent($parentRunId, $parentCheckpointId, 'delegate', relationship: 'tool')
+    ->run();
+```
+
+The runtime stores this lineage under `run.meta.parent` with `run_id`, `checkpoint_id`, `node_id`, `depth`, and `relationship`. Inspectors can read it through `RunSnapshot::parent()` and list children with `AgentGraph::childRuns($parentRunId)`.
+
+This is metadata only. It does not schedule child graphs, propagate cancellation, or define subgraph state isolation.

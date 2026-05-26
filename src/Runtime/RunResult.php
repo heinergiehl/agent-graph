@@ -51,6 +51,11 @@ class RunResult
         return $this->run['error'] ?? null;
     }
 
+    public function meta(): array
+    {
+        return $this->run['meta'] ?? [];
+    }
+
     public function resumeAt(): mixed
     {
         return $this->run['resume_at'] ?? null;

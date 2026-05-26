@@ -11,4 +11,6 @@ Normal resume continues from the latest checkpoint for a run. Time-travel APIs w
 - `AgentGraph::fork($checkpointId, statePatch: [...])` creates a new run, applies a schema-validated state patch, persists an initial fork checkpoint, and continues from either the original `next_nodes` or the successors of `asNode`.
 - `AgentGraph::timeTravelChildren($checkpointId)` lists replay and fork runs whose run metadata points back to the source checkpoint.
 
-Replay and fork runs never rewrite the source run. New checkpoints link back through `parent_checkpoint_id`, while run metadata stores `time_travel.source_checkpoint_id` for source-lineage queries. Parent checkpoint chains describe execution ancestry; source-lineage describes which replays and forks were created from a checkpoint.
+Replay and fork runs never rewrite the source run. New checkpoints link back through `parent_checkpoint_id`, while run metadata stores `time_travel.source_checkpoint_id` for checkpoint-lineage queries.
+
+Replay and fork runs also store `run.meta.parent` pointing to the source run with `relationship` set to `replay` or `fork`. Use `AgentGraph::childRuns($sourceRunId)` for run-level lineage and `AgentGraph::timeTravelChildren($checkpointId)` for checkpoint-specific replay/fork lineage. Parent checkpoint chains describe execution ancestry; source-lineage describes which replays and forks were created from a checkpoint.

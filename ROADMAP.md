@@ -90,6 +90,7 @@ Implemented v1 hardening:
 - Task inspection through `AgentGraph::tasks()`.
 - Bounded GraphTool input, output, and run metadata mapping hooks.
 - Standard `meta.node` conventions for inspector and timeline UIs.
+- Parent/child run lineage metadata through `run.meta.parent` and `AgentGraph::childRuns()`.
 - Compatibility CI matrix for PHP 8.3/8.4, Laravel 12/13, and `laravel/ai ^0.7`.
 
 ## Post-v1 Features

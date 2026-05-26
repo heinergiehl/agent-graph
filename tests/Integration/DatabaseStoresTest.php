@@ -29,6 +29,13 @@ it('persists runs checkpoints writes tasks and memory in the database', function
             'source_run_id' => $run['public_id'],
             'source_checkpoint_id' => 'chk_source',
         ],
+        'parent' => [
+            'run_id' => $run['public_id'],
+            'checkpoint_id' => 'chk_source',
+            'node_id' => null,
+            'depth' => 1,
+            'relationship' => 'replay',
+        ],
     ]);
 
     $checkpoint = $checkpoints->create([
@@ -62,6 +69,9 @@ it('persists runs checkpoints writes tasks and memory in the database', function
         ->and($runs->list(['thread_id' => 'thread-db']))->toHaveCount(2)
         ->and($runs->listTimeTravelChildren('chk_source'))->toHaveCount(1)
         ->and($runs->listTimeTravelChildren('chk_source')[0]['public_id'])->toBe($childRun['public_id'])
+        ->and($runs->listChildRuns($run['public_id']))->toHaveCount(1)
+        ->and($runs->listChildRuns($run['public_id'])[0]['public_id'])->toBe($childRun['public_id'])
+        ->and($runs->listChildRuns('run_missing'))->toBeEmpty()
         ->and($checkpoints->find($checkpoint['checkpoint_id'])['state'])->toBe(['answer' => 'Hello'])
         ->and($checkpoints->latestForRun($run['public_id'])['state'])->toBe(['answer' => 'Hello'])
         ->and($interrupts->listForRun($run['public_id']))->toHaveCount(1)

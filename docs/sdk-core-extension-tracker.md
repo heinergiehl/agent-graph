@@ -22,7 +22,7 @@ This tracker records the generic SDK features that should be completed after the
 | 7 | Timeline API Stabilization | Complete | Core read API | `timeline()` is documented as the stable inspector read model. |
 | 8 | GraphTool Extension Hooks | Complete | Generic adapter | `input()`, `output()`, and `meta()` are implemented without lifecycle persistence hooks. |
 | 9 | AgentNode Text Delta Callback | Complete | Adapter convenience | `AgentNode::onTextDelta()` is additive to `GraphStreamDelta` and `RunEvent` streaming. |
-| 10 | Child Run/Subgraph Metadata | Deferred | Post-v1 core foundation | Parent/child metadata keys are reserved; full subgraph orchestration remains post-v1. |
+| 10 | Child Run/Subgraph Metadata | Foundation Complete | Core inspection convention | `run.meta.parent`, `PendingGraphRun::parent()`, `AgentGraph::childRuns()`, and snapshot/result accessors are implemented; full subgraph orchestration remains post-v1. |
 
 ## Stable Core Candidates
 
@@ -42,7 +42,6 @@ These should be considered for v1 or the next beta if tests and docs are complet
 
 These are useful but should not block the core runtime release:
 
-- Child Run/Subgraph Metadata
 - Full graph-as-subgraph composition
 - Queue-backed true worker parallelism
 
@@ -184,5 +183,13 @@ Candidate run meta:
 - `parent.node_id`
 - `parent.depth`
 - `parent.relationship`
+
+Implemented public surface:
+
+- `PendingGraphRun::parent(string $runId, ?string $checkpointId = null, ?string $nodeId = null, int $depth = 1, string $relationship = 'child'): self`
+- `AgentGraph::childRuns(string $parentRunId, int $limit = 50): array`
+- `RunStore::listChildRuns(string $parentRunId, int $limit = 50): array`
+- `RunResult::meta(): array`
+- `RunSnapshot::parent(): ?array`
 
 Do not implement full subgraph orchestration until the core v1 surface is stable.

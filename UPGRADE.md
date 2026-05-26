@@ -15,6 +15,7 @@ Experimental time-travel APIs are public and tested, but not part of the stable 
 Custom store adapters must implement the v1 contract additions:
 
 - `RunStore::list(array $filters = [], int $limit = 50): array`
+- `RunStore::listChildRuns(string $parentRunId, int $limit = 50): array`
 - `RunStore::listTimeTravelChildren(string $checkpointId, int $limit = 50): array`
 - `CheckpointStore::find(string $checkpointId): ?array`
 - `InterruptStore::find(string $interruptId): ?array`
@@ -27,6 +28,8 @@ Applications that expose memory inspection should resolve `EnumerableMemoryStore
 No new database migration is required for these APIs when using the package stores.
 
 `TaskStore::list()` is read-only and supports `run_id`, `node_id`, `checkpoint_id`, and `status` filters for inspector UIs.
+
+`RunStore::listChildRuns()` is read-only and filters decoded run metadata by `meta.parent.run_id`. The package database store does not require a migration for this metadata-only lineage.
 
 ## Delay scheduling
 
@@ -64,6 +67,8 @@ Failed runs now return structured error arrays with `message`, `exception_class`
 Replay and fork create new runs from existing checkpoint state. They can execute downstream LLM, API, CRM, email, payment, or webhook nodes again.
 
 Before using time travel in production, wrap irreversible side effects in `$context->tasks()->once()` with stable task keys and input hashes. Use `AgentGraph::timeTravelChildren($checkpointId)` to audit replay and fork branches created from a source checkpoint.
+
+Replay and fork now also store `run.meta.parent` with `relationship` set to `replay` or `fork`, so generic inspectors can list them with `AgentGraph::childRuns($sourceRunId)`. This is additive metadata and does not enable full subgraph orchestration.
 
 ## Graph version compatibility
 

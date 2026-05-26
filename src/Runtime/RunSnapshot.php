@@ -89,6 +89,25 @@ class RunSnapshot
         return $this->run['meta'] ?? [];
     }
 
+    public function parent(): ?array
+    {
+        $parent = $this->meta()['parent'] ?? null;
+
+        if (! is_array($parent) || ! is_string($parent['run_id'] ?? null) || $parent['run_id'] === '') {
+            return null;
+        }
+
+        return [
+            'run_id' => $parent['run_id'],
+            'checkpoint_id' => is_string($parent['checkpoint_id'] ?? null) ? $parent['checkpoint_id'] : null,
+            'node_id' => is_string($parent['node_id'] ?? null) ? $parent['node_id'] : null,
+            'depth' => max(1, (int) ($parent['depth'] ?? 1)),
+            'relationship' => is_string($parent['relationship'] ?? null) && $parent['relationship'] !== ''
+                ? $parent['relationship']
+                : 'child',
+        ];
+    }
+
     public function toRunResult(): RunResult
     {
         return new RunResult($this->run, $this->state(), $this->interrupt);

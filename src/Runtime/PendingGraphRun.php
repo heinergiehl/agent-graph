@@ -5,6 +5,7 @@ namespace Heiner\AgentGraph\Runtime;
 use Closure;
 use Heiner\AgentGraph\AgentGraphManager;
 use Heiner\AgentGraph\Graph\GraphDefinition;
+use InvalidArgumentException;
 
 class PendingGraphRun
 {
@@ -40,6 +41,31 @@ class PendingGraphRun
     public function meta(array $meta): self
     {
         $this->meta = $meta;
+
+        return $this;
+    }
+
+    public function parent(string $runId, ?string $checkpointId = null, ?string $nodeId = null, int $depth = 1, string $relationship = 'child'): self
+    {
+        if (trim($runId) === '') {
+            throw new InvalidArgumentException('Parent run id must not be empty.');
+        }
+
+        if ($depth < 1) {
+            throw new InvalidArgumentException('Parent depth must be at least 1.');
+        }
+
+        if (trim($relationship) === '') {
+            throw new InvalidArgumentException('Parent relationship must not be empty.');
+        }
+
+        $this->meta['parent'] = [
+            'run_id' => $runId,
+            'checkpoint_id' => $checkpointId,
+            'node_id' => $nodeId,
+            'depth' => $depth,
+            'relationship' => $relationship,
+        ];
 
         return $this;
     }

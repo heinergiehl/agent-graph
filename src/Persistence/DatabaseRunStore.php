@@ -58,6 +58,21 @@ class DatabaseRunStore implements RunStore
             ->all();
     }
 
+    public function listChildRuns(string $parentRunId, int $limit = 50): array
+    {
+        $limit = max(1, min($limit, 500));
+
+        return $this->db->table($this->table())
+            ->orderByDesc('id')
+            ->limit(1000)
+            ->get()
+            ->map(fn ($record) => $this->decodeRecord($record, ['input', 'error', 'meta']))
+            ->filter(fn (array $run): bool => ($run['meta']['parent']['run_id'] ?? null) === $parentRunId)
+            ->take($limit)
+            ->values()
+            ->all();
+    }
+
     public function listTimeTravelChildren(string $checkpointId, int $limit = 50): array
     {
         $limit = max(1, min($limit, 500));

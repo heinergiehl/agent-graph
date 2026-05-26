@@ -16,11 +16,29 @@ it('lists replay and fork children for a source checkpoint newest first', functi
     $forked = AgentGraph::fork($sourceCheckpoint['checkpoint_id'], ['input' => 'forked']);
 
     $children = AgentGraph::timeTravelChildren($sourceCheckpoint['checkpoint_id']);
+    $runChildren = AgentGraph::childRuns($original->runId());
 
     expect($children)->toHaveCount(2)
         ->and(array_column($children, 'public_id'))->toBe([$forked->runId(), $replayed->runId()])
         ->and($children[0]['meta']['time_travel']['mode'])->toBe('fork')
-        ->and($children[1]['meta']['time_travel']['mode'])->toBe('replay');
+        ->and($children[1]['meta']['time_travel']['mode'])->toBe('replay')
+        ->and($runChildren)->toHaveCount(2)
+        ->and(array_column($runChildren, 'public_id'))->toBe([$forked->runId(), $replayed->runId()])
+        ->and($replayed->meta()['time_travel']['source_checkpoint_id'])->toBe($sourceCheckpoint['checkpoint_id'])
+        ->and($replayed->meta()['parent'])->toMatchArray([
+            'run_id' => $original->runId(),
+            'checkpoint_id' => $sourceCheckpoint['checkpoint_id'],
+            'node_id' => null,
+            'depth' => 1,
+            'relationship' => 'replay',
+        ])
+        ->and($forked->meta()['parent'])->toMatchArray([
+            'run_id' => $original->runId(),
+            'checkpoint_id' => $sourceCheckpoint['checkpoint_id'],
+            'node_id' => null,
+            'depth' => 1,
+            'relationship' => 'fork',
+        ]);
 });
 
 it('filters by time travel source checkpoint rather than parent checkpoint alone', function () {
@@ -47,6 +65,26 @@ it('limits time travel children and returns an empty list for unknown checkpoint
 
     expect(AgentGraph::timeTravelChildren($sourceCheckpoint['checkpoint_id'], limit: 1))->toHaveCount(1)
         ->and(AgentGraph::timeTravelChildren('chk_missing'))->toBeEmpty();
+});
+
+it('increments parent depth when time travelling from an existing child run', function () {
+    AgentGraph::define(LineageGraph::definition('lineage_nested_depth'));
+
+    $parent = AgentGraph::graph('lineage_nested_depth')->input(['input' => 'parent'])->run();
+    $child = AgentGraph::graph('lineage_nested_depth')
+        ->input(['input' => 'child'])
+        ->parent($parent->runId(), depth: 3, relationship: 'tool')
+        ->run();
+    $childCheckpoint = app('agent-graph.checkpoints')->listForRun($child->runId())[0];
+
+    $replayed = AgentGraph::replay($childCheckpoint['checkpoint_id']);
+
+    expect($replayed->meta()['parent'])->toMatchArray([
+        'run_id' => $child->runId(),
+        'checkpoint_id' => $childCheckpoint['checkpoint_id'],
+        'depth' => 4,
+        'relationship' => 'replay',
+    ]);
 });
 
 final class LineageGraph
