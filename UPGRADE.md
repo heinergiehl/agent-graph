@@ -1,8 +1,8 @@
 # Upgrade Guide
 
-## 0.9 Beta To v1
+## 0.12 Beta To v1
 
-AgentGraph 0.9 is a public beta. v1 freezes the durable runtime core, documents the public API, and tightens validation around state, resume, queues, and time travel.
+AgentGraph 0.12 is the active public beta. v1 freezes the durable runtime core, documents the public API, and tightens validation around state, resume, queues, and time travel.
 
 ## Public API stability
 

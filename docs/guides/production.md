@@ -15,6 +15,19 @@ Recommended production settings:
 - avoid storing raw secrets in state, memory, traces, task input, or interrupt payloads
 - avoid doing slow network I/O inside run-event listeners
 
+## Memory tenancy
+
+In multi-tenant apps, include `tenant` scope on every customer-specific memory write and read. Add `actor` scope for user-specific memory inside a tenant. Reserve `application` or `global` scope for product defaults that contain no customer or user data.
+
+```php
+$context->memory()->write(
+    scopes: ['tenant' => (string) $tenantId, 'actor' => (string) $userId],
+    namespace: 'support.profile',
+    key: 'preferences',
+    value: ['language' => 'de'],
+);
+```
+
 ## Runtime recovery
 
 Use `AgentGraph::inspect($runId, withHistory: true, withTraces: true)` for admin and recovery screens. It returns the latest state, current checkpoint, checkpoint history, writes, pending interrupt, traces, error, and metadata without changing run state.

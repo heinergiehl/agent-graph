@@ -10,6 +10,8 @@ AgentGraph does not replace Laravel AI providers, agents, tools, streaming, or s
 
 The v1 target is a hardened MVP: stable graph execution, checkpoints, interrupts/resume, idempotent tasks, scoped memory, traces, queues, run-event observation, Laravel AI agent nodes, and graphs as tools. Experimental checkpoint inspection, replay, and forking APIs are available for post-v1-style workflows. Deterministic superstep fan-out/fan-in and per-node retry policies are available for LangGraph-style workflows; queue-backed worker parallelism, pgvector semantic memory, OpenTelemetry export, and visual workflow editing are intentionally outside v1.
 
+CI currently validates the 0.12 beta line against PHP 8.3/8.4, Laravel 12/13, and `laravel/ai ^0.7`. `laravel/ai ^1.0` stays declared for forward compatibility but should remain non-blocking until upstream tags a 1.x release.
+
 ## Installation
 
 ```bash
@@ -304,7 +306,7 @@ Use `output()` when a parent agent needs a narrower JSON response. Long-running 
 
 ## Stable v1 Public APIs
 
-The intended v1-stable API surface is documented in [`docs/api-reference.md`](docs/api-reference.md). In short:
+The 0.12 beta exposes the intended v1-stable API surface documented in [`docs/api-reference.md`](docs/api-reference.md). In short:
 
 - `StateGraph` for fluent graph definitions.
 - `Node` and `NodeContext` for runtime node implementation.

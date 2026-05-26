@@ -4,7 +4,7 @@ All notable changes to AgentGraph are documented here.
 
 ## v1.0.0 - Unreleased
 
-Target: hardened MVP API stability after 0.9 sandbox and chatbot integration testing.
+Target: hardened MVP API stability after 0.12 sandbox and chatbot integration testing.
 
 ### Added
 
@@ -50,6 +50,7 @@ Target: hardened MVP API stability after 0.9 sandbox and chatbot integration tes
 
 ### Added
 
+- Added 0.12 beta release hardening docs, compatibility notes, and Composer branch alias alignment.
 - Added per-node retry policies through `StateGraph::retry()` and `RetryPolicy`.
 - Added `NodePolicy` metadata on compiled graph definitions through `nodePolicy()` and `nodePolicies()`.
 - Added `GraphNodeRetrying`, normalized `node.retrying` run events, and `node.retrying` trace records.
