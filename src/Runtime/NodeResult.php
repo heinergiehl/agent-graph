@@ -47,6 +47,19 @@ class NodeResult
         return $this;
     }
 
+    public function withNodeMeta(array $meta): self
+    {
+        $existing = is_array($this->meta['node'] ?? null) ? $this->meta['node'] : [];
+        $this->meta['node'] = array_merge($existing, $meta);
+
+        return $this;
+    }
+
+    public function skipped(): self
+    {
+        return $this->withNodeMeta(['status' => 'skipped']);
+    }
+
     public function status(): string
     {
         return $this->status;

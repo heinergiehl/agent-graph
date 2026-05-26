@@ -7,6 +7,7 @@ class CheckpointSnapshot
     public function __construct(
         protected array $checkpoint,
         protected array $writes = [],
+        protected ?array $previousCheckpoint = null,
     ) {}
 
     public function checkpoint(): array
@@ -58,6 +59,26 @@ class CheckpointSnapshot
         }
 
         return $state[$key] ?? $default;
+    }
+
+    public function stateBefore(?string $key = null, mixed $default = null): mixed
+    {
+        $state = $this->previousCheckpoint['state'] ?? null;
+
+        if ($state === null) {
+            return $key === null ? null : $default;
+        }
+
+        if ($key === null) {
+            return $state;
+        }
+
+        return $state[$key] ?? $default;
+    }
+
+    public function stateAfter(?string $key = null, mixed $default = null): mixed
+    {
+        return $this->state($key, $default);
     }
 
     public function nextNodes(): array

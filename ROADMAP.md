@@ -19,7 +19,7 @@ Implemented and ready for sandbox testing:
 - Laravel AI `AgentNode`, including streamed `TextDelta` handling.
 - `GraphTool` for durable graph execution from Laravel AI tools.
 - Queue jobs, cache locks, install/make/doctor/prune commands.
-- Runtime inspection with run snapshots, run listing, checkpoint writes, pending interrupts, and optional traces.
+- Runtime inspection with run snapshots, run listing, checkpoint writes, pending interrupts, optional traces, and read-only run timelines.
 - Experimental checkpoint inspection, replay, fork, and lineage APIs for time-travel workflows.
 - State schema key/type validation for run input, resume, state edit, fork, and node writes.
 - Safe state-edit resume with graph-schema validation.
@@ -41,6 +41,7 @@ Implemented v1 hardening:
 
 - Public API reference for `StateGraph`, `Node`, `NodeContext`, `NodeResult`, `AgentGraph`, `AgentNode`, `GraphTool`, runtime DTOs, and store contracts.
 - Runtime inspection APIs for active, completed, interrupted, delayed, failed, and cancelled runs.
+- Generic run timeline inspector with state diffs, redaction, node metadata, and skipped-step status.
 - Safe state-edit resume with schema key/type validation.
 - Queue retry guards for final runs, stale delay interrupts, latest-checkpoint resume, and duplicate delayed jobs.
 - Experimental checkpoint inspection, replay, fork, and lineage APIs.
@@ -54,7 +55,7 @@ These are useful but intentionally outside the v1 MVP:
 - Reducer conflict handling for concurrent branch writes.
 - Stateful subgraphs with inherited or isolated checkpoint stores.
 - Graph-as-subgraph composition separate from graph-as-tool.
-- Visual timeline tooling and advanced time-travel controls beyond the experimental replay/fork/lineage APIs.
+- Visual timeline tooling and advanced time-travel controls beyond the generic timeline and experimental replay/fork/lineage APIs.
 - Visual state inspection and state editing UI.
 - JSON graph import/export and schema serialization.
 - Semantic/vector memory adapters, including optional pgvector support.

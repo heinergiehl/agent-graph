@@ -45,6 +45,7 @@ class GraphRuntime
         protected MemoryStore $memory,
         protected TraceStore $traces,
         protected LockProvider $locks,
+        protected ?RunInspector $inspector = null,
     ) {}
 
     public function run(GraphDefinition $graph, string $threadId, array $input = [], array $meta = []): RunResult
@@ -143,9 +144,15 @@ class GraphRuntime
             return null;
         }
 
+        $previousCheckpointId = $checkpoint['parent_checkpoint_id'] ?? null;
+        $previousCheckpoint = is_string($previousCheckpointId) && $previousCheckpointId !== ''
+            ? $this->checkpoints->find($previousCheckpointId)
+            : null;
+
         return new CheckpointSnapshot(
             checkpoint: $checkpoint,
             writes: $withWrites ? $this->writes->listForCheckpoint($checkpointId) : [],
+            previousCheckpoint: $previousCheckpoint,
         );
     }
 
@@ -225,6 +232,11 @@ class GraphRuntime
         );
     }
 
+    public function timeline(string $runId, bool $includeState = false, bool $includeDiff = true): ?RunTimeline
+    {
+        return $this->inspector()->timeline($runId, $includeState, $includeDiff);
+    }
+
     public function runs(array $filters = [], int $limit = 50): array
     {
         return $this->runs->list($filters, $limit);
@@ -267,6 +279,7 @@ class GraphRuntime
 
                 if ($result->status() === 'failed') {
                     $run = $this->runs->update($run['public_id'], ['status' => 'failed', 'error' => ['message' => $result->failureMessage(), 'meta' => $result->meta()]]);
+                    $this->traces->record($run['public_id'], 'node.failed', ['node' => $nodeId, 'message' => $result->failureMessage(), 'meta' => $result->meta()]);
                     event(new GraphNodeFailed($run['public_id'], $run['thread_id'], $graph->key(), $nodeId, $run['error']));
                     event(new GraphRunFailed($run['public_id'], $run['thread_id'], $graph->key(), payload: $run['error']));
 
@@ -535,5 +548,16 @@ class GraphRuntime
         }
 
         return $reducers;
+    }
+
+    protected function inspector(): RunInspector
+    {
+        return $this->inspector ??= new RunInspector(
+            runs: $this->runs,
+            checkpoints: $this->checkpoints,
+            writes: $this->writes,
+            interrupts: $this->interrupts,
+            traces: $this->traces,
+        );
     }
 }

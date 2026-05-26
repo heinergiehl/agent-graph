@@ -36,6 +36,7 @@ All methods are available through the `AgentGraph` facade and `AgentGraphManager
 - `resumeWithStateEdit(string $runId, string $interruptId, array $statePatch, ?string $resolvedBy = null): RunResult` resolves a `state_edit` interrupt after strict schema validation.
 - `cancel(string $runId, array $meta = []): RunResult` marks a run cancelled.
 - `inspect(string $runId, bool $withHistory = false, bool $withTraces = false): ?RunSnapshot` returns a read-only run snapshot without mutating runtime state.
+- `timeline(string $runId, bool $includeState = false, bool $includeDiff = true): ?RunTimeline` returns ordered, read-only timeline steps built from checkpoints, writes, interrupts, failures, and state diffs.
 - `runs(array $filters = [], int $limit = 50): array` lists recent runs. Supported filters are `status`, `thread_id`, `graph_key`, and `graph_version`.
 - `tool(string $graphKey): GraphTool` exposes a graph as a Laravel AI tool.
 
@@ -94,6 +95,8 @@ Stability: stable.
 - `NodeResult::end(array $writes = []): NodeResult`
 - `NodeResult::fail(string $message, array $meta = []): NodeResult`
 - `withMeta(array $meta): self`
+- `withNodeMeta(array $meta): self` stores generic inspectable node metadata under `meta.node`.
+- `skipped(): self` marks the node metadata status as `skipped`.
 
 Accessor methods include `status()`, `writes()`, `nextNode()`, `interruptType()`, `interruptPayload()`, `failureMessage()`, and `meta()`.
 
@@ -119,11 +122,39 @@ Methods: `run()`, `runId()`, `threadId()`, `graphKey()`, `graphVersion()`, `stat
 
 Stability: stable.
 
+### `RunTimeline`
+
+Returned by `timeline()`.
+
+Methods: `run()`, `runId()`, `threadId()`, `graphKey()`, `graphVersion()`, `status()`, `steps()`, and `toArray()`.
+
+Timeline steps are ordered by checkpoint step. Full `state_before` and `state_after` payloads are omitted unless `includeState` is true. `state_diff` is included by default and uses the same redaction and string truncation policy as traces.
+
+Stability: stable.
+
+### `RunTimelineStep`
+
+Returned inside `RunTimeline::steps()`.
+
+Methods: `step()`, `nodeId()`, `status()`, `checkpointId()`, `previousCheckpointId()`, `writes()`, `interrupt()`, `error()`, `meta()`, `stateBefore()`, `stateAfter()`, `stateDiff()`, and `toArray()`.
+
+Statuses are inferred from explicit node metadata, interrupts, failed latest checkpoints, or completed checkpoints.
+
+Stability: stable.
+
+### `StateDiff`
+
+Returned by `RunTimelineStep::stateDiff()` when diffs are included.
+
+Methods: `added()`, `changed()`, `removed()`, and `toArray()`.
+
+Stability: stable.
+
 ### `CheckpointSnapshot`
 
 Returned by `checkpoint()`.
 
-Methods: `checkpoint()`, `checkpointId()`, `runId()`, `threadId()`, `graphKey()`, `graphVersion()`, `parentCheckpointId()`, `step()`, `state()`, `nextNodes()`, `completedNodes()`, `meta()`, and `writes()`.
+Methods: `checkpoint()`, `checkpointId()`, `runId()`, `threadId()`, `graphKey()`, `graphVersion()`, `parentCheckpointId()`, `step()`, `state()`, `stateBefore()`, `stateAfter()`, `nextNodes()`, `completedNodes()`, `meta()`, and `writes()`.
 
 Stability: experimental public API.
 

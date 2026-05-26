@@ -10,6 +10,7 @@ use Heiner\AgentGraph\Runtime\GraphRuntime;
 use Heiner\AgentGraph\Runtime\PendingGraphRun;
 use Heiner\AgentGraph\Runtime\RunResult;
 use Heiner\AgentGraph\Runtime\RunSnapshot;
+use Heiner\AgentGraph\Runtime\RunTimeline;
 use InvalidArgumentException;
 
 class AgentGraphManager
@@ -75,6 +76,11 @@ class AgentGraphManager
     public function inspect(string $runId, bool $withHistory = false, bool $withTraces = false): ?RunSnapshot
     {
         return $this->runtime->inspect($runId, $withHistory, $withTraces);
+    }
+
+    public function timeline(string $runId, bool $includeState = false, bool $includeDiff = true): ?RunTimeline
+    {
+        return $this->runtime->timeline($runId, $includeState, $includeDiff);
     }
 
     public function runs(array $filters = [], int $limit = 50): array

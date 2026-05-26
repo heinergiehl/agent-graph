@@ -100,6 +100,20 @@ $snapshot->interrupt();    // current pending interrupt, if any
 $snapshot->traces();       // populated when withTraces is true
 ```
 
+Build a replayable timeline for debuggers or admin UIs:
+
+```php
+$timeline = AgentGraph::timeline($runId, includeState: false, includeDiff: true);
+
+foreach ($timeline->steps() as $step) {
+    $step->nodeId();
+    $step->status();       // completed, interrupted, delayed, failed, skipped
+    $step->writes();
+    $step->interrupt();
+    $step->stateDiff();
+}
+```
+
 List recent runs for dashboards, admin screens, or recovery tools:
 
 ```php
@@ -119,6 +133,8 @@ Inspect a specific checkpoint:
 $checkpoint = AgentGraph::checkpoint($checkpointId, withWrites: true);
 
 $checkpoint->state();
+$checkpoint->stateBefore(); // parent checkpoint state, or null
+$checkpoint->stateAfter();  // alias for this checkpoint's state
 $checkpoint->nextNodes();
 $checkpoint->writes();
 ```
@@ -204,6 +220,7 @@ The intended v1-stable API surface is documented in [`docs/api-reference.md`](do
 - `NodeResult` for writes, gotos, interrupts, completion, and failures.
 - `AgentGraph` facade for defining, running, resuming, state-edit resuming, inspecting, listing, cancelling, and exposing tools.
 - `RunSnapshot` for read-only runtime inspection.
+- `RunTimeline` for ordered checkpoint/write/interrupt/failure timelines with optional state diffs.
 - `CheckpointSnapshot` for read-only checkpoint inspection and experimental time-travel workflows.
 - `AgentNode` for Laravel AI agent execution.
 - `GraphTool` for Laravel AI tool integration.
@@ -220,6 +237,7 @@ The intended v1-stable API surface is documented in [`docs/api-reference.md`](do
 - Scope memory by tenant or actor before using it in multi-tenant apps.
 - Use idempotent task keys for every external side effect.
 - Use `inspect()` and `runs()` for recovery/admin UIs instead of reading package tables directly.
+- Use `timeline()` for debugger and trace UIs instead of reconstructing checkpoint history manually.
 - Use `timeTravelChildren()` to inspect replay/fork lineage for a source checkpoint.
 - Use `resumeWithStateEdit()` for manual state correction flows.
 - Keep graph definitions generic; product-specific UI belongs in consuming apps.
