@@ -22,6 +22,9 @@ return [
 
     'execution' => [
         'mode' => env('AGENT_GRAPH_EXECUTION_MODE', 'sync'),
+        'queue_connection' => env('AGENT_GRAPH_EXECUTION_QUEUE_CONNECTION'),
+        'queue' => env('AGENT_GRAPH_EXECUTION_QUEUE'),
+        'node_lease_seconds' => env('AGENT_GRAPH_EXECUTION_NODE_LEASE_SECONDS', 300),
     ],
 
     'tables' => [

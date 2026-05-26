@@ -2,17 +2,24 @@
 
 namespace Heiner\AgentGraph\Queue;
 
+use Heiner\AgentGraph\AgentGraphManager;
+use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Queue\SerializesModels;
 
 class NodeExecutionJob implements ShouldQueue
 {
-    public function __construct(
-        public readonly string $runId,
-        public readonly string $nodeId,
-        public readonly array $state = [],
-        public readonly int $step = 0,
-        public readonly int $scheduleIndex = 0,
-    ) {}
+    use Dispatchable;
+    use InteractsWithQueue;
+    use Queueable;
+    use SerializesModels;
 
-    public function handle(): void {}
+    public function __construct(public readonly string $executionId) {}
+
+    public function handle(AgentGraphManager $manager): void
+    {
+        $manager->executeQueuedNode($this->executionId);
+    }
 }

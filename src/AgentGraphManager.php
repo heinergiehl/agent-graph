@@ -135,6 +135,16 @@ class AgentGraphManager
         return $this->runtime->expireInterrupts($now);
     }
 
+    public function executeQueuedNode(string $executionId): ?array
+    {
+        return $this->runtime->executeQueuedNode($executionId, $this->graphs);
+    }
+
+    public function continueQueuedSuperstep(string $runId, int $step): ?RunResult
+    {
+        return $this->runtime->continueQueuedSuperstep($runId, $step, $this->graphs);
+    }
+
     public function timeTravelChildren(string $checkpointId, int $limit = 50): array
     {
         return $this->runtime->timeTravelChildren($checkpointId, $limit);

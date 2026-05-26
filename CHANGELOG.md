@@ -36,12 +36,12 @@ Target: hardened MVP API stability after 0.12 sandbox and chatbot integration te
 - Added `MemoryManager`, memory extraction/vector contracts, default deterministic memory extraction, and memory export/delete privacy APIs.
 - Added interrupt expiry policies through `InterruptPolicy`, `NodeResult::withInterruptPolicy()`, and `AgentGraph::expireInterrupts()`.
 - Added `StateSchema` builder for structured schema declarations.
-- Added experimental node execution records for opt-in `queued_supersteps` mode.
+- Added worker-backed queued supersteps through `NodeExecutionJob`, `ContinueSuperstepJob`, and leased node execution records.
 
 ### Changed
 
 - Store contracts now include checkpoint lookup, checkpoint write listing, interrupt listing, run listing, child-run listing, and time-travel child listing methods used by inspection and time travel.
-- Store contracts now include active run lookup, interrupt expiry, memory privacy operations, task lease inspection, and node execution records.
+- Store contracts now include active run lookup, interrupt expiry, memory privacy operations, task lease inspection, and worker node execution lifecycle methods.
 - `TaskStore` adapters must expose read-only task listing for inspector UIs.
 - Package migrations now use `publishesMigrations()` and `AgentGraphMigration` so migration connection can be configured.
 - Failed run payloads now include structured error metadata: `message`, `exception_class`, `code`, `previous`, and optional `details`/`meta`.
@@ -52,6 +52,7 @@ Target: hardened MVP API stability after 0.12 sandbox and chatbot integration te
 
 - Delayed queue continuation no-ops for final runs and stale delay interrupts.
 - Queue retry coverage verifies duplicate delayed jobs do not duplicate checkpoints or writes.
+- Queued superstep jobs no-op for final runs, reject duplicate active node execution, and aggregate each superstep once.
 - State-edit resume fails before resolving interrupts when the interrupt ID is stale, wrong, or not a `state_edit` interrupt.
 - Invalid node writes fail the run through the normal failed-run path instead of persisting invalid state.
 - Time-travel fork patches validate schema keys and types before creating a new run.

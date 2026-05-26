@@ -8,7 +8,7 @@ AgentGraph does not replace Laravel AI providers, agents, tools, streaming, or s
 
 `0.12.x` is a public beta intended for sandbox and real chatbot integration testing. Breaking changes are allowed before v1, but they will be documented in `CHANGELOG.md` and `UPGRADE.md`.
 
-The v1 target is a hardened MVP: stable graph execution, checkpoints, interrupts/resume, idempotent tasks, scoped memory, traces, queues, run-event observation, Laravel AI agent nodes, graphs as tools, native subgraph nodes, and durable app workflow sessions. Experimental checkpoint inspection, replay, forking, queued-superstep execution records, and vector memory contracts are available for post-v1-style workflows. Full external worker scheduling, OpenTelemetry export, and visual workflow editing remain outside the stable v1 core.
+The v1 target is a hardened MVP: stable graph execution, checkpoints, interrupts/resume, idempotent tasks, scoped memory, traces, queues, run-event observation, Laravel AI agent nodes, graphs as tools, native subgraph nodes, and durable app workflow sessions. Experimental checkpoint inspection, replay, forking, worker-backed queued supersteps, and vector memory contracts are available for post-v1-style workflows. OpenTelemetry export and visual workflow editing remain outside the stable v1 core.
 
 CI currently validates the 0.12 beta line against PHP 8.3/8.4, Laravel 12/13, and `laravel/ai ^0.7`. `laravel/ai ^1.0` stays declared for forward compatibility but should remain non-blocking until upstream tags a 1.x release.
 
@@ -453,6 +453,7 @@ The 0.12 beta exposes the intended v1-stable API surface documented in [`docs/ap
 - Run and monitor the published migrations.
 - Use database stores as the source of truth.
 - Configure queue workers for background and delayed graph continuation.
+- Keep `execution.mode=sync` unless a graph is registered during app boot and workers can process `NodeExecutionJob` / `ContinueSuperstepJob`.
 - Keep trace redaction keys current for your domain.
 - Scope memory by tenant or actor before using it in multi-tenant apps.
 - Use idempotent task keys for every external side effect.
@@ -473,4 +474,4 @@ The 0.12 beta exposes the intended v1-stable API surface documented in [`docs/ap
 
 ## Status
 
-This MVP includes the durable runtime core, deterministic supersteps, dynamic `Send` fan-out, per-node retry/timeout/concurrency policies, database and in-memory stores, scoped memory, interrupts with expiry, task leases, traces, queue jobs, Laravel AI adapter, graph tool adapters, subgraph nodes, run-event observation, commands, tests, docs, and experimental checkpoint replay/fork APIs. Post-MVP work includes full external worker scheduling, visual timeline tooling, production pgvector adapters, OpenTelemetry export, and visual editor serialization.
+This MVP includes the durable runtime core, deterministic supersteps, dynamic `Send` fan-out, per-node retry/timeout/concurrency policies, database and in-memory stores, scoped memory, interrupts with expiry, task leases, traces, queue jobs, worker-backed queued supersteps, Laravel AI adapter, graph tool adapters, subgraph nodes, run-event observation, commands, tests, docs, and experimental checkpoint replay/fork APIs. Post-MVP work includes visual timeline tooling, production pgvector adapters, OpenTelemetry export, and visual editor serialization.

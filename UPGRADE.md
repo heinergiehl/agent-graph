@@ -39,7 +39,9 @@ New optional contracts are available for package/default adapters and custom ext
 
 Applications that expose memory inspection should resolve `EnumerableMemoryStore::class` for namespace listing. Custom memory stores can implement it with `listNamespace(array $scopes, string $namespace): array`.
 
-Run the new additive package migration when using the package stores. It adds interrupt expiry and experimental node execution records. Existing published migrations remain valid.
+Run the new additive package migrations when using the package stores. They add interrupt expiry and queued node execution records. Existing published migrations remain valid.
+
+`NodeExecutionStore` now owns the queued node lifecycle for `queued_supersteps`: schedule, find, claim, complete, interrupt, fail, and list by run/step. Custom adapters must persist execution IDs, node state, base state, resume payloads, leases, and final result payloads.
 
 `TaskStore::list()` is read-only and supports `run_id`, `node_id`, `checkpoint_id`, and `status` filters for inspector UIs.
 
@@ -93,6 +95,8 @@ Task leases use `agent-graph.tasks.lease_seconds`. Choose a lease duration longe
 
 Interrupt expiry is opt-in through `NodeResult::withInterruptPolicy(InterruptPolicy::expiresAfter(...))`. Call `AgentGraph::expireInterrupts()` from scheduled maintenance if your app uses expiring review flows.
 
+`queued_supersteps` is opt-in through `agent-graph.execution.mode`. In that mode, `run()` and `resume()` usually return `running` after scheduling queue jobs. Workers must boot the same graph definitions and process `NodeExecutionJob` and `ContinueSuperstepJob` on the configured queue.
+
 ## Laravel AI compatibility
 
 AgentGraph only uses Laravel AI public contracts, response DTOs, and streaming events. Do not build custom adapters that depend on `Laravel\Ai\Gateway`, `Laravel\Ai\Providers`, provider concerns, or Laravel AI's Vercel protocol internals from AgentGraph code.
@@ -126,4 +130,4 @@ Before upgrading to v1:
 5. Re-run any chatbot integration tests that consume `GraphTool` JSON.
 6. Update custom store adapters for the v1 contract additions.
 7. Review state schemas for value types that were previously accepted loosely.
-8. Run the additive hardening migration for interrupt expiry and node execution records.
+8. Run the additive hardening migrations for interrupt expiry and queued node execution records.

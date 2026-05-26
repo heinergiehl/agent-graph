@@ -68,7 +68,7 @@ All methods are available through the `AgentGraph` facade and `AgentGraphManager
 - `runs(array $filters = [], int $limit = 50): array` lists recent runs. Supported filters are `status`, `thread_id`, `graph_key`, and `graph_version`.
 - `childRuns(string $parentRunId, int $limit = 50): array` lists runs whose metadata points to a parent run under `meta.parent.run_id`.
 - `tasks(array $filters = [], int $limit = 50): array` lists idempotent task records for inspection. Supported filters are `run_id`, `node_id`, `checkpoint_id`, and `status`.
-- `nodeExecutions(string $runId): array` lists experimental queued-superstep node execution records.
+- `nodeExecutions(string $runId): array` lists queued-superstep node execution records.
 - `expireInterrupts(mixed $now = null): int` expires pending interrupts whose `expires_at` is due.
 - `tool(string $graphKey): GraphTool` exposes a graph as a Laravel AI tool.
 - `durableTool(string $graphKey): DurableGraphTool` exposes an active-thread durable graph tool for Laravel AI.
@@ -193,6 +193,8 @@ Returned by run, resume, cancel, replay, and fork operations.
 Methods: `runId()`, `threadId()`, `status()`, `completed()`, `interrupted()`, `failed()`, `cancelled()`, `error()`, `meta()`, `resumeAt()`, `state()`, `interrupt()`, and `events()`.
 
 `events()` returns an array of `RunEvent` objects when collection was enabled, otherwise an empty array.
+
+When `agent-graph.execution.mode` is `queued_supersteps`, `run()` and `resume()` usually return `status() === 'running'` after scheduling node jobs. Read the final status through `inspect()` after workers process `NodeExecutionJob` and `ContinueSuperstepJob`.
 
 Stability: stable.
 
@@ -323,7 +325,7 @@ Production adapters may implement these contracts:
 - `LeasingTaskStore`: extends task storage with active lease inspection.
 - `MemoryStore`: write, read, search, export/delete privacy APIs.
 - `EnumerableMemoryStore`: extends `MemoryStore` with `listNamespace(array $scopes, string $namespace): array`.
-- `NodeExecutionStore`: record and list experimental queued-superstep node execution records.
+- `NodeExecutionStore`: schedule, find, claim, complete, interrupt, fail, and list queued-superstep node execution records.
 - `MemoryExtractor`, `EmbeddingGenerator`, and `VectorMemoryStore`: optional agentic/vector memory extension contracts.
 - `DelayScheduler`: schedule delayed resume payloads for delay interrupts.
 
@@ -340,10 +342,11 @@ Stability: stable, with v1 contract changes documented in `UPGRADE.md`.
 - Normal `resume()` remains compatible with extra unknown payload keys, but known schema keys are type-validated.
 - `resumeStrict()` rejects unknown state keys for public endpoints that need stricter input control.
 - Replay and fork require persisted `graph_version` to match the currently registered graph definition.
-- Supersteps store one checkpoint per frontier and preserve dynamic `Send` schedules in checkpoint metadata without a database migration.
+- Supersteps store one checkpoint per frontier and preserve dynamic `Send` schedules in checkpoint metadata.
+- `queued_supersteps` is opt-in and uses Laravel Queue jobs for worker-backed node execution. Sync execution remains the default.
 - Parallel interrupts inside a multi-node frontier fail the run with a clear error; single-node interrupts keep existing resume behavior.
 - Per-node retry policies are synchronous inside the current runtime. They retry thrown node exceptions only and may repeat side effects unless nodes use `tasks()->once()`.
 - Run-event observation is additive and does not change `GraphStreamDelta`, Laravel AI `StreamableAgentResponse`, `GraphTool` JSON shape, or provider behavior.
 - GraphTool mapping hooks are adapter conveniences; durable active-thread semantics belong in `DurableGraphSession` or `DurableGraphTool`.
 - Parent/child run metadata is stored under `run.meta.parent` for inspection and lineage. `SubgraphNode` uses this same lineage.
-- The hardening migration adds interrupt expiry and experimental node execution records. Existing published migrations remain valid; apps must run the additive migration.
+- The hardening migrations add interrupt expiry and queued node execution records. Existing published migrations remain valid; apps must run the additive migrations.

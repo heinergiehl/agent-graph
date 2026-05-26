@@ -34,7 +34,7 @@ Implemented and ready for sandbox testing:
 - AgentNode metadata writers for structured output, tool calls, tool results, steps, and stream events.
 - Memory manager, memory extraction/vector contracts, and privacy export/delete helpers.
 - Interrupt expiry policies and pruning support.
-- Experimental queued-superstep node execution records.
+- Worker-backed queued supersteps with node execution records.
 - Delayed continuation retry guards for final runs and stale delay interrupts.
 - Fresh Laravel sandbox validation through a local path repository.
 
@@ -105,14 +105,14 @@ Implemented v1 hardening:
 - Native `SubgraphNode` execution using the same lineage metadata.
 - Durable sessions and durable graph tools for active-run-per-thread app workflows.
 - Task lease hardening using existing `locked_until` task storage.
-- Interrupt expiry and experimental queued-superstep node execution persistence through an additive hardening migration.
+- Interrupt expiry and queued-superstep node execution persistence through additive hardening migrations.
+- Worker-backed queued supersteps for opt-in multi-worker fan-out.
 - Compatibility CI matrix for PHP 8.3/8.4, Laravel 12/13, and `laravel/ai ^0.7`.
 
 ## Post-v1 Features
 
 These are useful but intentionally outside the v1 MVP:
 
-- Full external worker scheduling for queued supersteps.
 - Advanced subgraph orchestration policies beyond `SubgraphNode` child runs.
 - Visual timeline tooling and advanced time-travel controls beyond the generic timeline and experimental replay/fork/lineage APIs.
 - Visual state inspection and state editing UI.

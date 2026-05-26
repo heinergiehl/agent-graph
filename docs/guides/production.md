@@ -59,6 +59,8 @@ Keep external side effects inside `$context->tasks()->once()` so queue retries d
 
 Task leases prevent duplicate active execution for the same idempotency key. Completed tasks continue to return their stored result, and reusing a key with different input still fails.
 
+`queued_supersteps` is opt-in. Configure `agent-graph.execution.mode=queued_supersteps`, optionally set `agent-graph.execution.queue_connection` and `agent-graph.execution.queue`, and run Laravel workers for that queue. Queued workers must boot the same graph definitions as the process that started or resumed the run.
+
 ## Node retry policies
 
 Use `StateGraph::retry($nodeId, maxAttempts: ..., delayMs: ..., backoff: ..., maxDelayMs: ...)` for transient exceptions such as flaky APIs or temporary network failures. `maxAttempts` includes the first attempt.
@@ -69,7 +71,9 @@ Retrying can execute node code more than once. Keep irreversible side effects in
 
 ## Superstep fan-out
 
-Static multi-edges, conditional fan-out, and dynamic `Send` run deterministically in one process by default. Opt-in `queued_supersteps` mode records per-node execution rows for inspection while preserving the same reducer/checkpoint semantics. Full external worker scheduling remains experimental.
+Static multi-edges, conditional fan-out, and dynamic `Send` run deterministically in one process by default. Opt-in `queued_supersteps` mode dispatches each node in a superstep as a `NodeExecutionJob` and aggregates finished executions through `ContinueSuperstepJob` while preserving the same reducer/checkpoint semantics.
+
+In queued mode, `run()` and `resume()` usually return a `running` result after scheduling work. Use `AgentGraph::inspect($runId)` or application notifications to observe the final `completed`, `failed`, `interrupted`, or `delayed` status.
 
 Every node in the same superstep reads the same base state. Writes are merged only after the frontier finishes. Configure an explicit reducer for any channel that can be written by more than one branch.
 

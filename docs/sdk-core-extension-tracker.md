@@ -28,7 +28,7 @@ This tracker records the generic SDK features that should be completed after the
 | 13 | Durable Sessions/Tools | Complete | Generic adapter | `DurableGraphSession` and `DurableGraphTool` cover active-thread workflows without changing `GraphTool`. |
 | 14 | Native SubgraphNode | Beta | Core runtime | Child graph execution, lineage, mapped/shared/isolated modes, and interrupt bubbling are implemented. |
 | 15 | Memory Manager Contracts | Beta | Core extension | Extractor, embedding, vector store contracts plus export/delete helpers are implemented with deterministic defaults. |
-| 16 | Queued Superstep Records | Experimental | Runtime foundation | Opt-in `queued_supersteps` mode records node execution rows while preserving sync execution semantics. |
+| 16 | Worker-backed Queued Supersteps | Beta | Runtime foundation | Opt-in `queued_supersteps` mode dispatches node execution jobs and aggregates supersteps with persisted execution rows. |
 
 ## Stable Core Candidates
 
@@ -49,7 +49,6 @@ These should be considered for v1 or the next beta if tests and docs are complet
 These are useful but should not block the core runtime release:
 
 - Advanced graph-as-subgraph orchestration beyond `SubgraphNode`
-- Queue-backed true worker scheduling beyond experimental node execution records
 
 ## Acceptance Checklist
 

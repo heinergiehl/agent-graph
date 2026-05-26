@@ -78,9 +78,7 @@ class AgentGraphServiceProvider extends ServiceProvider
             __DIR__.'/../config/agent-graph.php' => config_path('agent-graph.php'),
         ], 'agent-graph-config');
 
-        $this->publishesMigrations([
-            __DIR__.'/../database/migrations' => database_path('migrations'),
-        ], 'agent-graph-migrations');
+        $this->publishesMigrations($this->migrationPublishPaths(), 'agent-graph-migrations');
 
         if ($this->app->runningInConsole()) {
             $this->commands([
@@ -124,5 +122,33 @@ class AgentGraphServiceProvider extends ServiceProvider
         $this->app->alias(MemoryStore::class, 'agent-graph.memory.enumerable');
         $this->app->alias(NodeExecutionStore::class, 'agent-graph.node-executions');
         $this->app->alias(TraceStore::class, 'agent-graph.traces');
+    }
+
+    protected function migrationPublishPaths(): array
+    {
+        $migrations = [
+            '2026_05_25_000000_create_agent_graph_tables.php' => 'create_agent_graph_tables',
+            '2026_05_26_000000_add_agent_graph_hardening_tables.php' => 'add_agent_graph_hardening_tables',
+            '2026_05_26_010000_add_worker_fields_to_agent_graph_node_executions.php' => 'add_worker_fields_to_agent_graph_node_executions',
+        ];
+
+        $paths = [];
+
+        foreach ($migrations as $file => $name) {
+            if ($this->publishedMigrationExists($name)) {
+                continue;
+            }
+
+            $paths[__DIR__.'/../database/migrations/'.$file] = database_path('migrations/'.$file);
+        }
+
+        return $paths;
+    }
+
+    protected function publishedMigrationExists(string $name): bool
+    {
+        $matches = glob(database_path('migrations/*_'.$name.'.php'));
+
+        return $matches !== false && $matches !== [];
     }
 }
