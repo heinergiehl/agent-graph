@@ -8,6 +8,7 @@ use Heiner\AgentGraph\LaravelAi\GraphTool;
 use Heiner\AgentGraph\Runtime\CheckpointSnapshot;
 use Heiner\AgentGraph\Runtime\GraphRuntime;
 use Heiner\AgentGraph\Runtime\PendingGraphRun;
+use Heiner\AgentGraph\Runtime\RunEventDispatcher;
 use Heiner\AgentGraph\Runtime\RunResult;
 use Heiner\AgentGraph\Runtime\RunSnapshot;
 use Heiner\AgentGraph\Runtime\RunTimeline;
@@ -18,7 +19,10 @@ class AgentGraphManager
     /** @var array<string, GraphDefinition> */
     protected array $graphs = [];
 
-    public function __construct(protected GraphRuntime $runtime) {}
+    public function __construct(
+        protected GraphRuntime $runtime,
+        protected ?RunEventDispatcher $events = null,
+    ) {}
 
     public function define(StateGraph|GraphDefinition $graph): GraphDefinition
     {
@@ -38,19 +42,29 @@ class AgentGraphManager
         return $this->graphs[$key] ?? throw new InvalidArgumentException("Graph [{$key}] is not defined.");
     }
 
-    public function run(GraphDefinition $graph, string $threadId, array $input = [], array $meta = []): RunResult
+    public function run(GraphDefinition $graph, string $threadId, array $input = [], array $meta = [], ?callable $onEvent = null, bool $collectEvents = false): RunResult
     {
-        return $this->runtime->run($graph, $threadId, $input, $meta);
+        return $this->observe($onEvent, $collectEvents, fn (): RunResult => $this->runtime->run($graph, $threadId, $input, $meta));
     }
 
-    public function resume(string $runId, array $payload = []): RunResult
+    public function resume(string $runId, array $payload = [], ?callable $onEvent = null, bool $collectEvents = false): RunResult
     {
-        return $this->runtime->resume($runId, $payload, $this->graphs);
+        return $this->observe(
+            $onEvent,
+            $collectEvents,
+            fn (): RunResult => $this->runtime->resume($runId, $payload, $this->graphs),
+            $runId,
+        );
     }
 
-    public function resumeWithStateEdit(string $runId, string $interruptId, array $statePatch, ?string $resolvedBy = null): RunResult
+    public function resumeWithStateEdit(string $runId, string $interruptId, array $statePatch, ?string $resolvedBy = null, ?callable $onEvent = null, bool $collectEvents = false): RunResult
     {
-        return $this->runtime->resumeWithStateEdit($runId, $interruptId, $statePatch, $this->graphs, $resolvedBy);
+        return $this->observe(
+            $onEvent,
+            $collectEvents,
+            fn (): RunResult => $this->runtime->resumeWithStateEdit($runId, $interruptId, $statePatch, $this->graphs, $resolvedBy),
+            $runId,
+        );
     }
 
     public function cancel(string $runId, array $meta = []): RunResult
@@ -63,14 +77,14 @@ class AgentGraphManager
         return $this->runtime->checkpoint($checkpointId, $withWrites);
     }
 
-    public function replay(string $checkpointId, ?string $threadId = null, array $meta = []): RunResult
+    public function replay(string $checkpointId, ?string $threadId = null, array $meta = [], ?callable $onEvent = null, bool $collectEvents = false): RunResult
     {
-        return $this->runtime->replay($checkpointId, $this->graphs, $threadId, $meta);
+        return $this->observe($onEvent, $collectEvents, fn (): RunResult => $this->runtime->replay($checkpointId, $this->graphs, $threadId, $meta));
     }
 
-    public function fork(string $checkpointId, array $statePatch = [], ?string $threadId = null, ?string $asNode = null, array $meta = []): RunResult
+    public function fork(string $checkpointId, array $statePatch = [], ?string $threadId = null, ?string $asNode = null, array $meta = [], ?callable $onEvent = null, bool $collectEvents = false): RunResult
     {
-        return $this->runtime->fork($checkpointId, $statePatch, $this->graphs, $threadId, $asNode, $meta);
+        return $this->observe($onEvent, $collectEvents, fn (): RunResult => $this->runtime->fork($checkpointId, $statePatch, $this->graphs, $threadId, $asNode, $meta));
     }
 
     public function inspect(string $runId, bool $withHistory = false, bool $withTraces = false): ?RunSnapshot
@@ -96,5 +110,17 @@ class AgentGraphManager
     public function tool(string $graphKey): GraphTool
     {
         return new GraphTool($this, $graphKey);
+    }
+
+    protected function observe(?callable $onEvent, bool $collectEvents, callable $callback, ?string $runId = null): RunResult
+    {
+        $observed = $this->events()->observe($onEvent, $collectEvents, $callback, $runId);
+
+        return $observed['result']->withEvents($observed['events']);
+    }
+
+    protected function events(): RunEventDispatcher
+    {
+        return $this->events ??= app(RunEventDispatcher::class);
     }
 }

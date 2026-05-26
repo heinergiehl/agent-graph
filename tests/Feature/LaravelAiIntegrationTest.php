@@ -7,6 +7,7 @@ use Heiner\AgentGraph\Graph\StateGraph;
 use Heiner\AgentGraph\LaravelAi\AgentNode;
 use Heiner\AgentGraph\Runtime\NodeContext;
 use Heiner\AgentGraph\Runtime\NodeResult;
+use Heiner\AgentGraph\Runtime\RunEvent;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\JsonSchema\JsonSchemaTypeFactory;
 use Illuminate\Support\Facades\Event;
@@ -66,11 +67,14 @@ it('dispatches AgentGraph stream events for streamed Laravel AI deltas', functio
     $run = AgentGraph::graph('streaming_agent_answer')
         ->thread('stream-thread')
         ->input(['input' => 'Hello'])
+        ->collectEvents()
         ->run();
 
     expect($run->completed())->toBeTrue()
         ->and($run->state('answer'))->toBe('Hello from stream')
-        ->and($run->state('usage')['completion_tokens'])->toBe(4);
+        ->and($run->state('usage')['completion_tokens'])->toBe(4)
+        ->and(collect($run->events())->where(fn (RunEvent $event): bool => $event->type() === 'stream.delta'))->toHaveCount(3)
+        ->and(collect($run->events())->where(fn (RunEvent $event): bool => $event->type() === 'stream.delta')->last()->payload()['delta'])->toBe('stream');
 
     Event::assertDispatched(GraphStreamDelta::class, 3);
     Event::assertDispatched(GraphStreamDelta::class, fn (GraphStreamDelta $event): bool => $event->payload['delta'] === 'stream');

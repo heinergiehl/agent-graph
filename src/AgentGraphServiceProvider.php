@@ -31,6 +31,7 @@ use Heiner\AgentGraph\Persistence\InMemoryTaskStore;
 use Heiner\AgentGraph\Persistence\InMemoryTraceStore;
 use Heiner\AgentGraph\Persistence\InMemoryWriteStore;
 use Heiner\AgentGraph\Runtime\GraphRuntime;
+use Heiner\AgentGraph\Runtime\RunEventDispatcher;
 use Heiner\AgentGraph\Support\CacheLockProvider;
 use Heiner\AgentGraph\Support\SystemClock;
 use Illuminate\Support\ServiceProvider;
@@ -46,6 +47,7 @@ class AgentGraphServiceProvider extends ServiceProvider
 
         $this->registerStores();
 
+        $this->app->singleton(RunEventDispatcher::class);
         $this->app->singleton(GraphRuntime::class);
         $this->app->singleton(AgentGraphManager::class);
         $this->app->alias(AgentGraphManager::class, 'agent-graph');

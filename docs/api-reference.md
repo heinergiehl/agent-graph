@@ -32,8 +32,8 @@ All methods are available through the `AgentGraph` facade and `AgentGraphManager
 
 - `define(StateGraph|GraphDefinition $graph): GraphDefinition` registers a graph.
 - `graph(string $key): PendingGraphRun` creates a pending run builder for a registered graph.
-- `resume(string $runId, array $payload = []): RunResult` resumes a run. If a pending interrupt exists, `interrupt_id` must match it.
-- `resumeWithStateEdit(string $runId, string $interruptId, array $statePatch, ?string $resolvedBy = null): RunResult` resolves a `state_edit` interrupt after strict schema validation.
+- `resume(string $runId, array $payload = [], ?callable $onEvent = null, bool $collectEvents = false): RunResult` resumes a run. If a pending interrupt exists, `interrupt_id` must match it.
+- `resumeWithStateEdit(string $runId, string $interruptId, array $statePatch, ?string $resolvedBy = null, ?callable $onEvent = null, bool $collectEvents = false): RunResult` resolves a `state_edit` interrupt after strict schema validation.
 - `cancel(string $runId, array $meta = []): RunResult` marks a run cancelled.
 - `inspect(string $runId, bool $withHistory = false, bool $withTraces = false): ?RunSnapshot` returns a read-only run snapshot without mutating runtime state.
 - `timeline(string $runId, bool $includeState = false, bool $includeDiff = true): ?RunTimeline` returns ordered, read-only timeline steps built from checkpoints, writes, interrupts, failures, and state diffs.
@@ -47,8 +47,8 @@ Stability: stable.
 ### Experimental Time Travel
 
 - `checkpoint(string $checkpointId, bool $withWrites = false): ?CheckpointSnapshot` returns a specific checkpoint snapshot.
-- `replay(string $checkpointId, ?string $threadId = null, array $meta = []): RunResult` creates a new run from a checkpoint and continues through recorded `next_nodes`.
-- `fork(string $checkpointId, array $statePatch = [], ?string $threadId = null, ?string $asNode = null, array $meta = []): RunResult` creates a new run from a checkpoint with a reducer-aware state patch.
+- `replay(string $checkpointId, ?string $threadId = null, array $meta = [], ?callable $onEvent = null, bool $collectEvents = false): RunResult` creates a new run from a checkpoint and continues through recorded `next_nodes`.
+- `fork(string $checkpointId, array $statePatch = [], ?string $threadId = null, ?string $asNode = null, array $meta = [], ?callable $onEvent = null, bool $collectEvents = false): RunResult` creates a new run from a checkpoint with a reducer-aware state patch.
 - `timeTravelChildren(string $checkpointId, int $limit = 50): array` lists replay and fork runs created from a source checkpoint.
 
 Errors: missing checkpoints, missing graph definitions, invalid state patches, unknown fork endpoints, and graph version mismatches throw `RuntimeException` or `InvalidArgumentException`.
@@ -118,11 +118,35 @@ Stability: stable.
 
 ## Results and Snapshots
 
+### `PendingGraphRun`
+
+Returned by `AgentGraph::graph($key)`.
+
+Methods: `thread()`, `input()`, `meta()`, `onEvent()`, `collectEvents()`, and `run()`.
+
+`onEvent(callable $listener)` receives `RunEvent` objects synchronously for that run. `collectEvents(bool $collect = true)` stores the same normalized events on the returned `RunResult`.
+
+Stability: stable.
+
 ### `RunResult`
 
 Returned by run, resume, cancel, replay, and fork operations.
 
-Methods: `runId()`, `threadId()`, `status()`, `completed()`, `interrupted()`, `failed()`, `cancelled()`, `error()`, `resumeAt()`, `state()`, and `interrupt()`.
+Methods: `runId()`, `threadId()`, `status()`, `completed()`, `interrupted()`, `failed()`, `cancelled()`, `error()`, `resumeAt()`, `state()`, `interrupt()`, and `events()`.
+
+`events()` returns an array of `RunEvent` objects when collection was enabled, otherwise an empty array.
+
+Stability: stable.
+
+### `RunEvent`
+
+Returned through `PendingGraphRun::onEvent()` and `RunResult::events()`.
+
+Methods: `type()`, `runId()`, `threadId()`, `graphKey()`, `nodeId()`, `payload()`, `timestamp()`, and `toArray()`.
+
+Event types are AgentGraph workflow observations such as `run.started`, `run.resumed`, `node.started`, `node.completed`, `node.failed`, `stream.delta`, `checkpoint.created`, `interrupt.created`, `run.completed`, `run.failed`, and `run.cancelled`.
+
+Run events are callback/collection observations only. AgentGraph core does not expose SSE, Vercel AI SDK protocols, HTTP responses, provider internals, or a replacement for Laravel AI model streaming.
 
 Stability: stable.
 
@@ -178,6 +202,8 @@ Stability: experimental public API.
 
 Configuration methods: `agent()`, `prompt()`, `attachments()`, `stream()`, `provider()`, `model()`, `timeout()`, `writeTextTo()`, `writeUsageTo()`, and `writeMetaTo()`.
 
+`stream()` delegates to Laravel AI's public `Agent::stream()` contract. Text deltas still dispatch `GraphStreamDelta`; when run-event observation is enabled, the same delta payload is also normalized as `stream.delta`.
+
 Errors: missing or invalid agent configuration and non-string prompts throw `RuntimeException`.
 
 Stability: stable.
@@ -215,4 +241,5 @@ Stability: stable, with v1 contract changes documented in `UPGRADE.md`.
 - Replay and fork require persisted `graph_version` to match the currently registered graph definition.
 - Supersteps store one checkpoint per frontier and preserve dynamic `Send` schedules in checkpoint metadata without a database migration.
 - Parallel interrupts inside a multi-node frontier fail the run with a clear error; single-node interrupts keep existing resume behavior.
+- Run-event observation is additive and does not change `GraphStreamDelta`, Laravel AI `StreamableAgentResponse`, `GraphTool` JSON shape, or provider behavior.
 - No new database migrations are required for v1 hardening, supersteps, or experimental time travel.

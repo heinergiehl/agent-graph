@@ -114,6 +114,25 @@ foreach ($timeline->steps() as $step) {
 }
 ```
 
+Observe normalized workflow events for a single run:
+
+```php
+use Heiner\AgentGraph\Runtime\RunEvent;
+
+$run = AgentGraph::graph('support_triage')
+    ->thread($conversationId)
+    ->input(['input' => $message])
+    ->onEvent(function (RunEvent $event): void {
+        logger()->debug('agent-graph.event', $event->toArray());
+    })
+    ->collectEvents()
+    ->run();
+
+$run->events(); // array<RunEvent>
+```
+
+Run events are workflow observations such as `run.started`, `node.started`, `stream.delta`, `checkpoint.created`, `interrupt.created`, `run.completed`, and `run.failed`. They are not an HTTP streaming protocol and do not replace Laravel AI token/model streaming.
+
 List recent runs for dashboards, admin screens, or recovery tools:
 
 ```php
@@ -203,6 +222,8 @@ AgentNode::make('answer')
     ->writeUsageTo('usage');
 ```
 
+`AgentNode::stream()` still delegates to Laravel AI's `stream()` API. AgentGraph keeps dispatching `GraphStreamDelta` for streamed text deltas and, when run-event observation is enabled, also exposes those deltas as normalized `stream.delta` `RunEvent` objects.
+
 ## Graphs as Tools
 
 ```php
@@ -245,6 +266,7 @@ The intended v1-stable API surface is documented in [`docs/api-reference.md`](do
 - `AgentGraph` facade for defining, running, resuming, state-edit resuming, inspecting, listing, cancelling, and exposing tools.
 - `RunSnapshot` for read-only runtime inspection.
 - `RunTimeline` for ordered checkpoint/write/interrupt/failure timelines with optional state diffs.
+- `RunEvent` for optional per-run workflow event observation and collection.
 - `CheckpointSnapshot` for read-only checkpoint inspection and experimental time-travel workflows.
 - `AgentNode` for Laravel AI agent execution.
 - `GraphTool` for Laravel AI tool integration.
@@ -262,6 +284,7 @@ The intended v1-stable API surface is documented in [`docs/api-reference.md`](do
 - Use idempotent task keys for every external side effect.
 - Use `inspect()` and `runs()` for recovery/admin UIs instead of reading package tables directly.
 - Use `timeline()` for debugger and trace UIs instead of reconstructing checkpoint history manually.
+- Use run-event callbacks for lightweight workflow observation; keep token streaming in Laravel AI.
 - Use `timeTravelChildren()` to inspect replay/fork lineage for a source checkpoint.
 - Use `resumeWithStateEdit()` for manual state correction flows.
 - Use explicit reducers for any state channel that can be written by more than one node in the same superstep.
@@ -271,4 +294,4 @@ The intended v1-stable API surface is documented in [`docs/api-reference.md`](do
 
 ## Status
 
-This MVP includes the durable runtime core, deterministic supersteps, dynamic `Send` fan-out, database and in-memory stores, scoped memory, interrupts, tasks, traces, queue jobs, Laravel AI adapter, graph tool adapter, commands, tests, docs, and experimental checkpoint replay/fork APIs. Post-MVP work includes queue-backed parallel workers, visual timeline tooling, pgvector semantic memory, OpenTelemetry export, and visual editor serialization.
+This MVP includes the durable runtime core, deterministic supersteps, dynamic `Send` fan-out, database and in-memory stores, scoped memory, interrupts, tasks, traces, queue jobs, Laravel AI adapter, graph tool adapter, run-event observation, commands, tests, docs, and experimental checkpoint replay/fork APIs. Post-MVP work includes queue-backed parallel workers, visual timeline tooling, pgvector semantic memory, OpenTelemetry export, and visual editor serialization.

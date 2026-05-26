@@ -8,6 +8,7 @@ class RunResult
         protected array $run,
         protected array $state = [],
         protected ?array $interrupt = null,
+        protected array $events = [],
     ) {}
 
     public function runId(): string
@@ -67,5 +68,15 @@ class RunResult
     public function interrupt(): ?array
     {
         return $this->interrupt;
+    }
+
+    public function events(): array
+    {
+        return $this->events;
+    }
+
+    public function withEvents(array $events): self
+    {
+        return new self($this->run, $this->state, $this->interrupt, $events);
     }
 }

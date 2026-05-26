@@ -7,6 +7,7 @@ use Heiner\AgentGraph\Contracts\Node;
 use Heiner\AgentGraph\Events\GraphStreamDelta;
 use Heiner\AgentGraph\Runtime\NodeContext;
 use Heiner\AgentGraph\Runtime\NodeResult;
+use Heiner\AgentGraph\Runtime\RunEventDispatcher;
 use Laravel\Ai\Contracts\Agent;
 use Laravel\Ai\Streaming\Events\TextDelta;
 use ReflectionFunction;
@@ -140,7 +141,7 @@ class AgentNode implements Node
                         'timestamp' => $event->timestamp,
                     ];
 
-                    event(new GraphStreamDelta(
+                    app(RunEventDispatcher::class)->dispatch('stream.delta', new GraphStreamDelta(
                         runId: $context->runId(),
                         threadId: $context->threadId(),
                         graphKey: (string) ($context->graphMeta()['key'] ?? ''),

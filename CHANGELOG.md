@@ -24,6 +24,7 @@ Target: hardened MVP API stability after 0.9 sandbox and chatbot integration tes
 - Added explicit `AgentGraph::resumeWithStateEdit()` for schema-validated human state correction flows.
 - Added experimental time-travel APIs: `checkpoint()`, `replay()`, `fork()`, and `timeTravelChildren()`.
 - Added `CheckpointSnapshot` for read-only checkpoint inspection.
+- Added `RunEvent` observation with `PendingGraphRun::onEvent()`, `PendingGraphRun::collectEvents()`, `RunResult::events()`, and optional event callbacks for resume, replay, and fork APIs.
 - Added state schema type validation for run input, resume payloads, state-edit patches, fork patches, and node writes.
 - Added graph version compatibility checks for resume, replay, and fork.
 - Added API reference documentation for the v1 public surface.

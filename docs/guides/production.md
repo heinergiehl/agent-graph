@@ -12,12 +12,17 @@ Recommended production settings:
 - wrap every external side effect in `$context->tasks()->once()`
 - define reducers for channels written by multiple fan-out branches
 - avoid storing raw secrets in state, memory, traces, task input, or interrupt payloads
+- avoid doing slow network I/O inside run-event listeners
 
 ## Runtime recovery
 
 Use `AgentGraph::inspect($runId, withHistory: true, withTraces: true)` for admin and recovery screens. It returns the latest state, current checkpoint, checkpoint history, writes, pending interrupt, traces, error, and metadata without changing run state.
 
 Use `AgentGraph::runs($filters, $limit)` to list recent runs by `status`, `thread_id`, `graph_key`, or `graph_version`.
+
+Use `onEvent()` or `collectEvents()` when an application needs ordered workflow observations for a single run. Listeners run synchronously in the runtime path, so keep them lightweight and move broadcasting, persistence copies, or expensive processing into application-level jobs.
+
+Run-event observation is not model streaming. Keep Laravel AI as the owner of token streaming and provider behavior; AgentGraph only normalizes workflow events such as run lifecycle, node lifecycle, checkpoints, interrupts, failures, and existing `GraphStreamDelta` payloads.
 
 ## Human-in-the-loop state edits
 

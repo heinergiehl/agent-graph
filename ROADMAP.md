@@ -16,6 +16,7 @@ Implemented and ready for sandbox testing:
 - Memory TTL filtering, fallback order, keyword search, metadata, confidence, source, usage count, and `last_used_at`.
 - Database and in-memory stores.
 - Laravel events and redacted traces with payload limits.
+- Optional run-event observation for lifecycle, checkpoint, interrupt, failure, and stream-delta workflow events.
 - Laravel AI `AgentNode`, including streamed `TextDelta` handling.
 - `GraphTool` for durable graph execution from Laravel AI tools.
 - Queue jobs, cache locks, install/make/doctor/prune commands.
@@ -57,6 +58,7 @@ Implemented v1 hardening:
 - Experimental checkpoint inspection, replay, fork, and lineage APIs.
 - Graph version compatibility checks for resume, replay, and fork.
 - Deterministic supersteps and dynamic `Send` fan-out without Laravel AI provider coupling.
+- Additive run-event observation without replacing Laravel AI streaming or changing `GraphTool` JSON.
 
 ## Post-v1 Features
 
@@ -71,6 +73,7 @@ These are useful but intentionally outside the v1 MVP:
 - Semantic/vector memory adapters, including optional pgvector support.
 - Memory compaction and summarization policies.
 - OpenTelemetry export.
+- Optional HTTP/SSE or broadcast adapters built outside the SDK core on top of `RunEvent`.
 - LangSmith-like observability dashboards or external trace adapters.
 - Visual workflow editor.
 - Per-node retry, timeout, backoff, cache, and concurrency policies.
