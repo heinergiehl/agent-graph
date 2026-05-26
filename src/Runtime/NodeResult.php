@@ -13,6 +13,7 @@ class NodeResult
         protected ?string $interruptType = null,
         protected array $interruptPayload = [],
         protected ?string $failureMessage = null,
+        protected array $sends = [],
     ) {}
 
     public static function write(array $writes): self
@@ -38,6 +39,20 @@ class NodeResult
     public static function fail(string $message, array $meta = []): self
     {
         return (new self('failed', failureMessage: $message))->withMeta($meta);
+    }
+
+    public static function send(string $node, array $input = [], array $writes = []): self
+    {
+        return self::sendMany([Send::to($node, $input)], $writes);
+    }
+
+    public static function sendMany(array $sends, array $writes = []): self
+    {
+        return new self(
+            status: 'continue',
+            writes: $writes,
+            sends: array_map(fn (mixed $send): Send => Send::from($send), $sends),
+        );
     }
 
     public function withMeta(array $meta): self
@@ -88,6 +103,11 @@ class NodeResult
     public function failureMessage(): ?string
     {
         return $this->failureMessage;
+    }
+
+    public function sends(): array
+    {
+        return $this->sends;
     }
 
     public function meta(): array

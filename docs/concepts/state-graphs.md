@@ -10,6 +10,8 @@ StateGraph::make('support_triage')
     ->edge('answer', StateGraph::END);
 ```
 
-Nodes implement `Heiner\AgentGraph\Contracts\Node` and return `NodeResult`. A result can write state, route to another node, interrupt, complete, or fail.
+Nodes implement `Heiner\AgentGraph\Contracts\Node` and return `NodeResult`. A result can write state, route to another node, dynamically `Send` work to one or more nodes, interrupt, complete, or fail.
 
-Reducers define how writes merge into state. The MVP supports last-write-wins, append, merge, add-messages, max-confidence, and custom reducers. This keeps state compatible with future parallel execution without implementing parallel fan-out in the first release.
+Reducers define how writes merge into state. Static multi-edges, conditional fan-out, and dynamic `Send` results run as deterministic supersteps: every node in the same frontier reads the same base state and writes are merged after the frontier finishes.
+
+If two nodes in one superstep write the same channel, that channel must define an explicit reducer such as `append`, `merge`, `messages`/`add_messages`, `max`/`max_confidence`, or a custom reducer. `Send` input is local to the target node and is not persisted unless the node writes it.

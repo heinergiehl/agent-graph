@@ -7,6 +7,7 @@ class RunTimelineStep
     public function __construct(
         protected int $step,
         protected ?string $nodeId,
+        protected array $nodeIds,
         protected string $status,
         protected ?string $checkpointId,
         protected ?string $previousCheckpointId,
@@ -27,6 +28,11 @@ class RunTimelineStep
     public function nodeId(): ?string
     {
         return $this->nodeId;
+    }
+
+    public function nodeIds(): array
+    {
+        return $this->nodeIds;
     }
 
     public function status(): string
@@ -84,6 +90,7 @@ class RunTimelineStep
         $payload = [
             'step' => $this->step,
             'node_id' => $this->nodeId,
+            'completed_nodes' => $this->nodeIds,
             'status' => $this->status,
             'checkpoint_id' => $this->checkpointId,
             'previous_checkpoint_id' => $this->previousCheckpointId,

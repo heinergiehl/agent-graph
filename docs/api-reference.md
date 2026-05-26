@@ -91,6 +91,8 @@ Stability: stable.
 
 - `NodeResult::write(array $writes): NodeResult`
 - `NodeResult::goto(string $node, array $writes = []): NodeResult`
+- `NodeResult::send(string $node, array $input = [], array $writes = []): NodeResult`
+- `NodeResult::sendMany(array $sends, array $writes = []): NodeResult`
 - `NodeResult::interrupt(string $type, array $payload = [], array $writes = []): NodeResult`
 - `NodeResult::end(array $writes = []): NodeResult`
 - `NodeResult::fail(string $message, array $meta = []): NodeResult`
@@ -98,9 +100,19 @@ Stability: stable.
 - `withNodeMeta(array $meta): self` stores generic inspectable node metadata under `meta.node`.
 - `skipped(): self` marks the node metadata status as `skipped`.
 
-Accessor methods include `status()`, `writes()`, `nextNode()`, `interruptType()`, `interruptPayload()`, `failureMessage()`, and `meta()`.
+Accessor methods include `status()`, `writes()`, `nextNode()`, `sends()`, `interruptType()`, `interruptPayload()`, `failureMessage()`, and `meta()`.
 
 State writes are validated against graph state schema before persistence. Invalid node writes fail the run.
+
+Stability: stable.
+
+### `Send`
+
+`Send::to(string $node, array $input = [], array $meta = []): Send` schedules dynamic fan-out to a target node.
+
+Methods: `node()`, `input()`, `meta()`, and `toArray()`.
+
+Send input is overlaid only for that node invocation and is not persisted to graph state unless the target node writes it. If multiple nodes in one superstep write the same channel, that channel must have an explicit reducer. The built-in `messages` state type keeps its automatic add-messages reducer.
 
 Stability: stable.
 
@@ -136,7 +148,7 @@ Stability: stable.
 
 Returned inside `RunTimeline::steps()`.
 
-Methods: `step()`, `nodeId()`, `status()`, `checkpointId()`, `previousCheckpointId()`, `writes()`, `interrupt()`, `error()`, `meta()`, `stateBefore()`, `stateAfter()`, `stateDiff()`, and `toArray()`.
+Methods: `step()`, `nodeId()`, `nodeIds()`, `status()`, `checkpointId()`, `previousCheckpointId()`, `writes()`, `interrupt()`, `error()`, `meta()`, `stateBefore()`, `stateAfter()`, `stateDiff()`, and `toArray()`.
 
 Statuses are inferred from explicit node metadata, interrupts, failed latest checkpoints, or completed checkpoints.
 
@@ -201,4 +213,6 @@ Stability: stable, with v1 contract changes documented in `UPGRADE.md`.
 - Unknown state keys in run input, state-edit resume, fork patches, and node writes throw or fail strictly.
 - Normal `resume()` remains compatible with extra unknown payload keys, but known schema keys are type-validated.
 - Replay and fork require persisted `graph_version` to match the currently registered graph definition.
-- No new database migrations are required for v1 hardening or experimental time travel.
+- Supersteps store one checkpoint per frontier and preserve dynamic `Send` schedules in checkpoint metadata without a database migration.
+- Parallel interrupts inside a multi-node frontier fail the run with a clear error; single-node interrupts keep existing resume behavior.
+- No new database migrations are required for v1 hardening, supersteps, or experimental time travel.

@@ -10,6 +10,7 @@ Recommended production settings:
 - keep trace redaction keys updated
 - prune traces and old runs according to your retention policy
 - wrap every external side effect in `$context->tasks()->once()`
+- define reducers for channels written by multiple fan-out branches
 - avoid storing raw secrets in state, memory, traces, task input, or interrupt payloads
 
 ## Runtime recovery
@@ -29,6 +30,14 @@ Normal input and approval resumes should continue to use `AgentGraph::resume($ru
 Delayed continuation jobs are safe to retry. A delayed job no-ops when the run is already `completed`, `cancelled`, or `failed`, or when its interrupt is no longer the pending delay interrupt.
 
 Keep external side effects inside `$context->tasks()->once()` so queue retries do not repeat irreversible work.
+
+## Superstep fan-out
+
+Static multi-edges, conditional fan-out, and dynamic `Send` run deterministically in one process. They model LangGraph-style supersteps but do not create queue-backed worker parallelism yet.
+
+Every node in the same superstep reads the same base state. Writes are merged only after the frontier finishes. Configure an explicit reducer for any channel that can be written by more than one branch.
+
+`Send` input is local to a target node and is preserved in checkpoint metadata for replay/fork. It is not persisted into graph state unless the node writes it. Parallel interrupts inside one frontier are rejected; put approval, review, or state-edit interrupts after fan-in.
 
 ## Replay and fork safety
 

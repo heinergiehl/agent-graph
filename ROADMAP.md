@@ -26,6 +26,16 @@ Implemented and ready for sandbox testing:
 - Delayed continuation retry guards for final runs and stale delay interrupts.
 - Fresh Laravel sandbox validation through a local path repository.
 
+## 0.10 LangGraph-Parity Scope
+
+Implemented for the next beta:
+
+- Deterministic superstep execution for static and conditional fan-out.
+- Dynamic `Send` API for map/reduce style fan-out.
+- Reducer-enforced concurrent writes for parallel branches.
+- One checkpoint per superstep with all completed nodes and scheduled `Send` metadata.
+- Timeline support for parallel checkpoints through `nodeIds()` / `completed_nodes`.
+
 ## v1 Hardening Checklist
 
 These items should be completed before tagging `v1.0.0`:
@@ -46,13 +56,13 @@ Implemented v1 hardening:
 - Queue retry guards for final runs, stale delay interrupts, latest-checkpoint resume, and duplicate delayed jobs.
 - Experimental checkpoint inspection, replay, fork, and lineage APIs.
 - Graph version compatibility checks for resume, replay, and fork.
+- Deterministic supersteps and dynamic `Send` fan-out without Laravel AI provider coupling.
 
 ## Post-v1 Features
 
 These are useful but intentionally outside the v1 MVP:
 
-- True parallel execution with fan-out/fan-in scheduling.
-- Reducer conflict handling for concurrent branch writes.
+- Queue-backed true parallel execution across workers.
 - Stateful subgraphs with inherited or isolated checkpoint stores.
 - Graph-as-subgraph composition separate from graph-as-tool.
 - Visual timeline tooling and advanced time-travel controls beyond the generic timeline and experimental replay/fork/lineage APIs.

@@ -8,7 +8,7 @@ AgentGraph does not replace Laravel AI providers, agents, tools, streaming, or s
 
 `0.9.x` is a public beta intended for sandbox and real chatbot integration testing. Breaking changes are allowed before v1, but they will be documented in `CHANGELOG.md` and `UPGRADE.md`.
 
-The v1 target is a hardened MVP: stable graph execution, checkpoints, interrupts/resume, idempotent tasks, scoped memory, traces, queues, Laravel AI agent nodes, and graphs as tools. Experimental checkpoint inspection, replay, and forking APIs are available for post-v1-style workflows. True parallel execution, pgvector semantic memory, OpenTelemetry export, and visual workflow editing are intentionally outside v1.
+The v1 target is a hardened MVP: stable graph execution, checkpoints, interrupts/resume, idempotent tasks, scoped memory, traces, queues, Laravel AI agent nodes, and graphs as tools. Experimental checkpoint inspection, replay, and forking APIs are available for post-v1-style workflows. Deterministic superstep fan-out/fan-in is available for LangGraph-style map/reduce workflows; queue-backed worker parallelism, pgvector semantic memory, OpenTelemetry export, and visual workflow editing are intentionally outside v1.
 
 ## Installation
 
@@ -123,6 +123,29 @@ $interruptedRuns = AgentGraph::runs([
 ], limit: 25);
 ```
 
+## Supersteps and Send
+
+Multiple static or conditional next nodes run as one deterministic superstep. Each node in the same frontier sees the same base state; writes are merged after the whole superstep completes.
+
+```php
+use Heiner\AgentGraph\Runtime\Send;
+
+return NodeResult::sendMany([
+    Send::to('summarize_item', ['item' => $itemA]),
+    Send::to('summarize_item', ['item' => $itemB]),
+]);
+```
+
+If multiple nodes write the same state channel in one superstep, define an explicit reducer:
+
+```php
+StateGraph::make('summaries')
+    ->state(['items' => 'array', 'summaries' => 'array'])
+    ->reducer('summaries', 'append');
+```
+
+`Send` input is node-local and is not persisted into graph state unless the target node writes it. Parallel interrupts are intentionally rejected in the same superstep; route approval or review after fan-in.
+
 ## Time Travel
 
 Checkpoint inspection, replay, and forking are exposed as experimental public APIs. They create new runs and never mutate the original run history.
@@ -218,6 +241,7 @@ The intended v1-stable API surface is documented in [`docs/api-reference.md`](do
 - `StateGraph` for fluent graph definitions.
 - `Node` and `NodeContext` for runtime node implementation.
 - `NodeResult` for writes, gotos, interrupts, completion, and failures.
+- `Send` for dynamic fan-out and map/reduce style supersteps.
 - `AgentGraph` facade for defining, running, resuming, state-edit resuming, inspecting, listing, cancelling, and exposing tools.
 - `RunSnapshot` for read-only runtime inspection.
 - `RunTimeline` for ordered checkpoint/write/interrupt/failure timelines with optional state diffs.
@@ -240,10 +264,11 @@ The intended v1-stable API surface is documented in [`docs/api-reference.md`](do
 - Use `timeline()` for debugger and trace UIs instead of reconstructing checkpoint history manually.
 - Use `timeTravelChildren()` to inspect replay/fork lineage for a source checkpoint.
 - Use `resumeWithStateEdit()` for manual state correction flows.
+- Use explicit reducers for any state channel that can be written by more than one node in the same superstep.
 - Keep graph definitions generic; product-specific UI belongs in consuming apps.
 - For multi-tenant memory, always include tenant or actor scope in reads and writes.
 - Run `php artisan agent-graph:doctor` after deploys and before release validation.
 
 ## Status
 
-This MVP includes the durable runtime core, database and in-memory stores, scoped memory, interrupts, tasks, traces, queue jobs, Laravel AI adapter, graph tool adapter, commands, tests, docs, and experimental checkpoint replay/fork APIs. Post-MVP work includes true parallel fan-out/fan-in, visual timeline tooling, pgvector semantic memory, OpenTelemetry export, and visual editor serialization.
+This MVP includes the durable runtime core, deterministic supersteps, dynamic `Send` fan-out, database and in-memory stores, scoped memory, interrupts, tasks, traces, queue jobs, Laravel AI adapter, graph tool adapter, commands, tests, docs, and experimental checkpoint replay/fork APIs. Post-MVP work includes queue-backed parallel workers, visual timeline tooling, pgvector semantic memory, OpenTelemetry export, and visual editor serialization.

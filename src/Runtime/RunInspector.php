@@ -47,6 +47,7 @@ class RunInspector
             $steps[] = new RunTimelineStep(
                 step: (int) $checkpoint['step'],
                 nodeId: $this->nodeIdForCheckpoint($checkpoint, $checkpointWrites, $checkpointInterrupt),
+                nodeIds: $this->nodeIdsForCheckpoint($checkpoint),
                 status: $this->statusForCheckpoint($run, $checkpoint, $checkpointInterrupt, $isLatest),
                 checkpointId: $checkpointId,
                 previousCheckpointId: is_string($checkpoint['parent_checkpoint_id'] ?? null) ? $checkpoint['parent_checkpoint_id'] : null,
@@ -68,6 +69,7 @@ class RunInspector
             $steps[] = new RunTimelineStep(
                 step: count($steps) + 1,
                 nodeId: is_string(data_get($failedTrace, 'payload.node')) ? data_get($failedTrace, 'payload.node') : null,
+                nodeIds: is_string(data_get($failedTrace, 'payload.node')) ? [data_get($failedTrace, 'payload.node')] : [],
                 status: 'failed',
                 checkpointId: null,
                 previousCheckpointId: $latestCheckpointId,
@@ -137,7 +139,7 @@ class RunInspector
 
     protected function nodeIdForCheckpoint(array $checkpoint, array $writes, ?array $interrupt): ?string
     {
-        $completed = is_array($checkpoint['completed_nodes'] ?? null) ? $checkpoint['completed_nodes'] : [];
+        $completed = $this->nodeIdsForCheckpoint($checkpoint);
         $nodeId = $completed[0] ?? null;
 
         if (is_string($nodeId) && $nodeId !== '') {
@@ -153,6 +155,13 @@ class RunInspector
         $interruptNode = $interrupt['node_id'] ?? null;
 
         return is_string($interruptNode) && $interruptNode !== '' ? $interruptNode : null;
+    }
+
+    protected function nodeIdsForCheckpoint(array $checkpoint): array
+    {
+        $completed = is_array($checkpoint['completed_nodes'] ?? null) ? $checkpoint['completed_nodes'] : [];
+
+        return array_values(array_filter($completed, fn (mixed $node): bool => is_string($node) && $node !== ''));
     }
 
     protected function redactWrites(array $writes): array

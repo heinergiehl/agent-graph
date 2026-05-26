@@ -5,6 +5,8 @@ return [
 
     'max_steps' => env('AGENT_GRAPH_MAX_STEPS', 100),
 
+    'max_parallel_nodes' => env('AGENT_GRAPH_MAX_PARALLEL_NODES', 50),
+
     'tables' => [
         'runs' => 'agent_graph_runs',
         'checkpoints' => 'agent_graph_checkpoints',
