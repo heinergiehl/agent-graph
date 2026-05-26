@@ -21,6 +21,8 @@ class StateGraph
 
     protected array $reducers = [];
 
+    protected array $nodePolicies = [];
+
     protected function __construct(protected string $key, protected string $version = '1') {}
 
     public static function make(string $key, string $version = '1'): self
@@ -72,6 +74,20 @@ class StateGraph
         return $this;
     }
 
+    public function retry(string $nodeId, int $maxAttempts = 3, int $delayMs = 0, float $backoff = 1.0, ?int $maxDelayMs = null, ?callable $when = null): self
+    {
+        $policy = $this->nodePolicies[$nodeId] ?? NodePolicy::default();
+        $this->nodePolicies[$nodeId] = $policy->withRetryPolicy(new RetryPolicy(
+            maxAttempts: $maxAttempts,
+            delayMs: $delayMs,
+            backoff: $backoff,
+            maxDelayMs: $maxDelayMs,
+            when: $when,
+        ));
+
+        return $this;
+    }
+
     public function compile(): GraphDefinition
     {
         $definition = new GraphDefinition(
@@ -82,6 +98,7 @@ class StateGraph
             edges: $this->edges,
             conditionals: $this->conditionals,
             reducers: $this->reducers,
+            nodePolicies: $this->nodePolicies,
         );
 
         $definition->validate();

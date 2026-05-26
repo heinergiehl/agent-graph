@@ -15,4 +15,4 @@ Guarantees:
 - completed task keys return stored results
 - reused keys with different input hashes are rejected
 - failed tasks preserve errors for debugging
-- retries do not duplicate completed side effects
+- queue retries, node retry policies, replay, and fork do not duplicate completed side effects

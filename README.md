@@ -6,9 +6,9 @@ AgentGraph does not replace Laravel AI providers, agents, tools, streaming, or s
 
 ## Beta Status
 
-`0.11.x` is a public beta intended for sandbox and real chatbot integration testing. Breaking changes are allowed before v1, but they will be documented in `CHANGELOG.md` and `UPGRADE.md`.
+`0.12.x` is a public beta intended for sandbox and real chatbot integration testing. Breaking changes are allowed before v1, but they will be documented in `CHANGELOG.md` and `UPGRADE.md`.
 
-The v1 target is a hardened MVP: stable graph execution, checkpoints, interrupts/resume, idempotent tasks, scoped memory, traces, queues, run-event observation, Laravel AI agent nodes, and graphs as tools. Experimental checkpoint inspection, replay, and forking APIs are available for post-v1-style workflows. Deterministic superstep fan-out/fan-in is available for LangGraph-style map/reduce workflows; queue-backed worker parallelism, pgvector semantic memory, OpenTelemetry export, and visual workflow editing are intentionally outside v1.
+The v1 target is a hardened MVP: stable graph execution, checkpoints, interrupts/resume, idempotent tasks, scoped memory, traces, queues, run-event observation, Laravel AI agent nodes, and graphs as tools. Experimental checkpoint inspection, replay, and forking APIs are available for post-v1-style workflows. Deterministic superstep fan-out/fan-in and per-node retry policies are available for LangGraph-style workflows; queue-backed worker parallelism, pgvector semantic memory, OpenTelemetry export, and visual workflow editing are intentionally outside v1.
 
 ## Installation
 
@@ -165,6 +165,22 @@ StateGraph::make('summaries')
 
 `Send` input is node-local and is not persisted into graph state unless the target node writes it. Parallel interrupts are intentionally rejected in the same superstep; route approval or review after fan-in.
 
+## Node Retry Policies
+
+Retry policies are configured per node and apply only to thrown node exceptions. They do not retry `NodeResult::fail()`, interrupts, delays, or schema-validation failures.
+
+```php
+StateGraph::make('support')
+    ->node('call_api', CallApiNode::class)
+    ->edge(StateGraph::START, 'call_api')
+    ->edge('call_api', StateGraph::END)
+    ->retry('call_api', maxAttempts: 3, delayMs: 100, backoff: 2.0, maxDelayMs: 1000);
+```
+
+`maxAttempts` includes the first attempt. Retry attempts emit `node.retrying` Laravel events, traces, and normalized `RunEvent` objects when observation is enabled. Successful retried writes include `runtime.retry` metadata with attempts, max attempts, and failed attempts.
+
+Retries can repeat node side effects. Wrap external API calls, emails, payments, CRM writes, and other irreversible work in `$context->tasks()->once()` with stable task keys before enabling retry policies in production.
+
 ## Time Travel
 
 Checkpoint inspection, replay, and forking are exposed as experimental public APIs. They create new runs and never mutate the original run history.
@@ -263,6 +279,7 @@ The intended v1-stable API surface is documented in [`docs/api-reference.md`](do
 - `Node` and `NodeContext` for runtime node implementation.
 - `NodeResult` for writes, gotos, interrupts, completion, and failures.
 - `Send` for dynamic fan-out and map/reduce style supersteps.
+- `RetryPolicy` and per-node `StateGraph::retry()` configuration for thrown node exceptions.
 - `AgentGraph` facade for defining, running, resuming, state-edit resuming, inspecting, listing, cancelling, and exposing tools.
 - `RunSnapshot` for read-only runtime inspection.
 - `RunTimeline` for ordered checkpoint/write/interrupt/failure timelines with optional state diffs.
@@ -287,6 +304,7 @@ The intended v1-stable API surface is documented in [`docs/api-reference.md`](do
 - Use run-event callbacks for lightweight workflow observation; keep token streaming in Laravel AI.
 - Use `timeTravelChildren()` to inspect replay/fork lineage for a source checkpoint.
 - Use `resumeWithStateEdit()` for manual state correction flows.
+- Use per-node retry policies for transient thrown exceptions, and keep side effects idempotent with `tasks()->once()`.
 - Use explicit reducers for any state channel that can be written by more than one node in the same superstep.
 - Keep graph definitions generic; product-specific UI belongs in consuming apps.
 - For multi-tenant memory, always include tenant or actor scope in reads and writes.
@@ -294,4 +312,4 @@ The intended v1-stable API surface is documented in [`docs/api-reference.md`](do
 
 ## Status
 
-This MVP includes the durable runtime core, deterministic supersteps, dynamic `Send` fan-out, database and in-memory stores, scoped memory, interrupts, tasks, traces, queue jobs, Laravel AI adapter, graph tool adapter, run-event observation, commands, tests, docs, and experimental checkpoint replay/fork APIs. Post-MVP work includes queue-backed parallel workers, visual timeline tooling, pgvector semantic memory, OpenTelemetry export, and visual editor serialization.
+This MVP includes the durable runtime core, deterministic supersteps, dynamic `Send` fan-out, per-node retry policies, database and in-memory stores, scoped memory, interrupts, tasks, traces, queue jobs, Laravel AI adapter, graph tool adapter, run-event observation, commands, tests, docs, and experimental checkpoint replay/fork APIs. Post-MVP work includes queue-backed parallel workers, visual timeline tooling, pgvector semantic memory, OpenTelemetry export, and visual editor serialization.

@@ -14,6 +14,7 @@ Target: hardened MVP API stability after 0.9 sandbox and chatbot integration tes
 - Added experimental time-travel APIs: `checkpoint()`, `replay()`, `fork()`, and `timeTravelChildren()`.
 - Added `CheckpointSnapshot` for read-only checkpoint inspection.
 - Added `RunEvent` observation with `PendingGraphRun::onEvent()`, `PendingGraphRun::collectEvents()`, `RunResult::events()`, and optional event callbacks for resume, replay, and fork APIs.
+- Added per-node retry policies for transient thrown node exceptions.
 - Added state schema type validation for run input, resume payloads, state-edit patches, fork patches, and node writes.
 - Added graph version compatibility checks for resume, replay, and fork.
 - Added API reference documentation for the v1 public surface.
@@ -35,6 +36,20 @@ Target: hardened MVP API stability after 0.9 sandbox and chatbot integration tes
 ### Documentation
 
 - Added production guidance for runtime recovery, queue retry safety, state edits, replay/fork side-effect safety, and API stability.
+
+## 0.12.0 - Unreleased
+
+### Added
+
+- Added per-node retry policies through `StateGraph::retry()` and `RetryPolicy`.
+- Added `NodePolicy` metadata on compiled graph definitions through `nodePolicy()` and `nodePolicies()`.
+- Added `GraphNodeRetrying`, normalized `node.retrying` run events, and `node.retrying` trace records.
+- Added retry metadata under persisted write/checkpoint result metadata at `runtime.retry`.
+
+### Notes
+
+- Retry policies apply only to thrown node exceptions. They do not retry `NodeResult::fail()`, interrupts, delays, or schema-validation failures.
+- Retried nodes can repeat side effects. Use `$context->tasks()->once()` for API calls, emails, payments, CRM writes, and other irreversible work.
 
 ## 0.11.0 - 2026-05-26
 

@@ -12,6 +12,7 @@ This document describes the intended v1 public API surface. APIs marked experime
 - `node(string $id, callable|string $node): self` registers an invokable node class, callable, or `Node` implementation.
 - `edge(string $from, string $to): self` registers a static edge.
 - `conditional(string $from, Closure $resolver, array $routes): self` registers conditional routing.
+- `retry(string $nodeId, int $maxAttempts = 3, int $delayMs = 0, float $backoff = 1.0, ?int $maxDelayMs = null, ?callable $when = null): self` configures retry for thrown exceptions from one node.
 - `compile(): GraphDefinition` validates and returns an immutable graph definition.
 
 Errors: invalid graph structure throws `InvalidArgumentException`.
@@ -20,11 +21,23 @@ Stability: stable.
 
 ### `GraphDefinition`
 
-Compiled definitions expose `key()`, `version()`, `schema()`, `reducers()`, `node()`, `nodes()`, `hasNode()`, `hasEndpoint()`, `entryNode()`, `resolveNext()`, and `successorsOf()`.
+Compiled definitions expose `key()`, `version()`, `schema()`, `reducers()`, `node()`, `nodes()`, `nodePolicy()`, `nodePolicies()`, `hasNode()`, `hasEndpoint()`, `entryNode()`, `resolveNext()`, and `successorsOf()`.
 
 Errors: unknown nodes, endpoints, or invalid graph structure throw `InvalidArgumentException`.
 
 Stability: stable for read-only metadata and endpoint helpers.
+
+### `NodePolicy` and `RetryPolicy`
+
+`GraphDefinition::nodePolicy($nodeId)` returns a `NodePolicy`. Unknown nodes return the default empty policy for read-only inspection; policy configuration for unknown nodes fails during graph compile.
+
+`RetryPolicy` exposes `maxAttempts()`, `delayMs()`, `backoff()`, `maxDelayMs()`, `delayForAttempt()`, and `shouldRetry()`.
+
+`maxAttempts` is the total attempt count including the first attempt. `delayMs` is the first retry delay, `backoff` multiplies later delays, and `maxDelayMs` caps retry delays when set. The optional `when(Throwable $exception, int $attempt, NodeContext $context): bool` predicate can stop retrying before attempts are exhausted.
+
+Retry policies apply only to thrown node exceptions. They do not retry `NodeResult::fail()`, interrupts, delays, or schema-validation failures. Retry attempts emit `node.retrying` events/traces, and successful retried writes include `runtime.retry` metadata.
+
+Stability: stable.
 
 ## Runtime Facade
 
@@ -144,7 +157,7 @@ Returned through `PendingGraphRun::onEvent()` and `RunResult::events()`.
 
 Methods: `type()`, `runId()`, `threadId()`, `graphKey()`, `nodeId()`, `payload()`, `timestamp()`, and `toArray()`.
 
-Event types are AgentGraph workflow observations such as `run.started`, `run.resumed`, `node.started`, `node.completed`, `node.failed`, `stream.delta`, `checkpoint.created`, `interrupt.created`, `run.completed`, `run.failed`, and `run.cancelled`.
+Event types are AgentGraph workflow observations such as `run.started`, `run.resumed`, `node.started`, `node.retrying`, `node.completed`, `node.failed`, `stream.delta`, `checkpoint.created`, `interrupt.created`, `run.completed`, `run.failed`, and `run.cancelled`.
 
 Run events are callback/collection observations only. AgentGraph core does not expose SSE, Vercel AI SDK protocols, HTTP responses, provider internals, or a replacement for Laravel AI model streaming.
 
@@ -241,5 +254,6 @@ Stability: stable, with v1 contract changes documented in `UPGRADE.md`.
 - Replay and fork require persisted `graph_version` to match the currently registered graph definition.
 - Supersteps store one checkpoint per frontier and preserve dynamic `Send` schedules in checkpoint metadata without a database migration.
 - Parallel interrupts inside a multi-node frontier fail the run with a clear error; single-node interrupts keep existing resume behavior.
+- Per-node retry policies are synchronous inside the current runtime. They retry thrown node exceptions only and may repeat side effects unless nodes use `tasks()->once()`.
 - Run-event observation is additive and does not change `GraphStreamDelta`, Laravel AI `StreamableAgentResponse`, `GraphTool` JSON shape, or provider behavior.
 - No new database migrations are required for v1 hardening, supersteps, or experimental time travel.

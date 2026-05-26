@@ -14,6 +14,7 @@ class GraphDefinition
         protected array $edges,
         protected array $conditionals,
         protected array $reducers = [],
+        protected array $nodePolicies = [],
     ) {}
 
     public function key(): string
@@ -34,6 +35,16 @@ class GraphDefinition
     public function reducers(): array
     {
         return $this->reducers;
+    }
+
+    public function nodePolicy(string $nodeId): NodePolicy
+    {
+        return $this->nodePolicies[$nodeId] ?? NodePolicy::default();
+    }
+
+    public function nodePolicies(): array
+    {
+        return $this->nodePolicies;
     }
 
     public function node(string $id): callable|string
@@ -116,6 +127,12 @@ class GraphDefinition
                         throw new InvalidArgumentException("Unknown conditional target [{$node}].");
                     }
                 }
+            }
+        }
+
+        foreach (array_keys($this->nodePolicies) as $nodeId) {
+            if (! isset($this->nodes[$nodeId])) {
+                throw new InvalidArgumentException("Unknown policy node [{$nodeId}].");
             }
         }
     }

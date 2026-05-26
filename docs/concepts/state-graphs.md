@@ -15,3 +15,13 @@ Nodes implement `Heiner\AgentGraph\Contracts\Node` and return `NodeResult`. A re
 Reducers define how writes merge into state. Static multi-edges, conditional fan-out, and dynamic `Send` results run as deterministic supersteps: every node in the same frontier reads the same base state and writes are merged after the frontier finishes.
 
 If two nodes in one superstep write the same channel, that channel must define an explicit reducer such as `append`, `merge`, `messages`/`add_messages`, `max`/`max_confidence`, or a custom reducer. `Send` input is local to the target node and is not persisted unless the node writes it.
+
+Per-node retry policies handle transient thrown exceptions without changing graph topology:
+
+```php
+StateGraph::make('support_triage')
+    ->node('call_api', CallApiNode::class)
+    ->retry('call_api', maxAttempts: 3, delayMs: 100, backoff: 2.0);
+```
+
+Retries do not apply to `NodeResult::fail()`, interrupts, delays, or schema-validation failures. If a retried node performs external side effects, protect them with `$context->tasks()->once()`.

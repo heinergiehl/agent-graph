@@ -11,6 +11,7 @@ Recommended production settings:
 - prune traces and old runs according to your retention policy
 - wrap every external side effect in `$context->tasks()->once()`
 - define reducers for channels written by multiple fan-out branches
+- configure per-node retries only for transient thrown exceptions
 - avoid storing raw secrets in state, memory, traces, task input, or interrupt payloads
 - avoid doing slow network I/O inside run-event listeners
 
@@ -35,6 +36,14 @@ Normal input and approval resumes should continue to use `AgentGraph::resume($ru
 Delayed continuation jobs are safe to retry. A delayed job no-ops when the run is already `completed`, `cancelled`, or `failed`, or when its interrupt is no longer the pending delay interrupt.
 
 Keep external side effects inside `$context->tasks()->once()` so queue retries do not repeat irreversible work.
+
+## Node retry policies
+
+Use `StateGraph::retry($nodeId, maxAttempts: ..., delayMs: ..., backoff: ..., maxDelayMs: ...)` for transient exceptions such as flaky APIs or temporary network failures. `maxAttempts` includes the first attempt.
+
+Node retry policies are synchronous inside the current graph run. They retry only thrown node exceptions. They do not retry `NodeResult::fail()`, human interrupts, delays, or schema-validation failures.
+
+Retrying can execute node code more than once. Keep irreversible side effects inside `$context->tasks()->once()` with stable task keys and deterministic input hashes. Retry attempts are observable through `GraphNodeRetrying`, `node.retrying` traces, and normalized `node.retrying` run events.
 
 ## Superstep fan-out
 

@@ -1,6 +1,7 @@
 <?php
 
 use Heiner\AgentGraph\Contracts\Node;
+use Heiner\AgentGraph\Graph\RetryPolicy;
 use Heiner\AgentGraph\Graph\StateGraph;
 use Heiner\AgentGraph\Runtime\NodeContext;
 use Heiner\AgentGraph\Runtime\NodeResult;
@@ -77,6 +78,50 @@ it('applies built in reducers deterministically', function () {
         'confidence' => 0.9,
     ]);
 });
+
+it('validates retry policies and calculates backoff delays', function () {
+    $policy = new RetryPolicy(maxAttempts: 4, delayMs: 100, backoff: 2.0, maxDelayMs: 250);
+
+    expect($policy->maxAttempts())->toBe(4)
+        ->and($policy->delayMs())->toBe(100)
+        ->and($policy->backoff())->toBe(2.0)
+        ->and($policy->maxDelayMs())->toBe(250)
+        ->and($policy->delayForAttempt(1))->toBe(100)
+        ->and($policy->delayForAttempt(2))->toBe(200)
+        ->and($policy->delayForAttempt(3))->toBe(250);
+});
+
+it('rejects invalid retry policies', function (array $arguments, string $message) {
+    expect(fn () => new RetryPolicy(...$arguments))->toThrow(InvalidArgumentException::class, $message);
+})->with([
+    'zero attempts' => [['maxAttempts' => 0], 'maxAttempts must be at least 1'],
+    'negative delay' => [['delayMs' => -1], 'delayMs must be greater than or equal to 0'],
+    'low backoff' => [['backoff' => 0.5], 'backoff must be greater than or equal to 1'],
+    'negative max delay' => [['maxDelayMs' => -1], 'maxDelayMs must be greater than or equal to 0'],
+]);
+
+it('compiles per node retry policies into graph definitions', function () {
+    $graph = StateGraph::make('retry_policy_graph')
+        ->node('flaky', NoopNode::class)
+        ->edge(StateGraph::START, 'flaky')
+        ->edge('flaky', StateGraph::END)
+        ->retry('flaky', maxAttempts: 3, delayMs: 10, backoff: 1.5, maxDelayMs: 50)
+        ->compile();
+
+    expect($graph->nodePolicy('flaky')->retryPolicy())->not->toBeNull()
+        ->and($graph->nodePolicy('flaky')->retryPolicy()->maxAttempts())->toBe(3)
+        ->and($graph->nodePolicies())->toHaveKey('flaky')
+        ->and($graph->nodePolicy('missing')->retryPolicy())->toBeNull();
+});
+
+it('rejects retry policies for unknown nodes when compiling', function () {
+    StateGraph::make('invalid_retry_policy_graph')
+        ->node('known', NoopNode::class)
+        ->edge(StateGraph::START, 'known')
+        ->edge('known', StateGraph::END)
+        ->retry('missing', maxAttempts: 2)
+        ->compile();
+})->throws(InvalidArgumentException::class, 'Unknown policy node');
 
 final class NoopNode implements Node
 {

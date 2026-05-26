@@ -18,6 +18,7 @@ use Heiner\AgentGraph\Events\GraphEvent;
 use Heiner\AgentGraph\Events\GraphInterrupted;
 use Heiner\AgentGraph\Events\GraphNodeCompleted;
 use Heiner\AgentGraph\Events\GraphNodeFailed;
+use Heiner\AgentGraph\Events\GraphNodeRetrying;
 use Heiner\AgentGraph\Events\GraphNodeStarted;
 use Heiner\AgentGraph\Events\GraphResumed;
 use Heiner\AgentGraph\Events\GraphRunCancelled;
@@ -25,6 +26,7 @@ use Heiner\AgentGraph\Events\GraphRunCompleted;
 use Heiner\AgentGraph\Events\GraphRunFailed;
 use Heiner\AgentGraph\Events\GraphRunStarted;
 use Heiner\AgentGraph\Graph\GraphDefinition;
+use Heiner\AgentGraph\Graph\RetryPolicy;
 use Heiner\AgentGraph\Graph\StateGraph;
 use Heiner\AgentGraph\Queue\ContinueDelayedGraphJob;
 use Heiner\AgentGraph\State\Reducer;
@@ -458,7 +460,69 @@ class GraphRuntime
     {
         $node = $graph->node($nodeId);
         $instance = is_string($node) ? $this->container->make($node) : $node;
-        $context = new NodeContext(
+
+        if (! $instance instanceof Node && ! is_callable($instance)) {
+            throw new RuntimeException("Node [{$nodeId}] is not invokable.");
+        }
+
+        $retryPolicy = $graph->nodePolicy($nodeId)->retryPolicy();
+
+        if ($retryPolicy === null) {
+            return $this->invokeNodeOnce($instance, $graph, $nodeId, $state, $run, $checkpointId);
+        }
+
+        $attempt = 0;
+        $failedAttempts = 0;
+
+        while (true) {
+            $attempt++;
+            $context = $this->nodeContext($graph, $nodeId, $state, $run, $checkpointId);
+
+            try {
+                $result = $this->callNode($instance, $context);
+
+                return $this->withRetryMeta($result, $retryPolicy, $attempt, $failedAttempts);
+            } catch (Throwable $exception) {
+                $failedAttempts++;
+
+                if ($attempt >= $retryPolicy->maxAttempts() || ! $retryPolicy->shouldRetry($exception, $attempt, $context)) {
+                    throw $exception;
+                }
+
+                $delayMs = $retryPolicy->delayForAttempt($attempt);
+                $payload = [
+                    'node' => $nodeId,
+                    'attempt' => $attempt,
+                    'next_attempt' => $attempt + 1,
+                    'max_attempts' => $retryPolicy->maxAttempts(),
+                    'delay_ms' => $delayMs,
+                    'error' => [
+                        'type' => $exception::class,
+                        'message' => $exception->getMessage(),
+                    ],
+                ];
+
+                $this->traces->record($run['public_id'], 'node.retrying', $payload);
+                $this->dispatchRunEvent('node.retrying', new GraphNodeRetrying($run['public_id'], $run['thread_id'], $graph->key(), $nodeId, $payload));
+
+                if ($delayMs > 0) {
+                    usleep($delayMs * 1000);
+                }
+            }
+        }
+    }
+
+    protected function invokeNodeOnce(mixed $instance, GraphDefinition $graph, string $nodeId, array $state, array $run, ?string $checkpointId): NodeResult
+    {
+        return $this->callNode(
+            $instance,
+            $this->nodeContext($graph, $nodeId, $state, $run, $checkpointId),
+        );
+    }
+
+    protected function nodeContext(GraphDefinition $graph, string $nodeId, array $state, array $run, ?string $checkpointId): NodeContext
+    {
+        return new NodeContext(
             state: $state,
             runId: $run['public_id'],
             threadId: $run['thread_id'],
@@ -469,14 +533,32 @@ class GraphRuntime
             traces: $this->traces,
             tasks: new TaskRunner(app(TaskStore::class), $run['public_id'], $nodeId, $checkpointId),
         );
+    }
 
+    protected function callNode(mixed $instance, NodeContext $context): NodeResult
+    {
         if ($instance instanceof Node || is_callable($instance)) {
             $result = $instance($context);
 
             return is_array($result) ? NodeResult::write($result) : $result;
         }
 
-        throw new RuntimeException("Node [{$nodeId}] is not invokable.");
+        throw new RuntimeException("Node [{$context->nodeId()}] is not invokable.");
+    }
+
+    protected function withRetryMeta(NodeResult $result, RetryPolicy $retryPolicy, int $attempts, int $failedAttempts): NodeResult
+    {
+        $meta = array_replace_recursive($result->meta(), [
+            'runtime' => [
+                'retry' => [
+                    'attempts' => $attempts,
+                    'max_attempts' => $retryPolicy->maxAttempts(),
+                    'failed_attempts' => $failedAttempts,
+                ],
+            ],
+        ]);
+
+        return $result->withMeta($meta);
     }
 
     protected function failRun(array $run, GraphDefinition $graph, string $nodeId, array $state, Throwable $exception): RunResult

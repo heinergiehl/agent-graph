@@ -22,6 +22,7 @@ Implemented and ready for sandbox testing:
 - Queue jobs, cache locks, install/make/doctor/prune commands.
 - Runtime inspection with run snapshots, run listing, checkpoint writes, pending interrupts, optional traces, and read-only run timelines.
 - Experimental checkpoint inspection, replay, fork, and lineage APIs for time-travel workflows.
+- Per-node retry policies for transient thrown node exceptions.
 - State schema key/type validation for run input, resume, state edit, fork, and node writes.
 - Safe state-edit resume with graph-schema validation.
 - Delayed continuation retry guards for final runs and stale delay interrupts.
@@ -47,6 +48,17 @@ Implemented for the next beta:
 - `stream.delta` observation for existing Laravel AI `GraphStreamDelta` payloads.
 - No SSE helper, no Vercel protocol adapter, and no replacement for Laravel AI model streaming.
 
+## 0.12 Node Retry Policy Scope
+
+Implemented for the next beta:
+
+- `StateGraph::retry()` for per-node retry policies.
+- `RetryPolicy` with max attempts, initial delay, backoff, max delay, and optional retry predicate.
+- Synchronous runtime retry for thrown node exceptions only.
+- `node.retrying` Laravel events, traces, and normalized run events.
+- Retry metadata under `runtime.retry` on successful write metadata.
+- No timeout, cache, concurrency limit, queue-backed parallelism, or Laravel AI provider hooks in this scope.
+
 ## v1 Hardening Checklist
 
 These items should be completed before tagging `v1.0.0`:
@@ -69,6 +81,7 @@ Implemented v1 hardening:
 - Graph version compatibility checks for resume, replay, and fork.
 - Deterministic supersteps and dynamic `Send` fan-out without Laravel AI provider coupling.
 - Additive run-event observation without replacing Laravel AI streaming or changing `GraphTool` JSON.
+- Per-node retry policies for thrown node exceptions without database migrations.
 
 ## Post-v1 Features
 
@@ -86,7 +99,7 @@ These are useful but intentionally outside the v1 MVP:
 - Optional HTTP/SSE or broadcast adapters built outside the SDK core on top of `RunEvent`.
 - LangSmith-like observability dashboards or external trace adapters.
 - Visual workflow editor.
-- Per-node retry, timeout, backoff, cache, and concurrency policies.
+- Per-node timeout, cache, and concurrency policies.
 - Native deployment/API server comparable to LangGraph Platform.
 - Multi-process scheduler for long-running background graph runs.
 
