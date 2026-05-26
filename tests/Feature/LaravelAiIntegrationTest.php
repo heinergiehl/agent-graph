@@ -50,6 +50,7 @@ it('runs a Laravel AI agent inside an AgentNode', function () {
 it('dispatches AgentGraph stream events for streamed Laravel AI deltas', function () {
     Event::fake([GraphStreamDelta::class]);
     app()->bind(FakeStreamingSupportAgent::class, fn () => new FakeStreamingSupportAgent);
+    $streamedDeltas = [];
 
     AgentGraph::define(
         StateGraph::make('streaming_agent_answer')
@@ -58,6 +59,9 @@ it('dispatches AgentGraph stream events for streamed Laravel AI deltas', functio
                 ->agent(FakeStreamingSupportAgent::class)
                 ->prompt(fn (array $state) => $state['input'])
                 ->stream()
+                ->onTextDelta(function (string $delta) use (&$streamedDeltas): void {
+                    $streamedDeltas[] = $delta;
+                })
                 ->writeTextTo('answer')
                 ->writeUsageTo('usage'))
             ->edge(StateGraph::START, 'answer')
@@ -74,7 +78,8 @@ it('dispatches AgentGraph stream events for streamed Laravel AI deltas', functio
         ->and($run->state('answer'))->toBe('Hello from stream')
         ->and($run->state('usage')['completion_tokens'])->toBe(4)
         ->and(collect($run->events())->where(fn (RunEvent $event): bool => $event->type() === 'stream.delta'))->toHaveCount(3)
-        ->and(collect($run->events())->where(fn (RunEvent $event): bool => $event->type() === 'stream.delta')->last()->payload()['delta'])->toBe('stream');
+        ->and(collect($run->events())->where(fn (RunEvent $event): bool => $event->type() === 'stream.delta')->last()->payload()['delta'])->toBe('stream')
+        ->and($streamedDeltas)->toBe(['Hello ', 'from ', 'stream']);
 
     Event::assertDispatched(GraphStreamDelta::class, 3);
     Event::assertDispatched(GraphStreamDelta::class, fn (GraphStreamDelta $event): bool => $event->payload['delta'] === 'stream');

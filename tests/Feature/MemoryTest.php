@@ -1,5 +1,6 @@
 <?php
 
+use Heiner\AgentGraph\Contracts\EnumerableMemoryStore;
 use Heiner\AgentGraph\Memory\MemoryScope;
 
 it('writes and reads scoped memory with fallback order', function () {
@@ -74,4 +75,30 @@ it('ignores expired memory and updates usage metadata on read and search', funct
     expect($results)->toHaveCount(1)
         ->and($results[0]['key'])->toBe('fresh')
         ->and($results[0]['usage_count'])->toBe(2);
+});
+
+it('lists namespace records across scopes in fallback order', function () {
+    $memory = app('agent-graph.memory');
+    config()->set('agent-graph.memory.fallback_order', ['actor', 'thread']);
+
+    $actor = MemoryScope::actor('tenant-3', 'user-3');
+    $thread = MemoryScope::thread('thread-3');
+
+    $memory->write($thread, 'preferences', 'language', 'en', 'preference', 'Thread language.');
+    $memory->write($thread, 'preferences', 'tone', 'friendly', 'preference', 'Thread tone.');
+    $memory->write($actor, 'preferences', 'language', 'de', 'preference', 'Actor language.');
+    $memory->write($actor, 'preferences', 'expired', 'old', 'preference', 'Expired.', [
+        'expires_at' => now()->subMinute(),
+    ]);
+    $memory->write($actor, 'profile', 'name', 'Ada', 'fact', 'Different namespace.');
+
+    expect($memory)->toBeInstanceOf(EnumerableMemoryStore::class);
+
+    $records = $memory->listNamespace([
+        'thread' => $thread,
+        'actor' => $actor,
+    ], 'preferences');
+
+    expect(array_map(fn (array $record): string => $record['value'], $records))
+        ->toBe(['de', 'en', 'friendly']);
 });

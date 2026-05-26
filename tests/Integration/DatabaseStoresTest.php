@@ -1,5 +1,6 @@
 <?php
 
+use Heiner\AgentGraph\Contracts\EnumerableMemoryStore;
 use Heiner\AgentGraph\Memory\MemoryScope;
 use Heiner\AgentGraph\Persistence\DatabaseCheckpointStore;
 use Heiner\AgentGraph\Persistence\DatabaseInterruptStore;
@@ -56,7 +57,13 @@ it('persists runs checkpoints writes tasks and memory in the database', function
     $task = $tasks->start('task-key', 'hash', ['input' => true], ['run_id' => $run['public_id']]);
     $tasks->complete('task-key', ['ok' => true]);
 
-    $memory->write(MemoryScope::actor('tenant-db', 'user-db'), 'preferences', 'language', 'de', 'preference', 'Prefers German.');
+    $actorScope = MemoryScope::actor('tenant-db', 'user-db');
+    $threadScope = MemoryScope::thread('thread-db');
+
+    config()->set('agent-graph.memory.fallback_order', ['actor', 'thread']);
+
+    $memory->write($threadScope, 'preferences', 'language', 'en', 'preference', 'Thread-level preference.');
+    $memory->write($actorScope, 'preferences', 'language', 'de', 'preference', 'Prefers German.');
 
     expect($runs->find($run['public_id'])['status'])->toBe('running')
         ->and($runs->list(['thread_id' => 'thread-db']))->toHaveCount(2)
@@ -68,5 +75,8 @@ it('persists runs checkpoints writes tasks and memory in the database', function
         ->and($writes->listForCheckpoint($checkpoint['checkpoint_id']))->toHaveCount(1)
         ->and($writes->listForRun($run['public_id']))->toHaveCount(1)
         ->and($tasks->findByKey('task-key')['result'])->toBe(['ok' => true])
-        ->and($memory->read([MemoryScope::actor('tenant-db', 'user-db')], 'preferences', 'language')['value'])->toBe('de');
+        ->and($memory)->toBeInstanceOf(EnumerableMemoryStore::class)
+        ->and($memory->read([$actorScope], 'preferences', 'language')['value'])->toBe('de')
+        ->and(array_map(fn (array $record): string => $record['value'], $memory->listNamespace([$threadScope, $actorScope], 'preferences')))
+        ->toBe(['de', 'en']);
 });

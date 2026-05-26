@@ -62,6 +62,40 @@ it('interrupts and resumes from the latest checkpoint', function () {
         ->and($completed->state('answer'))->toBe('Tracking ORD-123');
 });
 
+it('exposes resume payload and interrupt id to resumed nodes', function () {
+    AgentGraph::define(
+        StateGraph::make('resume_context')
+            ->state([
+                'answer' => 'string|null',
+                'resume_seen' => 'bool|null',
+                'resume_question' => 'string|null',
+                'resume_by_key' => 'array|null',
+                'resume_interrupt_id' => 'string|null',
+                '__resume' => 'array|null',
+            ])
+            ->node('ask', ResumeContextNode::class)
+            ->edge(StateGraph::START, 'ask')
+            ->edge('ask', StateGraph::END)
+    );
+
+    $interrupted = AgentGraph::graph('resume_context')
+        ->thread('thread-resume-context')
+        ->input([])
+        ->run();
+
+    $completed = AgentGraph::resume($interrupted->runId(), [
+        'interrupt_id' => $interrupted->interrupt()['interrupt_id'],
+        'question' => 'shipping',
+        '__resume' => ['source' => 'turn'],
+    ]);
+
+    expect($completed->completed())->toBeTrue()
+        ->and($completed->state('resume_seen'))->toBeTrue()
+        ->and($completed->state('resume_question'))->toBe('shipping')
+        ->and($completed->state('resume_by_key'))->toBe(['source' => 'turn'])
+        ->and($completed->state('resume_interrupt_id'))->toBe($interrupted->interrupt()['interrupt_id']);
+});
+
 it('executes side effect tasks once per idempotency key', function () {
     AgentGraph::define(
         StateGraph::make('tasks')
@@ -76,6 +110,42 @@ it('executes side effect tasks once per idempotency key', function () {
 
     expect($first->state('count'))->toBe(1)
         ->and($second->state('count'))->toBe(1);
+});
+
+it('records structured exception metadata for runtime failures', function () {
+    AgentGraph::define(
+        StateGraph::make('runtime_exception_metadata')
+            ->state(['answer' => 'string|null'])
+            ->node('fail', ExceptionMetadataNode::class)
+            ->edge(StateGraph::START, 'fail')
+            ->edge('fail', StateGraph::END)
+    );
+
+    $run = AgentGraph::graph('runtime_exception_metadata')
+        ->thread('thread-runtime-exception')
+        ->input([])
+        ->run();
+
+    $snapshot = AgentGraph::inspect($run->runId(), withTraces: true);
+    $failureTrace = collect($snapshot->traces())->firstWhere('event', 'node.failed');
+
+    expect($run->failed())->toBeTrue()
+        ->and($run->error())->toMatchArray([
+            'message' => 'runtime exploded',
+            'exception_class' => DomainException::class,
+            'code' => 422,
+        ])
+        ->and($snapshot->error())->toMatchArray([
+            'message' => 'runtime exploded',
+            'exception_class' => DomainException::class,
+            'code' => 422,
+        ])
+        ->and($failureTrace['payload'])->toMatchArray([
+            'node' => 'fail',
+            'message' => 'runtime exploded',
+            'exception_class' => DomainException::class,
+            'code' => 422,
+        ]);
 });
 
 final class ClassifyNode implements Node
@@ -127,5 +197,30 @@ final class TaskNode implements Node
         );
 
         return NodeResult::write(['count' => $count]);
+    }
+}
+
+final class ResumeContextNode implements Node
+{
+    public function __invoke(NodeContext $context): NodeResult
+    {
+        if (! $context->hasResumePayload()) {
+            return NodeResult::interrupt('input', ['prompt' => 'What should I answer?']);
+        }
+
+        return NodeResult::write([
+            'resume_seen' => true,
+            'resume_question' => $context->resumePayload()['question'] ?? null,
+            'resume_by_key' => $context->resumePayload('__resume'),
+            'resume_interrupt_id' => $context->interruptId(),
+        ]);
+    }
+}
+
+final class ExceptionMetadataNode implements Node
+{
+    public function __invoke(NodeContext $context): NodeResult
+    {
+        throw new DomainException('runtime exploded', 422);
     }
 }

@@ -35,6 +35,8 @@ class AgentNode implements Node
 
     protected ?string $metaChannel = null;
 
+    protected ?Closure $textDeltaCallback = null;
+
     protected function __construct(protected string $id) {}
 
     public static function make(string $id): self
@@ -112,6 +114,13 @@ class AgentNode implements Node
         return $this;
     }
 
+    public function onTextDelta(Closure $callback): self
+    {
+        $this->textDeltaCallback = $callback;
+
+        return $this;
+    }
+
     public function __invoke(NodeContext $context): NodeResult
     {
         $agent = $this->resolveAgent();
@@ -150,6 +159,10 @@ class AgentNode implements Node
                     ));
 
                     $context->traces()->record($context->runId(), 'stream.delta', $payload);
+
+                    if ($this->textDeltaCallback !== null) {
+                        ($this->textDeltaCallback)($event->delta);
+                    }
                 }
             }
 
