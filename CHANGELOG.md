@@ -6,6 +6,29 @@ All notable changes to AgentGraph are documented here.
 
 Target: hardened MVP API stability after 0.12 sandbox and chatbot integration testing.
 
+## 0.13.0-beta.1 - 2026-05-26
+
+### Added
+
+- Added Laravel-AI-safe runtime guardrails, including architecture tests that prevent provider, gateway, parser, and protocol internals from being imported by AgentGraph source.
+- Added durable app workflow sessions and `DurableGraphTool` while keeping the existing `GraphTool` JSON contract unchanged.
+- Added native subgraphs with isolated, shared, and mapped state modes plus persisted parent/child lineage.
+- Added task leases, node timeout/concurrency policies, interrupt expiry policies, strict resume validation, and the structured `StateSchema` builder.
+- Added enriched `AgentNode` metadata writers for structured output, public tool metadata, steps, and stream events.
+- Added the memory manager surface, memory extraction/vector contracts, privacy export/delete APIs, and optional pgvector memory support.
+- Added worker-backed queued supersteps with leased node execution records, `NodeExecutionJob`, and `ContinueSuperstepJob`.
+
+### Changed
+
+- Package migrations now use Laravel-style migration publishing and configurable AgentGraph database connections.
+- Store contracts now include active-run lookup, node execution lifecycle operations, interrupt expiry, task lease inspection, and memory privacy operations.
+- Composer branch alias now targets `0.13-dev`.
+
+### Hardened
+
+- `queued_supersteps` remains opt-in and preserves sync reducer, checkpoint, interrupt, failure, and final-run semantics.
+- Laravel AI remains the owner of agents, providers, tools, structured output, and token streaming; AgentGraph only orchestrates durable graph runtime behavior around those public APIs.
+
 ### Added
 
 - Added stable runtime inspection APIs: `AgentGraph::inspect()` and `AgentGraph::runs()`.
