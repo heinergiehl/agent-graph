@@ -47,6 +47,17 @@ Target: hardened MVP API stability after 0.12 sandbox and chatbot integration te
 
 - Added production guidance for runtime recovery, queue retry safety, state edits, replay/fork side-effect safety, and API stability.
 
+## 0.12.1 - 2026-05-26
+
+### Added
+
+- Added generic parent/child run lineage metadata with `PendingGraphRun::parent()`, `AgentGraph::childRuns()`, `RunResult::meta()`, and `RunSnapshot::parent()`.
+- Replay and fork runs now also store `run.meta.parent` with `relationship` set to `replay` or `fork`, while preserving checkpoint-specific `time_travel` metadata.
+
+### Changed
+
+- `RunStore` adapters now expose `listChildRuns()` for read-only inspector and lineage UIs without requiring a database migration.
+
 ## 0.12.0 - 2026-05-26
 
 ### Added
