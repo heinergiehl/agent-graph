@@ -52,6 +52,19 @@ class InMemoryRunStore implements RunStore
         return array_slice($runs, 0, max(1, min($limit, 500)));
     }
 
+    public function latestForThreadGraph(string $threadId, string $graphKey, array $statuses = []): ?array
+    {
+        $runs = array_values(array_filter($this->runs, function (array $run) use ($threadId, $graphKey, $statuses): bool {
+            return $run['thread_id'] === $threadId
+                && $run['graph_key'] === $graphKey
+                && ($statuses === [] || in_array($run['status'], $statuses, true));
+        }));
+
+        usort($runs, fn (array $a, array $b): int => ($b['id'] ?? 0) <=> ($a['id'] ?? 0));
+
+        return $runs[0] ?? null;
+    }
+
     public function listChildRuns(string $parentRunId, int $limit = 50): array
     {
         $runs = array_values(array_filter($this->runs, fn (array $run): bool => ($run['meta']['parent']['run_id'] ?? null) === $parentRunId));

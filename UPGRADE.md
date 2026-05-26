@@ -15,17 +15,33 @@ Experimental time-travel APIs are public and tested, but not part of the stable 
 Custom store adapters must implement the v1 contract additions:
 
 - `RunStore::list(array $filters = [], int $limit = 50): array`
+- `RunStore::latestForThreadGraph(string $threadId, string $graphKey, array $statuses = []): ?array`
 - `RunStore::listChildRuns(string $parentRunId, int $limit = 50): array`
 - `RunStore::listTimeTravelChildren(string $checkpointId, int $limit = 50): array`
 - `CheckpointStore::find(string $checkpointId): ?array`
 - `InterruptStore::find(string $interruptId): ?array`
 - `InterruptStore::listForRun(string $runId): array`
+- `InterruptStore::expirePending(mixed $now = null): int`
 - `WriteStore::listForCheckpoint(string $checkpointId): array`
 - `TaskStore::list(array $filters = [], int $limit = 50): array`
+- `MemoryStore::exportScope(MemoryScope $scope, ?string $namespace = null): array`
+- `MemoryStore::deleteScope(MemoryScope $scope): int`
+- `MemoryStore::deleteNamespace(MemoryScope $scope, string $namespace): int`
+- `MemoryStore::deleteKey(MemoryScope $scope, string $namespace, string $key): int`
+
+New optional contracts are available for package/default adapters and custom extensions:
+
+- `LeasingTaskStore`
+- `NodeExecutionStore`
+- `MemoryExtractor`
+- `EmbeddingGenerator`
+- `VectorMemoryStore`
 
 Applications that expose memory inspection should resolve `EnumerableMemoryStore::class` for namespace listing. Custom memory stores can implement it with `listNamespace(array $scopes, string $namespace): array`.
 
-No new database migration is required for these APIs when using the package stores.
+Run the new additive package migrations when using the package stores. They add interrupt expiry and queued node execution records. Existing published migrations remain valid.
+
+`NodeExecutionStore` now owns the queued node lifecycle for `queued_supersteps`: schedule, find, claim, complete, interrupt, fail, and list by run/step. Custom adapters must persist execution IDs, node state, base state, resume payloads, leases, and final result payloads.
 
 `TaskStore::list()` is read-only and supports `run_id`, `node_id`, `checkpoint_id`, and `status` filters for inspector UIs.
 
@@ -50,6 +66,8 @@ Review graphs that relied on loosely typed values such as string numbers for `in
 
 Use `AgentGraph::resume($runId, ['interrupt_id' => $interruptId, ...])` for normal input and approval flows.
 
+Use `AgentGraph::resumeStrict($runId, [...])` for public endpoints that should reject unknown resume payload keys. Normal `resume()` remains permissive for backward compatibility.
+
 During the resumed node invocation, `$context->hasResumePayload()`, `$context->resumePayload()`, and `$context->interruptId()` expose the original resume payload separately from merged graph state.
 
 Use `AgentGraph::resumeWithStateEdit($runId, $interruptId, $statePatch, $resolvedBy)` for manual state correction. It only accepts pending `state_edit` interrupts and validates the patch before resolving the interrupt.
@@ -61,6 +79,35 @@ Failed runs now return structured error arrays with `message`, `exception_class`
 ## GraphTool mapping hooks
 
 `GraphTool` now supports `input()`, `output()`, and `meta()` hooks. These hooks are additive and do not replace Laravel AI tool invocation. Use them to map tool requests and responses; keep lifecycle persistence in run-event observers.
+
+`GraphTool` keeps its existing JSON response shape. Use `AgentGraph::durableTool()` or `AgentGraph::session()` when an application needs active-run-per-thread semantics, status, resume, or cancel behavior.
+
+## Runtime hardening APIs
+
+Per-node timeout and concurrency policies are additive:
+
+- `StateGraph::timeout($nodeId, $seconds)`
+- `StateGraph::concurrency($nodeId, limit: 1, key: null)`
+
+Timeouts are wall-clock checks after node execution returns. Concurrency uses the configured AgentGraph lock provider and does not alter Laravel AI providers, queues, or streaming.
+
+Task leases use `agent-graph.tasks.lease_seconds`. Choose a lease duration longer than the expected external side-effect call.
+
+Interrupt expiry is opt-in through `NodeResult::withInterruptPolicy(InterruptPolicy::expiresAfter(...))`. Call `AgentGraph::expireInterrupts()` from scheduled maintenance if your app uses expiring review flows.
+
+`queued_supersteps` is opt-in through `agent-graph.execution.mode`. In that mode, `run()` and `resume()` usually return `running` after scheduling queue jobs. Workers must boot the same graph definitions and process `NodeExecutionJob` and `ContinueSuperstepJob` on the configured queue.
+
+## Laravel AI compatibility
+
+AgentGraph only uses Laravel AI public contracts, response DTOs, and streaming events. Do not build custom adapters that depend on `Laravel\Ai\Gateway`, `Laravel\Ai\Providers`, provider concerns, or Laravel AI's Vercel protocol internals from AgentGraph code.
+
+`AgentNode` can now write structured output, tool calls, tool results, steps, and stream event arrays into graph state using public Laravel AI response objects.
+
+## Subgraphs and memory
+
+`SubgraphNode` is now available for child graph execution. Child runs are persisted as normal runs and use `run.meta.parent` lineage. If child graphs can interrupt, callers must resume the parent with the bubbled `child_run_id` and `child_interrupt_id`.
+
+`AgentGraph::memory()` adds extraction/export/delete helpers. Default memory/vector bindings are deterministic and infrastructure-free; production vector stores should bind custom `VectorMemoryStore` implementations.
 
 ## Time travel replay and fork safety
 
@@ -83,3 +130,4 @@ Before upgrading to v1:
 5. Re-run any chatbot integration tests that consume `GraphTool` JSON.
 6. Update custom store adapters for the v1 contract additions.
 7. Review state schemas for value types that were previously accepted loosely.
+8. Run the additive hardening migrations for interrupt expiry and queued node execution records.

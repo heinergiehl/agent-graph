@@ -17,4 +17,12 @@ interface MemoryStore
      * @param  array<int, MemoryScope>  $scopes
      */
     public function search(array $scopes, string $query, ?string $namespace = null, ?string $type = null): array;
+
+    public function exportScope(MemoryScope $scope, ?string $namespace = null): array;
+
+    public function deleteScope(MemoryScope $scope): int;
+
+    public function deleteNamespace(MemoryScope $scope, string $namespace): int;
+
+    public function deleteKey(MemoryScope $scope, string $namespace, string $key): int;
 }

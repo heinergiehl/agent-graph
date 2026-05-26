@@ -3,6 +3,7 @@
 namespace Heiner\AgentGraph\Graph;
 
 use Closure;
+use Heiner\AgentGraph\State\StateSchema;
 use InvalidArgumentException;
 
 class StateGraph
@@ -30,9 +31,9 @@ class StateGraph
         return new self($key, $version);
     }
 
-    public function state(array $schema): self
+    public function state(array|StateSchema $schema): self
     {
-        $this->schema = $schema;
+        $this->schema = $schema instanceof StateSchema ? $schema->toArray() : $schema;
 
         return $this;
     }
@@ -84,6 +85,22 @@ class StateGraph
             maxDelayMs: $maxDelayMs,
             when: $when,
         ));
+
+        return $this;
+    }
+
+    public function timeout(string $nodeId, float $seconds): self
+    {
+        $policy = $this->nodePolicies[$nodeId] ?? NodePolicy::default();
+        $this->nodePolicies[$nodeId] = $policy->withTimeoutPolicy(new TimeoutPolicy($seconds));
+
+        return $this;
+    }
+
+    public function concurrency(string $nodeId, int $limit = 1, ?string $key = null): self
+    {
+        $policy = $this->nodePolicies[$nodeId] ?? NodePolicy::default();
+        $this->nodePolicies[$nodeId] = $policy->withConcurrencyPolicy(new ConcurrencyPolicy($limit, $key));
 
         return $this;
     }

@@ -17,6 +17,7 @@ class InMemoryInterruptStore implements InterruptStore
             'response' => null,
             'resolved_by' => null,
             'resolved_at' => null,
+            'expires_at' => null,
             'created_at' => now(),
             'updated_at' => now(),
         ], $interrupt);
@@ -56,5 +57,25 @@ class InMemoryInterruptStore implements InterruptStore
         $this->interrupts[$interruptId]['updated_at'] = now();
 
         return $this->interrupts[$interruptId];
+    }
+
+    public function expirePending(mixed $now = null): int
+    {
+        $now ??= now();
+        $expired = 0;
+
+        foreach ($this->interrupts as $id => $interrupt) {
+            if ($interrupt['status'] !== 'pending' || ($interrupt['expires_at'] ?? null) === null) {
+                continue;
+            }
+
+            if ($now->greaterThanOrEqualTo($interrupt['expires_at'])) {
+                $this->interrupts[$id]['status'] = 'expired';
+                $this->interrupts[$id]['updated_at'] = now();
+                $expired++;
+            }
+        }
+
+        return $expired;
     }
 }

@@ -17,16 +17,21 @@ class StateSchemaValidator
                 continue;
             }
 
-            $type = (string) $schema[$key];
+            $type = $schema[$key];
 
             if (! $this->matches($type, $value)) {
-                throw new InvalidArgumentException("State value [{$key}] must match schema type [{$type}].");
+                $label = is_array($type) ? json_encode($type) : (string) $type;
+                throw new InvalidArgumentException("State value [{$key}] must match schema type [{$label}].");
             }
         }
     }
 
-    public function matches(string $typeExpression, mixed $value): bool
+    public function matches(string|array $typeExpression, mixed $value): bool
     {
+        if (is_array($typeExpression)) {
+            return $this->matchesStructured($typeExpression, $value);
+        }
+
         foreach (explode('|', $typeExpression) as $type) {
             if ($this->matchesSingleType(trim($type), $value)) {
                 return true;
@@ -49,5 +54,26 @@ class StateSchemaValidator
             'object' => is_object($value),
             default => true,
         };
+    }
+
+    protected function matchesStructured(array $schema, mixed $value): bool
+    {
+        return match ($schema['type'] ?? 'mixed') {
+            'enum' => in_array($value, (array) ($schema['values'] ?? []), true),
+            'array' => is_array($value) && array_is_list($value),
+            'object' => is_array($value) && $this->objectMatches((array) ($schema['properties'] ?? []), $value),
+            default => true,
+        };
+    }
+
+    protected function objectMatches(array $properties, array $value): bool
+    {
+        foreach ($properties as $key => $type) {
+            if (array_key_exists($key, $value) && ! $this->matches($type, $value[$key])) {
+                return false;
+            }
+        }
+
+        return true;
     }
 }

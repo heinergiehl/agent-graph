@@ -24,8 +24,17 @@ Implemented and ready for sandbox testing:
 - Read-only task inspection for durable side-effect debugging.
 - Experimental checkpoint inspection, replay, fork, and lineage APIs for time-travel workflows.
 - Per-node retry policies for transient thrown node exceptions.
+- Per-node timeout and lock-backed concurrency policies.
 - State schema key/type validation for run input, resume, state edit, fork, and node writes.
+- Optional strict resume API for unknown-key rejection.
 - Safe state-edit resume with graph-schema validation.
+- Task leases for idempotent side-effect execution.
+- Durable app workflow sessions and durable graph tools for active-thread workflows.
+- Native subgraph nodes with child-run lineage and interrupt bubbling.
+- AgentNode metadata writers for structured output, tool calls, tool results, steps, and stream events.
+- Memory manager, memory extraction/vector contracts, and privacy export/delete helpers.
+- Interrupt expiry policies and pruning support.
+- Worker-backed queued supersteps with node execution records.
 - Delayed continuation retry guards for final runs and stale delay interrupts.
 - Fresh Laravel sandbox validation through a local path repository.
 
@@ -83,7 +92,9 @@ Implemented v1 hardening:
 - Deterministic supersteps and dynamic `Send` fan-out without Laravel AI provider coupling.
 - Additive run-event observation without replacing Laravel AI streaming or changing `GraphTool` JSON.
 - Per-node retry policies for thrown node exceptions without database migrations.
+- Per-node timeout and lock-backed concurrency policies.
 - Resume context accessors for human-in-the-loop nodes.
+- Strict resume API that preserves normal resume compatibility.
 - Structured runtime errors for run results, graph tools, traces, and timelines.
 - Replaceable delay scheduling through `DelayScheduler`.
 - Enumerable memory listing through `EnumerableMemoryStore`.
@@ -91,25 +102,28 @@ Implemented v1 hardening:
 - Bounded GraphTool input, output, and run metadata mapping hooks.
 - Standard `meta.node` conventions for inspector and timeline UIs.
 - Parent/child run lineage metadata through `run.meta.parent` and `AgentGraph::childRuns()`.
+- Native `SubgraphNode` execution using the same lineage metadata.
+- Durable sessions and durable graph tools for active-run-per-thread app workflows.
+- Task lease hardening using existing `locked_until` task storage.
+- Interrupt expiry and queued-superstep node execution persistence through additive hardening migrations.
+- Worker-backed queued supersteps for opt-in multi-worker fan-out.
 - Compatibility CI matrix for PHP 8.3/8.4, Laravel 12/13, and `laravel/ai ^0.7`.
 
 ## Post-v1 Features
 
 These are useful but intentionally outside the v1 MVP:
 
-- Queue-backed true parallel execution across workers.
-- Stateful subgraphs with inherited or isolated checkpoint stores.
-- Graph-as-subgraph composition separate from graph-as-tool.
+- Advanced subgraph orchestration policies beyond `SubgraphNode` child runs.
 - Visual timeline tooling and advanced time-travel controls beyond the generic timeline and experimental replay/fork/lineage APIs.
 - Visual state inspection and state editing UI.
 - JSON graph import/export and schema serialization.
-- Semantic/vector memory adapters, including optional pgvector support.
-- Memory compaction and summarization policies.
+- Production semantic/vector memory adapters, including optional pgvector support.
+- Memory compaction and summarization policies beyond deterministic extraction contracts.
 - OpenTelemetry export.
 - Optional HTTP/SSE or broadcast adapters built outside the SDK core on top of `RunEvent`.
 - LangSmith-like observability dashboards or external trace adapters.
 - Visual workflow editor.
-- Per-node timeout, cache, and concurrency policies.
+- Per-node cache policies.
 - Native deployment/API server comparable to LangGraph Platform.
 - Multi-process scheduler for long-running background graph runs.
 

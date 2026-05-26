@@ -2,13 +2,15 @@
 
 namespace Heiner\AgentGraph\Persistence;
 
-use Heiner\AgentGraph\Contracts\TaskStore;
+use Carbon\CarbonImmutable;
+use DateTimeInterface;
+use Heiner\AgentGraph\Contracts\LeasingTaskStore;
 use Heiner\AgentGraph\Persistence\Concerns\SerializesDatabaseValues;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Database\QueryException;
 use RuntimeException;
 
-class DatabaseTaskStore implements TaskStore
+class DatabaseTaskStore implements LeasingTaskStore
 {
     use SerializesDatabaseValues;
 
@@ -19,6 +21,17 @@ class DatabaseTaskStore implements TaskStore
         $record = $this->db->table($this->table())->where('task_key', $key)->first();
 
         return $record ? $this->decodeRecord($record, ['input', 'result', 'error', 'meta']) : null;
+    }
+
+    public function activeLeaseUntil(array $task): ?DateTimeInterface
+    {
+        if (($task['status'] ?? null) !== 'running' || empty($task['locked_until'])) {
+            return null;
+        }
+
+        $lockedUntil = CarbonImmutable::parse($task['locked_until']);
+
+        return $lockedUntil->isFuture() ? $lockedUntil : null;
     }
 
     public function list(array $filters = [], int $limit = 50): array
@@ -56,6 +69,7 @@ class DatabaseTaskStore implements TaskStore
                     'input_hash' => $inputHash,
                     'input' => $this->encode($input),
                     'attempts' => 1,
+                    'locked_until' => $this->leaseUntil(),
                     'run_id' => $context['run_id'] ?? null,
                     'checkpoint_id' => $context['checkpoint_id'] ?? null,
                     'node_id' => $context['node_id'] ?? null,
@@ -81,6 +95,7 @@ class DatabaseTaskStore implements TaskStore
         $this->db->table($this->table())->where('task_key', $key)->update([
             'status' => 'running',
             'attempts' => $existing['attempts'] + 1,
+            'locked_until' => $this->leaseUntil(),
             'updated_at' => $now,
         ]);
 
@@ -92,6 +107,7 @@ class DatabaseTaskStore implements TaskStore
         $this->db->table($this->table())->where('task_key', $key)->update([
             'status' => 'completed',
             'result' => $this->encode($result),
+            'locked_until' => null,
             'updated_at' => now(),
         ]);
 
@@ -103,6 +119,7 @@ class DatabaseTaskStore implements TaskStore
         $this->db->table($this->table())->where('task_key', $key)->update([
             'status' => 'failed',
             'error' => $this->encode(['message' => $message, 'meta' => $meta]),
+            'locked_until' => null,
             'updated_at' => now(),
         ]);
 
@@ -112,6 +129,11 @@ class DatabaseTaskStore implements TaskStore
     protected function table(): string
     {
         return config('agent-graph.tables.tasks', 'agent_graph_tasks');
+    }
+
+    protected function leaseUntil(): CarbonImmutable
+    {
+        return now()->addSeconds((int) config('agent-graph.tasks.lease_seconds', 300))->toImmutable();
     }
 
     protected function isDuplicateKeyException(QueryException $exception): bool

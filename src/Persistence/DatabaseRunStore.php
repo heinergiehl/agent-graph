@@ -58,6 +58,21 @@ class DatabaseRunStore implements RunStore
             ->all();
     }
 
+    public function latestForThreadGraph(string $threadId, string $graphKey, array $statuses = []): ?array
+    {
+        $query = $this->db->table($this->table())
+            ->where('thread_id', $threadId)
+            ->where('graph_key', $graphKey);
+
+        if ($statuses !== []) {
+            $query->whereIn('status', $statuses);
+        }
+
+        $record = $query->orderByDesc('id')->first();
+
+        return $record ? $this->decodeRecord($record, ['input', 'error', 'meta']) : null;
+    }
+
     public function listChildRuns(string $parentRunId, int $limit = 50): array
     {
         $limit = max(1, min($limit, 500));

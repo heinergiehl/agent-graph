@@ -10,6 +10,7 @@ use Heiner\AgentGraph\Contracts\InterruptStore;
 use Heiner\AgentGraph\Contracts\LockProvider;
 use Heiner\AgentGraph\Contracts\MemoryStore;
 use Heiner\AgentGraph\Contracts\Node;
+use Heiner\AgentGraph\Contracts\NodeExecutionStore;
 use Heiner\AgentGraph\Contracts\RunStore;
 use Heiner\AgentGraph\Contracts\TaskStore;
 use Heiner\AgentGraph\Contracts\TraceStore;
@@ -29,6 +30,8 @@ use Heiner\AgentGraph\Events\GraphRunStarted;
 use Heiner\AgentGraph\Graph\GraphDefinition;
 use Heiner\AgentGraph\Graph\RetryPolicy;
 use Heiner\AgentGraph\Graph\StateGraph;
+use Heiner\AgentGraph\Queue\ContinueSuperstepJob;
+use Heiner\AgentGraph\Queue\NodeExecutionJob;
 use Heiner\AgentGraph\State\Reducer;
 use Heiner\AgentGraph\State\StateReducer;
 use Heiner\AgentGraph\State\StateSchemaValidator;
@@ -52,6 +55,7 @@ class GraphRuntime
         protected ?DelayScheduler $delayScheduler = null,
         protected ?RunInspector $inspector = null,
         protected ?RunEventDispatcher $events = null,
+        protected ?NodeExecutionStore $nodeExecutions = null,
     ) {}
 
     public function run(GraphDefinition $graph, string $threadId, array $input = [], array $meta = []): RunResult
@@ -67,7 +71,7 @@ class GraphRuntime
     /**
      * @param  array<string, GraphDefinition>  $graphs
      */
-    public function resume(string $runId, array $payload, array $graphs): RunResult
+    public function resume(string $runId, array $payload, array $graphs, bool $strictKeys = false): RunResult
     {
         $run = $this->runs->find($runId) ?? throw new RuntimeException("Run [{$runId}] was not found.");
         $graph = $graphs[$run['graph_key']] ?? throw new RuntimeException("Graph [{$run['graph_key']}] is not defined.");
@@ -77,7 +81,7 @@ class GraphRuntime
 
         $resumePayload = $payload;
         unset($resumePayload['interrupt_id']);
-        $this->assertStatePatchMatchesSchema($graph, $resumePayload, strictKeys: false);
+        $this->assertStatePatchMatchesSchema($graph, $resumePayload, strictKeys: $strictKeys);
 
         if (isset($payload['interrupt_id'])) {
             $this->assertMatchingPendingInterrupt($runId, (string) $payload['interrupt_id'], $interrupt);
@@ -269,9 +273,248 @@ class GraphRuntime
         return $this->tasks->list($filters, $limit);
     }
 
+    public function nodeExecutions(string $runId): array
+    {
+        return $this->nodeExecutionStore()->listForRun($runId);
+    }
+
+    public function latestForThreadGraph(string $threadId, string $graphKey, array $statuses = ['running', 'interrupted', 'delayed']): ?array
+    {
+        return $this->runs->latestForThreadGraph($threadId, $graphKey, $statuses);
+    }
+
+    public function expireInterrupts(mixed $now = null): int
+    {
+        return $this->interrupts->expirePending($now ?? now());
+    }
+
     public function timeTravelChildren(string $checkpointId, int $limit = 50): array
     {
         return $this->runs->listTimeTravelChildren($checkpointId, $limit);
+    }
+
+    /**
+     * @param  array<string, GraphDefinition>  $graphs
+     */
+    public function executeQueuedNode(string $executionId, array $graphs): ?array
+    {
+        $store = $this->nodeExecutionStore();
+        $existing = $store->find($executionId);
+
+        if ($existing === null) {
+            return null;
+        }
+
+        $existingRun = $this->runs->find((string) $existing['run_id']);
+
+        if ($existingRun === null || in_array($existingRun['status'], ['completed', 'cancelled', 'failed'], true)) {
+            return $existing;
+        }
+
+        $execution = $store->claim($executionId, now()->addSeconds((int) config('agent-graph.execution.node_lease_seconds', 300)));
+
+        if ($execution === null) {
+            return null;
+        }
+
+        if (in_array($execution['status'], ['completed', 'interrupted', 'failed'], true)) {
+            $this->dispatchContinueSuperstep((string) $execution['run_id'], (int) $execution['step']);
+
+            return $execution;
+        }
+
+        $run = $this->runs->find((string) $execution['run_id']);
+
+        if ($run === null) {
+            return $execution;
+        }
+
+        $graph = $graphs[$run['graph_key']] ?? throw new RuntimeException("Graph [{$run['graph_key']}] is not defined.");
+        $this->assertGraphVersionMatches($run, $graph, 'Run');
+
+        $nodeId = (string) $execution['node_id'];
+        $nodeState = is_array($execution['node_state'] ?? null) ? $execution['node_state'] : [];
+        $baseState = is_array($execution['base_state'] ?? null) ? $execution['base_state'] : [];
+
+        $this->dispatchRunEvent('node.started', new GraphNodeStarted($run['public_id'], $run['thread_id'], $graph->key(), $nodeId));
+
+        try {
+            $result = $this->invokeNode(
+                $graph,
+                $nodeId,
+                $nodeState,
+                $run,
+                $execution['checkpoint_id'] ?? null,
+                is_array($execution['resume_payload'] ?? null) ? $execution['resume_payload'] : null,
+                is_string($execution['interrupt_id'] ?? null) ? $execution['interrupt_id'] : null,
+            );
+
+            if ($result->status() === 'failed') {
+                $error = RuntimeError::fromMessage((string) $result->failureMessage(), meta: $result->meta());
+                $store->fail($executionId, $error);
+                $this->failQueuedRun($run, $graph, $nodeId, $error);
+
+                return $store->find($executionId);
+            }
+
+            $this->assertStatePatchMatchesSchema($graph, $result->writes());
+            $branchState = (new StateReducer($this->inferReducers($graph)))->apply($nodeState, $result->writes());
+            $nextSchedule = $this->nextScheduleFor($graph, $nodeId, $result, $branchState);
+            $payload = [
+                'writes' => $result->writes(),
+                'next_schedule' => $this->scheduler()->serialize($nextSchedule),
+                'interrupt' => $result->status() === 'interrupted'
+                    ? [
+                        'type' => $result->interruptType(),
+                        'payload' => $result->interruptPayload(),
+                        'expires_at' => $result->interruptPolicy()?->expiresAtValue(),
+                    ]
+                    : null,
+                'meta' => $result->meta(),
+            ];
+
+            $updated = $result->status() === 'interrupted'
+                ? $store->interrupt($executionId, $payload)
+                : $store->complete($executionId, $payload);
+
+            $this->dispatchContinueSuperstep($run['public_id'], (int) $execution['step']);
+
+            return $updated;
+        } catch (Throwable $exception) {
+            $error = RuntimeError::fromThrowable($exception);
+            $store->fail($executionId, $error);
+            $this->failQueuedRun($run, $graph, $nodeId, $error);
+
+            return $store->find($executionId);
+        }
+    }
+
+    /**
+     * @param  array<string, GraphDefinition>  $graphs
+     */
+    public function continueQueuedSuperstep(string $runId, int $step, array $graphs): ?RunResult
+    {
+        return $this->locks->withLock('agent-graph:run:'.$runId, function () use ($runId, $step, $graphs): ?RunResult {
+            $run = $this->runs->find($runId);
+
+            if ($run === null) {
+                return null;
+            }
+
+            $latestCheckpoint = $this->checkpoints->latestForRun($runId);
+
+            if (in_array($run['status'], ['completed', 'cancelled', 'failed'], true)) {
+                return new RunResult($run, $latestCheckpoint['state'] ?? $run['input'] ?? []);
+            }
+
+            if ($latestCheckpoint !== null && (int) $latestCheckpoint['step'] >= $step) {
+                return new RunResult($run, $latestCheckpoint['state']);
+            }
+
+            $executions = $this->nodeExecutionStore()->listForRunStep($runId, $step);
+
+            if ($executions === []) {
+                return new RunResult($run, $latestCheckpoint['state'] ?? $run['input'] ?? []);
+            }
+
+            if (array_filter($executions, fn (array $execution): bool => in_array($execution['status'], ['pending', 'running'], true)) !== []) {
+                return new RunResult($run, $executions[0]['base_state'] ?? []);
+            }
+
+            $graph = $graphs[$run['graph_key']] ?? throw new RuntimeException("Graph [{$run['graph_key']}] is not defined.");
+            $this->assertGraphVersionMatches($run, $graph, 'Run');
+
+            $failed = collect($executions)->first(fn (array $execution): bool => $execution['status'] === 'failed');
+
+            if ($failed !== null) {
+                $error = is_array($failed['error'] ?? null) ? $failed['error'] : RuntimeError::fromMessage('Queued node execution failed.');
+                $this->failQueuedRun($run, $graph, (string) $failed['node_id'], $error);
+
+                return new RunResult($this->runs->find($runId) ?? $run, $failed['base_state'] ?? []);
+            }
+
+            $baseState = is_array($executions[0]['base_state'] ?? null) ? $executions[0]['base_state'] : [];
+            $results = array_map(fn (array $execution): array => [
+                'node_id' => (string) $execution['node_id'],
+                'result' => $this->nodeResultFromExecution($execution),
+            ], $executions);
+            $interrupted = collect($executions)->first(fn (array $execution): bool => $execution['status'] === 'interrupted');
+
+            if ($interrupted !== null && count($executions) > 1) {
+                return $this->failRun(
+                    $run,
+                    $graph,
+                    (string) $interrupted['node_id'],
+                    $baseState,
+                    new RuntimeException('Parallel interrupts are not supported in the same superstep. Route human review after fan-in.'),
+                );
+            }
+
+            try {
+                $state = $this->applySuperstepWrites($baseState, $results, $this->inferReducers($graph));
+            } catch (Throwable $exception) {
+                return $this->failRun($run, $graph, 'superstep', $baseState, $exception);
+            }
+
+            $nextSchedule = $this->scheduler()->normalize(array_merge(...array_map(
+                fn (array $execution): array => is_array($execution['next_schedule'] ?? null) ? $execution['next_schedule'] : [],
+                $executions,
+            )));
+            $nextNodes = $this->scheduler()->nodeIds($nextSchedule);
+
+            try {
+                $checkpointMeta = $this->checkpointMetaForResults($results, $nextSchedule);
+                $checkpoint = $this->transaction(fn () => tap($this->checkpoints->create([
+                    'run_id' => $run['public_id'],
+                    'thread_id' => $run['thread_id'],
+                    'graph_key' => $graph->key(),
+                    'graph_version' => $graph->version(),
+                    'parent_checkpoint_id' => $executions[0]['checkpoint_id'] ?? null,
+                    'step' => $step,
+                    'state' => $state,
+                    'next_nodes' => $interrupted !== null ? [(string) $interrupted['node_id']] : $nextNodes,
+                    'completed_nodes' => array_map(fn (array $record): string => $record['node_id'], $results),
+                    'interrupts' => [],
+                    'meta' => $checkpointMeta,
+                ]), function (array $checkpoint) use ($run, $results): void {
+                    foreach ($results as $record) {
+                        /** @var NodeResult $result */
+                        $result = $record['result'];
+                        $this->writes->createMany($run['public_id'], $checkpoint['checkpoint_id'], $record['node_id'], $result->writes(), $result->meta());
+                    }
+
+                    $this->traces->record($run['public_id'], 'checkpoint.created', [
+                        'checkpoint_id' => $checkpoint['checkpoint_id'],
+                        'nodes' => array_map(fn (array $record): string => $record['node_id'], $results),
+                    ]);
+                }));
+            } catch (Throwable $exception) {
+                return $this->failRun($run, $graph, 'superstep', $baseState, $exception);
+            }
+
+            foreach ($results as $record) {
+                /** @var NodeResult $result */
+                $result = $record['result'];
+                $this->dispatchRunEvent('node.completed', new GraphNodeCompleted($run['public_id'], $run['thread_id'], $graph->key(), $record['node_id'], ['writes' => $result->writes()]));
+                $this->dispatchRunEvent('checkpoint.created', new GraphCheckpointCreated($run['public_id'], $run['thread_id'], $graph->key(), $record['node_id'], ['checkpoint_id' => $checkpoint['checkpoint_id']]));
+            }
+
+            if ($interrupted !== null) {
+                return $this->persistQueuedInterrupt($run, $graph, $checkpoint['checkpoint_id'], (string) $interrupted['node_id'], $interrupted, $state);
+            }
+
+            if ($nextSchedule === []) {
+                $run = $this->transaction(fn () => $this->runs->update($run['public_id'], [
+                    'status' => 'completed',
+                    'current_checkpoint_id' => $checkpoint['checkpoint_id'],
+                ]));
+                $this->dispatchRunEvent('run.completed', new GraphRunCompleted($run['public_id'], $run['thread_id'], $graph->key(), payload: ['state' => $state]));
+
+                return new RunResult($run, $state);
+            }
+
+            return $this->queueSuperstepLocked($graph, $run, $state, $nextSchedule, $step, $checkpoint['checkpoint_id']);
+        });
     }
 
     protected function continue(GraphDefinition $graph, array $run, array $state, array $nextNodes, array $resumeContext = []): RunResult
@@ -293,6 +536,19 @@ class GraphRuntime
                 ? $resumeContext['interrupt_id']
                 : null;
             $applyResumeContext = array_key_exists('resume_payload', $resumeContext) || $resumeInterruptId !== null;
+
+            if ($this->queuesSupersteps()) {
+                return $this->queueSuperstepLocked(
+                    $graph,
+                    $run,
+                    $state,
+                    $schedule,
+                    $step,
+                    $checkpointId,
+                    $applyResumeContext ? $resumePayload : null,
+                    $applyResumeContext ? $resumeInterruptId : null,
+                );
+            }
 
             while ($schedule !== []) {
                 if ($step >= $maxSteps) {
@@ -316,7 +572,7 @@ class GraphRuntime
                 $nextSchedule = [];
                 $interrupted = null;
 
-                foreach ($schedule as $scheduledNode) {
+                foreach ($schedule as $scheduleIndex => $scheduledNode) {
                     $nodeId = $scheduledNode->node();
                     $nodeState = array_merge($baseState, $scheduledNode->input());
                     $this->dispatchRunEvent('node.started', new GraphNodeStarted($run['public_id'], $run['thread_id'], $graph->key(), $nodeId));
@@ -360,6 +616,8 @@ class GraphRuntime
                     if ($result->status() === 'interrupted') {
                         $interrupted = ['node_id' => $nodeId, 'result' => $result];
                     }
+
+                    $this->recordNodeExecutionIfEnabled($run['public_id'], $step + 1, $scheduleIndex, $nodeId, $result);
 
                     $branchState = $reducer->apply($nodeState, $result->writes());
                     $results[] = ['node_id' => $nodeId, 'result' => $result];
@@ -446,6 +704,7 @@ class GraphRuntime
                                 'node_id' => $nodeId,
                                 'type' => $result->interruptType(),
                                 'payload' => $payload,
+                                'expires_at' => $result->interruptPolicy()?->expiresAtValue(),
                             ]);
 
                             $updates = [
@@ -495,6 +754,192 @@ class GraphRuntime
         });
     }
 
+    /**
+     * @param  array<int, Send>  $schedule
+     */
+    protected function queueSuperstepLocked(GraphDefinition $graph, array $run, array $state, array $schedule, int $currentStep, ?string $checkpointId, ?array $resumePayload = null, ?string $interruptId = null): RunResult
+    {
+        if ($schedule === []) {
+            $run = $this->transaction(fn () => $this->runs->update($run['public_id'], [
+                'status' => 'completed',
+                'current_checkpoint_id' => $checkpointId,
+            ]));
+            $this->dispatchRunEvent('run.completed', new GraphRunCompleted($run['public_id'], $run['thread_id'], $graph->key(), payload: ['state' => $state]));
+
+            return new RunResult($run, $state);
+        }
+
+        if ($currentStep >= (int) config('agent-graph.max_steps', 100)) {
+            $run = $this->runs->update($run['public_id'], [
+                'status' => 'failed',
+                'error' => RuntimeError::fromMessage('Maximum graph steps exceeded.', code: 'max_steps_exceeded'),
+            ]);
+            $this->dispatchRunEvent('run.failed', new GraphRunFailed($run['public_id'], $run['thread_id'], $graph->key(), payload: $run['error']));
+
+            return new RunResult($run, $state);
+        }
+
+        try {
+            $this->scheduler()->assertWithinLimit($schedule);
+        } catch (Throwable $exception) {
+            return $this->failRun($run, $graph, 'superstep', $state, $exception);
+        }
+
+        $step = $currentStep + 1;
+        $store = $this->nodeExecutionStore();
+
+        if ($store->listForRunStep($run['public_id'], $step) !== []) {
+            return new RunResult($run, $state);
+        }
+
+        foreach ($schedule as $scheduleIndex => $scheduledNode) {
+            $execution = $store->schedule([
+                'run_id' => $run['public_id'],
+                'checkpoint_id' => $checkpointId,
+                'step' => $step,
+                'schedule_index' => $scheduleIndex,
+                'node_id' => $scheduledNode->node(),
+                'status' => 'pending',
+                'base_state' => $state,
+                'node_state' => array_merge($state, $scheduledNode->input()),
+                'resume_payload' => $resumePayload,
+                'interrupt_id' => $interruptId,
+                'writes' => [],
+                'next_schedule' => [],
+                'interrupt' => null,
+                'error' => null,
+                'meta' => [
+                    'schedule' => $scheduledNode->toArray(),
+                ],
+            ]);
+
+            $this->dispatchNodeExecution((string) $execution['execution_id']);
+        }
+
+        return new RunResult($run, $state);
+    }
+
+    protected function nodeResultFromExecution(array $execution): NodeResult
+    {
+        $writes = is_array($execution['writes'] ?? null) ? $execution['writes'] : [];
+        $meta = is_array($execution['meta'] ?? null) ? $execution['meta'] : [];
+
+        if (($execution['status'] ?? null) === 'interrupted') {
+            $interrupt = is_array($execution['interrupt'] ?? null) ? $execution['interrupt'] : [];
+
+            return NodeResult::interrupt(
+                (string) ($interrupt['type'] ?? 'input'),
+                is_array($interrupt['payload'] ?? null) ? $interrupt['payload'] : [],
+                $writes,
+            )->withMeta($meta);
+        }
+
+        return NodeResult::write($writes)->withMeta($meta);
+    }
+
+    protected function persistQueuedInterrupt(array $run, GraphDefinition $graph, string $checkpointId, string $nodeId, array $execution, array $state): RunResult
+    {
+        try {
+            [$interrupt, $run, $resumeAt] = $this->transaction(function () use ($run, $checkpointId, $nodeId, $execution): array {
+                $recorded = is_array($execution['interrupt'] ?? null) ? $execution['interrupt'] : [];
+                $payload = is_array($recorded['payload'] ?? null) ? $recorded['payload'] : [];
+                $type = (string) ($recorded['type'] ?? 'input');
+                $status = $type === 'delay' ? 'delayed' : 'interrupted';
+                $resumeAt = null;
+
+                if ($status === 'delayed') {
+                    $resumeAt = $this->normaliseResumeAt($payload['resume_at'] ?? null);
+                    $payload['resume_at'] = $resumeAt->toJSON();
+                }
+
+                $interrupt = $this->interrupts->create([
+                    'run_id' => $run['public_id'],
+                    'checkpoint_id' => $checkpointId,
+                    'node_id' => $nodeId,
+                    'type' => $type,
+                    'payload' => $payload,
+                    'expires_at' => $recorded['expires_at'] ?? null,
+                ]);
+
+                $updates = [
+                    'status' => $status,
+                    'current_checkpoint_id' => $checkpointId,
+                ];
+
+                if ($resumeAt instanceof CarbonImmutable) {
+                    $updates['resume_at'] = $resumeAt;
+                }
+
+                return [$interrupt, $this->runs->update($run['public_id'], $updates), $resumeAt];
+            });
+        } catch (Throwable $exception) {
+            return $this->failRun($run, $graph, $nodeId, $state, $exception);
+        }
+
+        if ($resumeAt instanceof DateTimeInterface) {
+            $this->delayScheduler()->schedule($run['public_id'], [
+                'interrupt_id' => $interrupt['interrupt_id'],
+            ], $resumeAt);
+        }
+
+        $this->dispatchRunEvent('interrupt.created', new GraphInterrupted($run['public_id'], $run['thread_id'], $graph->key(), $nodeId, $interrupt));
+
+        return new RunResult($run, $state, $interrupt);
+    }
+
+    protected function dispatchNodeExecution(string $executionId): void
+    {
+        $dispatch = NodeExecutionJob::dispatch($executionId);
+
+        if ($connection = $this->executionQueueConnection()) {
+            $dispatch->onConnection($connection);
+        }
+
+        if ($queue = $this->executionQueue()) {
+            $dispatch->onQueue($queue);
+        }
+    }
+
+    protected function dispatchContinueSuperstep(string $runId, int $step): void
+    {
+        $dispatch = ContinueSuperstepJob::dispatch($runId, $step);
+
+        if ($connection = $this->executionQueueConnection()) {
+            $dispatch->onConnection($connection);
+        }
+
+        if ($queue = $this->executionQueue()) {
+            $dispatch->onQueue($queue);
+        }
+    }
+
+    protected function failQueuedRun(array $run, GraphDefinition $graph, string $nodeId, array $error): void
+    {
+        $run = $this->runs->update($run['public_id'], ['status' => 'failed', 'error' => $error]);
+        $this->traces->record($run['public_id'], 'node.failed', array_merge(['node' => $nodeId], $error));
+        $this->dispatchRunEvent('node.failed', new GraphNodeFailed($run['public_id'], $run['thread_id'], $graph->key(), $nodeId, $error));
+        $this->dispatchRunEvent('run.failed', new GraphRunFailed($run['public_id'], $run['thread_id'], $graph->key(), payload: $run['error']));
+    }
+
+    protected function queuesSupersteps(): bool
+    {
+        return config('agent-graph.execution.mode', 'sync') === 'queued_supersteps';
+    }
+
+    protected function executionQueueConnection(): ?string
+    {
+        $connection = config('agent-graph.execution.queue_connection');
+
+        return is_string($connection) && $connection !== '' ? $connection : null;
+    }
+
+    protected function executionQueue(): ?string
+    {
+        $queue = config('agent-graph.execution.queue');
+
+        return is_string($queue) && $queue !== '' ? $queue : null;
+    }
+
     protected function invokeNode(GraphDefinition $graph, string $nodeId, array $state, array $run, ?string $checkpointId, ?array $resumePayload = null, ?string $interruptId = null): NodeResult
     {
         $node = $graph->node($nodeId);
@@ -505,51 +950,74 @@ class GraphRuntime
         }
 
         $retryPolicy = $graph->nodePolicy($nodeId)->retryPolicy();
+        $timeoutPolicy = $graph->nodePolicy($nodeId)->timeoutPolicy();
+        $concurrencyPolicy = $graph->nodePolicy($nodeId)->concurrencyPolicy();
 
-        if ($retryPolicy === null) {
-            return $this->invokeNodeOnce($instance, $graph, $nodeId, $state, $run, $checkpointId, $resumePayload, $interruptId);
-        }
+        $invoke = function () use ($instance, $graph, $nodeId, $state, $run, $checkpointId, $resumePayload, $interruptId, $retryPolicy): NodeResult {
+            if ($retryPolicy === null) {
+                return $this->invokeNodeOnce($instance, $graph, $nodeId, $state, $run, $checkpointId, $resumePayload, $interruptId);
+            }
 
-        $attempt = 0;
-        $failedAttempts = 0;
+            $attempt = 0;
+            $failedAttempts = 0;
 
-        while (true) {
-            $attempt++;
-            $context = $this->nodeContext($graph, $nodeId, $state, $run, $checkpointId, $resumePayload, $interruptId);
+            while (true) {
+                $attempt++;
+                $context = $this->nodeContext($graph, $nodeId, $state, $run, $checkpointId, $resumePayload, $interruptId);
 
-            try {
-                $result = $this->callNode($instance, $context);
+                try {
+                    $result = $this->callNode($instance, $context);
 
-                return $this->withRetryMeta($result, $retryPolicy, $attempt, $failedAttempts);
-            } catch (Throwable $exception) {
-                $failedAttempts++;
+                    return $this->withRetryMeta($result, $retryPolicy, $attempt, $failedAttempts);
+                } catch (Throwable $exception) {
+                    $failedAttempts++;
 
-                if ($attempt >= $retryPolicy->maxAttempts() || ! $retryPolicy->shouldRetry($exception, $attempt, $context)) {
-                    throw $exception;
-                }
+                    if ($attempt >= $retryPolicy->maxAttempts() || ! $retryPolicy->shouldRetry($exception, $attempt, $context)) {
+                        throw $exception;
+                    }
 
-                $delayMs = $retryPolicy->delayForAttempt($attempt);
-                $payload = [
-                    'node' => $nodeId,
-                    'attempt' => $attempt,
-                    'next_attempt' => $attempt + 1,
-                    'max_attempts' => $retryPolicy->maxAttempts(),
-                    'delay_ms' => $delayMs,
-                    'error' => [
-                        'message' => $exception->getMessage(),
-                        'exception_class' => $exception::class,
-                        'code' => $exception->getCode(),
-                    ],
-                ];
+                    $delayMs = $retryPolicy->delayForAttempt($attempt);
+                    $payload = [
+                        'node' => $nodeId,
+                        'attempt' => $attempt,
+                        'next_attempt' => $attempt + 1,
+                        'max_attempts' => $retryPolicy->maxAttempts(),
+                        'delay_ms' => $delayMs,
+                        'error' => [
+                            'message' => $exception->getMessage(),
+                            'exception_class' => $exception::class,
+                            'code' => $exception->getCode(),
+                        ],
+                    ];
 
-                $this->traces->record($run['public_id'], 'node.retrying', $payload);
-                $this->dispatchRunEvent('node.retrying', new GraphNodeRetrying($run['public_id'], $run['thread_id'], $graph->key(), $nodeId, $payload));
+                    $this->traces->record($run['public_id'], 'node.retrying', $payload);
+                    $this->dispatchRunEvent('node.retrying', new GraphNodeRetrying($run['public_id'], $run['thread_id'], $graph->key(), $nodeId, $payload));
 
-                if ($delayMs > 0) {
-                    usleep($delayMs * 1000);
+                    if ($delayMs > 0) {
+                        usleep($delayMs * 1000);
+                    }
                 }
             }
+        };
+
+        $timed = function () use ($invoke, $timeoutPolicy, $nodeId): NodeResult {
+            $started = microtime(true);
+            $result = $invoke();
+
+            if ($timeoutPolicy !== null && (microtime(true) - $started) > $timeoutPolicy->seconds()) {
+                throw new RuntimeException("Node [{$nodeId}] timed out after {$timeoutPolicy->seconds()} seconds.");
+            }
+
+            return $result;
+        };
+
+        if ($concurrencyPolicy !== null && $concurrencyPolicy->limit() === 1) {
+            $key = $concurrencyPolicy->key() ?? 'agent-graph:node:'.$graph->key().':'.$nodeId;
+
+            return $this->locks->withLock($key, $timed);
         }
+
+        return $timed();
     }
 
     protected function invokeNodeOnce(mixed $instance, GraphDefinition $graph, string $nodeId, array $state, array $run, ?string $checkpointId, ?array $resumePayload = null, ?string $interruptId = null): NodeResult
@@ -868,6 +1336,32 @@ class GraphRuntime
     protected function events(): RunEventDispatcher
     {
         return $this->events ??= app(RunEventDispatcher::class);
+    }
+
+    protected function nodeExecutionStore(): NodeExecutionStore
+    {
+        return $this->nodeExecutions ??= app(NodeExecutionStore::class);
+    }
+
+    protected function recordNodeExecutionIfEnabled(string $runId, int $step, int $scheduleIndex, string $nodeId, NodeResult $result): void
+    {
+        if (config('agent-graph.execution.mode', 'sync') !== 'queued_supersteps') {
+            return;
+        }
+
+        $this->nodeExecutionStore()->record([
+            'run_id' => $runId,
+            'step' => $step,
+            'schedule_index' => $scheduleIndex,
+            'node_id' => $nodeId,
+            'status' => $result->status(),
+            'writes' => $result->writes(),
+            'next_schedule' => array_map(fn (Send $send): array => $send->toArray(), $result->sends()),
+            'interrupt' => $result->status() === 'interrupted'
+                ? ['type' => $result->interruptType(), 'payload' => $result->interruptPayload()]
+                : null,
+            'meta' => $result->meta(),
+        ]);
     }
 
     protected function scheduler(): RuntimeScheduler

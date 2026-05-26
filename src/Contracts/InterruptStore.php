@@ -13,4 +13,6 @@ interface InterruptStore
     public function pendingForRun(string $runId): ?array;
 
     public function resolve(string $interruptId, array $response, ?string $resolvedBy = null): array;
+
+    public function expirePending(mixed $now = null): int;
 }

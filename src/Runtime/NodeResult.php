@@ -2,9 +2,13 @@
 
 namespace Heiner\AgentGraph\Runtime;
 
+use Heiner\AgentGraph\Graph\InterruptPolicy;
+
 class NodeResult
 {
     protected array $meta = [];
+
+    protected ?InterruptPolicy $interruptPolicy = null;
 
     protected function __construct(
         protected string $status,
@@ -68,6 +72,18 @@ class NodeResult
         $this->meta['node'] = array_merge($existing, $meta);
 
         return $this;
+    }
+
+    public function withInterruptPolicy(InterruptPolicy $policy): self
+    {
+        $this->interruptPolicy = $policy;
+
+        return $this;
+    }
+
+    public function interruptPolicy(): ?InterruptPolicy
+    {
+        return $this->interruptPolicy;
     }
 
     public function skipped(): self

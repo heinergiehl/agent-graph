@@ -23,6 +23,12 @@ This tracker records the generic SDK features that should be completed after the
 | 8 | GraphTool Extension Hooks | Complete | Generic adapter | `input()`, `output()`, and `meta()` are implemented without lifecycle persistence hooks. |
 | 9 | AgentNode Text Delta Callback | Complete | Adapter convenience | `AgentNode::onTextDelta()` is additive to `GraphStreamDelta` and `RunEvent` streaming. |
 | 10 | Child Run/Subgraph Metadata | Foundation Complete | Core inspection convention | `run.meta.parent`, `PendingGraphRun::parent()`, `AgentGraph::childRuns()`, and snapshot/result accessors are implemented; full subgraph orchestration remains post-v1. |
+| 11 | Laravel AI Compatibility Guardrails | Complete | Core safety | Source architecture tests prevent provider/gateway/internal Laravel AI imports. |
+| 12 | Task Leases | Complete | Core durability | Task stores use `locked_until` leases and `TaskRunner::once()` rejects active duplicates. |
+| 13 | Durable Sessions/Tools | Complete | Generic adapter | `DurableGraphSession` and `DurableGraphTool` cover active-thread workflows without changing `GraphTool`. |
+| 14 | Native SubgraphNode | Beta | Core runtime | Child graph execution, lineage, mapped/shared/isolated modes, and interrupt bubbling are implemented. |
+| 15 | Memory Manager Contracts | Beta | Core extension | Extractor, embedding, vector store contracts plus export/delete helpers are implemented with deterministic defaults. |
+| 16 | Worker-backed Queued Supersteps | Beta | Runtime foundation | Opt-in `queued_supersteps` mode dispatches node execution jobs and aggregates supersteps with persisted execution rows. |
 
 ## Stable Core Candidates
 
@@ -42,8 +48,7 @@ These should be considered for v1 or the next beta if tests and docs are complet
 
 These are useful but should not block the core runtime release:
 
-- Full graph-as-subgraph composition
-- Queue-backed true worker parallelism
+- Advanced graph-as-subgraph orchestration beyond `SubgraphNode`
 
 ## Acceptance Checklist
 

@@ -10,6 +10,8 @@ interface RunStore
 
     public function list(array $filters = [], int $limit = 50): array;
 
+    public function latestForThreadGraph(string $threadId, string $graphKey, array $statuses = []): ?array;
+
     public function listChildRuns(string $parentRunId, int $limit = 50): array;
 
     public function listTimeTravelChildren(string $checkpointId, int $limit = 50): array;
