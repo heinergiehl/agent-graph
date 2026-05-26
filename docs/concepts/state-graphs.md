@@ -25,3 +25,16 @@ StateGraph::make('support_triage')
 ```
 
 Retries do not apply to `NodeResult::fail()`, interrupts, delays, or schema-validation failures. If a retried node performs external side effects, protect them with `$context->tasks()->once()`.
+
+Nodes can attach generic metadata for timeline and inspector UIs:
+
+```php
+return NodeResult::write(['answer' => $answer])
+    ->withNodeMeta([
+        'label' => 'Draft answer',
+        'type' => 'agent',
+        'category' => 'support',
+    ]);
+```
+
+Stable `meta.node` keys are `id`, `label`, `type`, `status`, `category`, `source`, and `description`.

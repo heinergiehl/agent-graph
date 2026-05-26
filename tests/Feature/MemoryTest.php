@@ -1,5 +1,6 @@
 <?php
 
+use Heiner\AgentGraph\Contracts\EnumerableMemoryStore;
 use Heiner\AgentGraph\Memory\MemoryScope;
 
 it('writes and reads scoped memory with fallback order', function () {
@@ -74,4 +75,46 @@ it('ignores expired memory and updates usage metadata on read and search', funct
     expect($results)->toHaveCount(1)
         ->and($results[0]['key'])->toBe('fresh')
         ->and($results[0]['usage_count'])->toBe(2);
+});
+
+it('lists non-expired memories by namespace without touching usage metadata', function () {
+    $memory = app(EnumerableMemoryStore::class);
+    $actor = MemoryScope::actor('tenant-3', 'user-3');
+    $thread = MemoryScope::thread('thread-3');
+    config()->set('agent-graph.memory.fallback_order', ['actor', 'thread']);
+
+    $memory->write(
+        scope: $actor,
+        namespace: 'preferences',
+        key: 'language',
+        value: 'de',
+        type: 'preference',
+        content: 'The user prefers German.',
+    );
+
+    $memory->write(
+        scope: $thread,
+        namespace: 'preferences',
+        key: 'timezone',
+        value: 'Europe/Berlin',
+        type: 'preference',
+        content: 'The thread uses Berlin time.',
+    );
+
+    $memory->write(
+        scope: $actor,
+        namespace: 'preferences',
+        key: 'expired',
+        value: 'old',
+        type: 'preference',
+        content: 'Expired preference.',
+        meta: ['expires_at' => now()->subMinute()],
+    );
+
+    $results = $memory->listNamespace([$actor, $thread], 'preferences');
+
+    expect($results)->toHaveCount(2)
+        ->and(collect($results)->pluck('key')->all())->toBe(['language', 'timezone'])
+        ->and($results[0]['usage_count'])->toBe(0)
+        ->and($results[1]['usage_count'])->toBe(0);
 });

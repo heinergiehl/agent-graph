@@ -8,6 +8,7 @@ use Heiner\AgentGraph\LaravelAi\AgentNode;
 use Heiner\AgentGraph\Runtime\NodeContext;
 use Heiner\AgentGraph\Runtime\NodeResult;
 use Heiner\AgentGraph\Runtime\RunEvent;
+use Heiner\AgentGraph\Runtime\RunResult;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\JsonSchema\JsonSchemaTypeFactory;
 use Illuminate\Support\Facades\Event;
@@ -87,6 +88,42 @@ it('dispatches AgentGraph stream events for streamed Laravel AI deltas', functio
         ->and($streamTraces[0]['payload'])->toHaveKeys(['delta', 'message_id', 'invocation_id']);
 });
 
+it('invokes AgentNode text delta callbacks while streaming', function () {
+    app()->bind(FakeStreamingSupportAgent::class, fn () => new FakeStreamingSupportAgent);
+    $deltas = [];
+
+    AgentGraph::define(
+        StateGraph::make('streaming_agent_callback')
+            ->state(['input' => 'string', 'answer' => 'string|null'])
+            ->node('answer', AgentNode::make('streaming_callback')
+                ->agent(FakeStreamingSupportAgent::class)
+                ->prompt(fn (array $state) => $state['input'])
+                ->stream()
+                ->onTextDelta(function (string $delta, array $payload, NodeContext $context) use (&$deltas): void {
+                    $deltas[] = [
+                        'delta' => $delta,
+                        'payload' => $payload,
+                        'run_id' => $context->runId(),
+                    ];
+                })
+                ->writeTextTo('answer'))
+            ->edge(StateGraph::START, 'answer')
+            ->edge('answer', StateGraph::END)
+    );
+
+    $run = AgentGraph::graph('streaming_agent_callback')
+        ->thread('stream-callback-thread')
+        ->input(['input' => 'Hello'])
+        ->run();
+
+    expect($run->completed())->toBeTrue()
+        ->and($run->state('answer'))->toBe('Hello from stream')
+        ->and($deltas)->toHaveCount(3)
+        ->and($deltas[0]['delta'])->toBe('Hello ')
+        ->and($deltas[0]['payload'])->toHaveKeys(['agent_node', 'delta', 'message_id', 'invocation_id'])
+        ->and($deltas[0]['run_id'])->toBe($run->runId());
+});
+
 it('exposes a graph as a Laravel AI tool and returns structured json', function () {
     AgentGraph::define(
         StateGraph::make('tool_graph')
@@ -119,6 +156,53 @@ it('describes the GraphTool input schema', function () {
     expect($schema)->toHaveKeys(['thread_id', 'run_id', 'interrupt_id', 'input'])
         ->and($schema['thread_id']->toArray()['type'])->toContain('string')
         ->and($schema['input']->toArray()['type'])->toContain('object');
+});
+
+it('maps GraphTool input output and run metadata through extension hooks', function () {
+    AgentGraph::define(
+        StateGraph::make('tool_hook_graph')
+            ->state(['message' => 'string|null', 'source' => 'string|null', 'answer' => 'string|null'])
+            ->node('answer', ToolHookAnswerNode::class)
+            ->edge(StateGraph::START, 'answer')
+            ->edge('answer', StateGraph::END)
+    );
+
+    $tool = AgentGraph::tool('tool_hook_graph')
+        ->thread(fn (Request $request) => 'thread-'.$request['conversation'])
+        ->input(fn (Request $request): array => [
+            'message' => $request['body'],
+            'source' => 'hooked-input',
+        ])
+        ->meta(fn (Request $request): array => [
+            'tool' => 'hook-test',
+            'conversation' => $request['conversation'],
+        ])
+        ->output(fn (RunResult $run, Request $request): array => [
+            'ok' => $run->completed(),
+            'run' => $run->runId(),
+            'thread' => $run->threadId(),
+            'answer' => $run->state('answer'),
+            'body' => $request['body'],
+        ]);
+
+    $payload = json_decode((string) $tool->handle(new Request([
+        'conversation' => 'abc',
+        'body' => 'hello',
+    ])), true);
+
+    expect($payload)->toMatchArray([
+        'ok' => true,
+        'thread' => 'thread-abc',
+        'answer' => 'Hook handled hello from hooked-input',
+        'body' => 'hello',
+    ]);
+
+    $snapshot = AgentGraph::inspect($payload['run']);
+
+    expect($snapshot->meta())->toMatchArray([
+        'tool' => 'hook-test',
+        'conversation' => 'abc',
+    ]);
 });
 
 it('returns stable GraphTool json for interrupted resumed and failed runs', function () {
@@ -255,5 +339,15 @@ final class ToolFailureNode implements Node
     public function __invoke(NodeContext $context): NodeResult
     {
         return NodeResult::fail('tool failed');
+    }
+}
+
+final class ToolHookAnswerNode implements Node
+{
+    public function __invoke(NodeContext $context): NodeResult
+    {
+        return NodeResult::write([
+            'answer' => 'Hook handled '.$context->state('message').' from '.$context->state('source'),
+        ]);
     }
 }

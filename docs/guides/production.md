@@ -21,6 +21,8 @@ Use `AgentGraph::inspect($runId, withHistory: true, withTraces: true)` for admin
 
 Use `AgentGraph::runs($filters, $limit)` to list recent runs by `status`, `thread_id`, `graph_key`, or `graph_version`.
 
+Use `AgentGraph::tasks($filters, $limit)` to inspect idempotent side effects by `run_id`, `node_id`, `checkpoint_id`, or `status`.
+
 Use `onEvent()` or `collectEvents()` when an application needs ordered workflow observations for a single run. Listeners run synchronously in the runtime path, so keep them lightweight and move broadcasting, persistence copies, or expensive processing into application-level jobs.
 
 Run-event observation is not model streaming. Keep Laravel AI as the owner of token streaming and provider behavior; AgentGraph only normalizes workflow events such as run lifecycle, node lifecycle, checkpoints, interrupts, failures, and existing `GraphStreamDelta` payloads.
@@ -34,6 +36,8 @@ Normal input and approval resumes should continue to use `AgentGraph::resume($ru
 ## Queue and retry safety
 
 Delayed continuation jobs are safe to retry. A delayed job no-ops when the run is already `completed`, `cancelled`, or `failed`, or when its interrupt is no longer the pending delay interrupt.
+
+Delay interrupts schedule through `DelayScheduler::class`. The default implementation dispatches `ContinueDelayedGraphJob`; bind a custom scheduler only when your app needs a different delayed-execution backend.
 
 Keep external side effects inside `$context->tasks()->once()` so queue retries do not repeat irreversible work.
 

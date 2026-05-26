@@ -73,6 +73,15 @@ $run = AgentGraph::resume($runId, [
 ]);
 ```
 
+The resumed node can read the original resume response separately from merged graph state:
+
+```php
+if ($context->hasResumePayload()) {
+    $payload = $context->resumePayload();
+    $interruptId = $context->interruptId();
+}
+```
+
 For manual state correction flows, use the explicit state-edit resume API. The patch is validated against the graph state schema before the interrupt is resolved.
 
 ```php
@@ -139,6 +148,15 @@ List recent runs for dashboards, admin screens, or recovery tools:
 $interruptedRuns = AgentGraph::runs([
     'status' => 'interrupted',
     'thread_id' => $conversationId,
+], limit: 25);
+```
+
+List idempotent tasks for inspectors or side-effect debugging:
+
+```php
+$tasks = AgentGraph::tasks([
+    'run_id' => $runId,
+    'status' => 'completed',
 ], limit: 25);
 ```
 
@@ -238,7 +256,16 @@ AgentNode::make('answer')
     ->writeUsageTo('usage');
 ```
 
-`AgentNode::stream()` still delegates to Laravel AI's `stream()` API. AgentGraph keeps dispatching `GraphStreamDelta` for streamed text deltas and, when run-event observation is enabled, also exposes those deltas as normalized `stream.delta` `RunEvent` objects.
+`AgentNode::stream()` still delegates to Laravel AI's `stream()` API. AgentGraph keeps dispatching `GraphStreamDelta` for streamed text deltas and, when run-event observation is enabled, also exposes those deltas as normalized `stream.delta` `RunEvent` objects. Use `onTextDelta()` for a direct synchronous callback to bridge deltas into app transports:
+
+```php
+AgentNode::make('answer')
+    ->agent(App\Ai\SupportAgent::class)
+    ->prompt(fn (array $state) => $state['input'])
+    ->stream()
+    ->onTextDelta(fn (string $delta) => broadcast(new AgentDelta($delta)))
+    ->writeTextTo('answer');
+```
 
 ## Graphs as Tools
 
@@ -249,7 +276,9 @@ public function tools(): iterable
         AgentGraph::tool('support_triage')
             ->name('run_support_triage')
             ->description('Run or resume the durable support workflow.')
-            ->thread(fn ($request) => $request['thread_id']),
+            ->thread(fn ($request) => $request['thread_id'])
+            ->input(fn ($request) => $request['input'] ?? [])
+            ->meta(fn ($request) => ['source' => 'laravel-ai-tool']),
     ];
 }
 ```
@@ -271,6 +300,8 @@ Tool responses always include:
 
 Interrupted runs return a machine-readable `interrupt` payload. Failed runs return `status: "failed"` and an `error` object.
 
+Use `output()` when a parent agent needs a narrower JSON response. Long-running lifecycle observation should use `RunEvent` callbacks instead of GraphTool persistence hooks.
+
 ## Stable v1 Public APIs
 
 The intended v1-stable API surface is documented in [`docs/api-reference.md`](docs/api-reference.md). In short:
@@ -286,8 +317,8 @@ The intended v1-stable API surface is documented in [`docs/api-reference.md`](do
 - `RunEvent` for optional per-run workflow event observation and collection.
 - `CheckpointSnapshot` for read-only checkpoint inspection and experimental time-travel workflows.
 - `AgentNode` for Laravel AI agent execution.
-- `GraphTool` for Laravel AI tool integration.
-- Store contracts for production adapters and tests.
+- `GraphTool` for Laravel AI tool integration with optional input, output, and run metadata mapping.
+- Store contracts for production adapters and tests, including enumerable memory inspection and replaceable delay scheduling.
 
 `checkpoint()`, `replay()`, `fork()`, and `timeTravelChildren()` are public experimental APIs. They are documented and tested, but remain outside the stable v1 core until time-travel workflows have more production mileage.
 
@@ -299,6 +330,7 @@ The intended v1-stable API surface is documented in [`docs/api-reference.md`](do
 - Keep trace redaction keys current for your domain.
 - Scope memory by tenant or actor before using it in multi-tenant apps.
 - Use idempotent task keys for every external side effect.
+- Use `tasks()` for side-effect inspection instead of reading package task tables directly.
 - Use `inspect()` and `runs()` for recovery/admin UIs instead of reading package tables directly.
 - Use `timeline()` for debugger and trace UIs instead of reconstructing checkpoint history manually.
 - Use run-event callbacks for lightweight workflow observation; keep token streaming in Laravel AI.

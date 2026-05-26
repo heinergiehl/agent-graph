@@ -17,6 +17,8 @@ class NodeContext
         protected MemoryStore $memory,
         protected TraceStore $traces,
         protected TaskRunner $tasks,
+        protected ?array $resumePayload = null,
+        protected ?string $interruptId = null,
     ) {}
 
     public function state(?string $key = null, mixed $default = null): mixed
@@ -66,5 +68,20 @@ class NodeContext
     public function tasks(): TaskRunner
     {
         return $this->tasks;
+    }
+
+    public function hasResumePayload(): bool
+    {
+        return $this->resumePayload !== null;
+    }
+
+    public function resumePayload(): array
+    {
+        return $this->resumePayload ?? [];
+    }
+
+    public function interruptId(): ?string
+    {
+        return $this->interruptId;
     }
 }

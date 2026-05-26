@@ -15,6 +15,13 @@ Target: hardened MVP API stability after 0.9 sandbox and chatbot integration tes
 - Added `CheckpointSnapshot` for read-only checkpoint inspection.
 - Added `RunEvent` observation with `PendingGraphRun::onEvent()`, `PendingGraphRun::collectEvents()`, `RunResult::events()`, and optional event callbacks for resume, replay, and fork APIs.
 - Added per-node retry policies for transient thrown node exceptions.
+- Added resume context accessors on `NodeContext`: `hasResumePayload()`, `resumePayload()`, and `interruptId()`.
+- Added `DelayScheduler` with a default queue-backed implementation for replaceable delay interrupt scheduling.
+- Added `EnumerableMemoryStore::listNamespace()` for memory inspection UIs.
+- Added `AgentGraph::tasks()` and `TaskStore::list()` for read-only idempotent task inspection.
+- Added `AgentNode::onTextDelta()` for direct streamed text delta callbacks.
+- Added `GraphTool::input()`, `GraphTool::output()`, and `GraphTool::meta()` mapping hooks.
+- Added stable `meta.node` key conventions for timeline and inspector UIs.
 - Added state schema type validation for run input, resume payloads, state-edit patches, fork patches, and node writes.
 - Added graph version compatibility checks for resume, replay, and fork.
 - Added API reference documentation for the v1 public surface.
@@ -22,6 +29,8 @@ Target: hardened MVP API stability after 0.9 sandbox and chatbot integration tes
 ### Changed
 
 - Store contracts now include checkpoint lookup, checkpoint write listing, interrupt listing, run listing, and time-travel child listing methods used by inspection and time travel.
+- `TaskStore` adapters must expose read-only task listing for inspector UIs.
+- Failed run payloads now include structured error metadata: `message`, `exception_class`, `code`, `previous`, and optional `details`/`meta`.
 - `resume()` remains compatible with extra payload fields, but known state schema keys are now type-validated.
 - Replay and fork create new runs and require persisted `graph_version` to match the currently registered graph definition.
 

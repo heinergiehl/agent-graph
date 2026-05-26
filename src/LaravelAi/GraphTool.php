@@ -4,6 +4,8 @@ namespace Heiner\AgentGraph\LaravelAi;
 
 use Closure;
 use Heiner\AgentGraph\AgentGraphManager;
+use Heiner\AgentGraph\Runtime\RunResult;
+use Heiner\AgentGraph\Runtime\RuntimeError;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
@@ -17,6 +19,12 @@ class GraphTool implements Stringable, Tool
     protected Stringable|string $description;
 
     protected ?Closure $threadResolver = null;
+
+    protected ?Closure $inputMapper = null;
+
+    protected ?Closure $outputMapper = null;
+
+    protected Closure|array|null $metaResolver = null;
 
     public function __construct(
         protected AgentGraphManager $manager,
@@ -57,12 +65,31 @@ class GraphTool implements Stringable, Tool
         return $this;
     }
 
+    public function input(Closure $mapper): self
+    {
+        $this->inputMapper = $mapper;
+
+        return $this;
+    }
+
+    public function output(Closure $mapper): self
+    {
+        $this->outputMapper = $mapper;
+
+        return $this;
+    }
+
+    public function meta(Closure|array $meta): self
+    {
+        $this->metaResolver = $meta;
+
+        return $this;
+    }
+
     public function handle(Request $request): Stringable|string
     {
         try {
-            $input = $request['input'] ?? collect($request->all())
-                ->except(['thread_id', 'run_id', 'interrupt_id'])
-                ->all();
+            $input = $this->resolveInput($request);
 
             if (isset($request['run_id'])) {
                 $payload = is_array($input) ? $input : ['input' => $input];
@@ -74,20 +101,20 @@ class GraphTool implements Stringable, Tool
                 $run = $this->manager->resume($request['run_id'], $payload);
             } else {
                 $threadId = $this->resolveThread($request);
-                $run = $this->manager->graph($this->graphKey)
+                $pending = $this->manager->graph($this->graphKey)
                     ->thread($threadId)
-                    ->input(is_array($input) ? $input : ['input' => $input])
-                    ->run();
+                    ->input(is_array($input) ? $input : ['input' => $input]);
+
+                $meta = $this->resolveMeta($request);
+
+                if ($meta !== []) {
+                    $pending->meta($meta);
+                }
+
+                $run = $pending->run();
             }
 
-            return $this->encodeResponse([
-                'status' => $run->status(),
-                'run_id' => $run->runId(),
-                'thread_id' => $run->threadId(),
-                'state' => $run->state(),
-                'interrupt' => $run->interrupt(),
-                'error' => $run->error(),
-            ]);
+            return $this->encodeResponse($this->resolveOutput($run, $request));
         } catch (Throwable $exception) {
             return $this->encodeResponse([
                 'status' => 'failed',
@@ -95,10 +122,7 @@ class GraphTool implements Stringable, Tool
                 'thread_id' => $request['thread_id'] ?? null,
                 'state' => [],
                 'interrupt' => null,
-                'error' => [
-                    'message' => $exception->getMessage(),
-                    'type' => $exception::class,
-                ],
+                'error' => RuntimeError::fromThrowable($exception),
             ]);
         }
     }
@@ -135,11 +159,56 @@ class GraphTool implements Stringable, Tool
         return (string) ($request['thread_id'] ?? str()->ulid());
     }
 
-    /**
-     * @param  array{status:string,run_id:?string,thread_id:?string,state:array,interrupt:?array,error:?array}  $payload
-     */
-    protected function encodeResponse(array $payload): string
+    protected function resolveInput(Request $request): mixed
     {
+        if ($this->inputMapper !== null) {
+            return ($this->inputMapper)($request);
+        }
+
+        return $request['input'] ?? collect($request->all())
+            ->except(['thread_id', 'run_id', 'interrupt_id'])
+            ->all();
+    }
+
+    protected function resolveMeta(Request $request): array
+    {
+        if ($this->metaResolver === null) {
+            return [];
+        }
+
+        $meta = $this->metaResolver instanceof Closure
+            ? ($this->metaResolver)($request)
+            : $this->metaResolver;
+
+        if (! is_array($meta)) {
+            throw new \InvalidArgumentException('GraphTool meta hook must return an array.');
+        }
+
+        return $meta;
+    }
+
+    protected function resolveOutput(RunResult $run, Request $request): mixed
+    {
+        if ($this->outputMapper !== null) {
+            return ($this->outputMapper)($run, $request);
+        }
+
+        return [
+            'status' => $run->status(),
+            'run_id' => $run->runId(),
+            'thread_id' => $run->threadId(),
+            'state' => $run->state(),
+            'interrupt' => $run->interrupt(),
+            'error' => $run->error(),
+        ];
+    }
+
+    protected function encodeResponse(mixed $payload): string
+    {
+        if ($payload instanceof Stringable || is_string($payload)) {
+            return (string) $payload;
+        }
+
         return json_encode($payload, JSON_THROW_ON_ERROR);
     }
 }

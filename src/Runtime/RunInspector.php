@@ -75,9 +75,7 @@ class RunInspector
                 previousCheckpointId: $latestCheckpointId,
                 writes: [],
                 interrupt: null,
-                error: $this->redactPayload([
-                    'message' => data_get($failedTrace, 'payload.message', data_get($run, 'error.message')),
-                ]),
+                error: $this->redactPayload($this->errorForFailedTrace($failedTrace, $run)),
                 meta: $this->redactPayload(is_array($failedTrace['meta'] ?? null) ? $failedTrace['meta'] : []),
                 stateBefore: $includeState ? $this->redactPayload($previousState) : null,
                 stateAfter: null,
@@ -197,6 +195,18 @@ class RunInspector
         }
 
         return null;
+    }
+
+    protected function errorForFailedTrace(?array $trace, array $run): array
+    {
+        $payload = is_array($trace['payload'] ?? null) ? $trace['payload'] : [];
+        unset($payload['node']);
+
+        if ($payload !== []) {
+            return $payload;
+        }
+
+        return is_array($run['error'] ?? null) ? $run['error'] : [];
     }
 
     /**

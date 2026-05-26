@@ -5,6 +5,7 @@ namespace Heiner\AgentGraph\Runtime;
 use Carbon\CarbonImmutable;
 use DateTimeInterface;
 use Heiner\AgentGraph\Contracts\CheckpointStore;
+use Heiner\AgentGraph\Contracts\DelayScheduler;
 use Heiner\AgentGraph\Contracts\InterruptStore;
 use Heiner\AgentGraph\Contracts\LockProvider;
 use Heiner\AgentGraph\Contracts\MemoryStore;
@@ -28,7 +29,6 @@ use Heiner\AgentGraph\Events\GraphRunStarted;
 use Heiner\AgentGraph\Graph\GraphDefinition;
 use Heiner\AgentGraph\Graph\RetryPolicy;
 use Heiner\AgentGraph\Graph\StateGraph;
-use Heiner\AgentGraph\Queue\ContinueDelayedGraphJob;
 use Heiner\AgentGraph\State\Reducer;
 use Heiner\AgentGraph\State\StateReducer;
 use Heiner\AgentGraph\State\StateSchemaValidator;
@@ -44,10 +44,12 @@ class GraphRuntime
         protected RunStore $runs,
         protected CheckpointStore $checkpoints,
         protected WriteStore $writes,
+        protected TaskStore $tasks,
         protected InterruptStore $interrupts,
         protected MemoryStore $memory,
         protected TraceStore $traces,
         protected LockProvider $locks,
+        protected ?DelayScheduler $delayScheduler = null,
         protected ?RunInspector $inspector = null,
         protected ?RunEventDispatcher $events = null,
     ) {}
@@ -89,7 +91,10 @@ class GraphRuntime
         $run = $this->runs->update($runId, ['status' => 'running']);
         $this->dispatchRunEvent('run.resumed', new GraphResumed($runId, $run['thread_id'], $graph->key(), payload: $resumePayload));
 
-        return $this->continue($graph, $run, $state, $next);
+        return $this->continue($graph, $run, $state, $next, [
+            'resume_payload' => $resumePayload,
+            'interrupt_id' => isset($payload['interrupt_id']) ? (string) $payload['interrupt_id'] : null,
+        ]);
     }
 
     /**
@@ -122,7 +127,10 @@ class GraphRuntime
         $run = $this->runs->update($runId, ['status' => 'running']);
         $this->dispatchRunEvent('run.resumed', new GraphResumed($runId, $run['thread_id'], $graph->key(), payload: $statePatch));
 
-        return $this->continue($graph, $run, $state, $next);
+        return $this->continue($graph, $run, $state, $next, [
+            'resume_payload' => $statePatch,
+            'interrupt_id' => $interruptId,
+        ]);
     }
 
     public function cancel(string $runId, array $meta = []): RunResult
@@ -251,6 +259,11 @@ class GraphRuntime
         return $this->runs->list($filters, $limit);
     }
 
+    public function tasks(array $filters = [], int $limit = 50): array
+    {
+        return $this->tasks->list($filters, $limit);
+    }
+
     public function timeTravelChildren(string $checkpointId, int $limit = 50): array
     {
         return $this->runs->listTimeTravelChildren($checkpointId, $limit);
@@ -268,10 +281,20 @@ class GraphRuntime
             $schedule = is_array($resumeContext['schedule'] ?? null)
                 ? $this->scheduler()->normalize($resumeContext['schedule'])
                 : $this->scheduler()->normalize($nextNodes);
+            $resumePayload = array_key_exists('resume_payload', $resumeContext) && is_array($resumeContext['resume_payload'])
+                ? $resumeContext['resume_payload']
+                : null;
+            $resumeInterruptId = is_string($resumeContext['interrupt_id'] ?? null)
+                ? $resumeContext['interrupt_id']
+                : null;
+            $applyResumeContext = array_key_exists('resume_payload', $resumeContext) || $resumeInterruptId !== null;
 
             while ($schedule !== []) {
                 if ($step >= $maxSteps) {
-                    $run = $this->runs->update($run['public_id'], ['status' => 'failed', 'error' => ['message' => 'Maximum graph steps exceeded.']]);
+                    $run = $this->runs->update($run['public_id'], [
+                        'status' => 'failed',
+                        'error' => RuntimeError::fromMessage('Maximum graph steps exceeded.', code: 'max_steps_exceeded'),
+                    ]);
                     $this->dispatchRunEvent('run.failed', new GraphRunFailed($run['public_id'], $run['thread_id'], $graph->key(), payload: $run['error']));
 
                     return new RunResult($run, $state);
@@ -294,19 +317,29 @@ class GraphRuntime
                     $this->dispatchRunEvent('node.started', new GraphNodeStarted($run['public_id'], $run['thread_id'], $graph->key(), $nodeId));
 
                     try {
-                        $result = $this->invokeNode($graph, $nodeId, $nodeState, $run, $checkpointId);
+                        $result = $this->invokeNode(
+                            $graph,
+                            $nodeId,
+                            $nodeState,
+                            $run,
+                            $checkpointId,
+                            $applyResumeContext ? $resumePayload : null,
+                            $applyResumeContext ? $resumeInterruptId : null,
+                        );
                     } catch (Throwable $exception) {
-                        $run = $this->runs->update($run['public_id'], ['status' => 'failed', 'error' => ['message' => $exception->getMessage()]]);
-                        $this->traces->record($run['public_id'], 'node.failed', ['node' => $nodeId, 'message' => $exception->getMessage()]);
-                        $this->dispatchRunEvent('node.failed', new GraphNodeFailed($run['public_id'], $run['thread_id'], $graph->key(), $nodeId, ['message' => $exception->getMessage()]));
+                        $error = RuntimeError::fromThrowable($exception);
+                        $run = $this->runs->update($run['public_id'], ['status' => 'failed', 'error' => $error]);
+                        $this->traces->record($run['public_id'], 'node.failed', array_merge(['node' => $nodeId], $error));
+                        $this->dispatchRunEvent('node.failed', new GraphNodeFailed($run['public_id'], $run['thread_id'], $graph->key(), $nodeId, $error));
                         $this->dispatchRunEvent('run.failed', new GraphRunFailed($run['public_id'], $run['thread_id'], $graph->key(), payload: $run['error']));
 
                         return new RunResult($run, $state);
                     }
 
                     if ($result->status() === 'failed') {
-                        $run = $this->runs->update($run['public_id'], ['status' => 'failed', 'error' => ['message' => $result->failureMessage(), 'meta' => $result->meta()]]);
-                        $this->traces->record($run['public_id'], 'node.failed', ['node' => $nodeId, 'message' => $result->failureMessage(), 'meta' => $result->meta()]);
+                        $error = RuntimeError::fromMessage((string) $result->failureMessage(), meta: $result->meta());
+                        $run = $this->runs->update($run['public_id'], ['status' => 'failed', 'error' => $error]);
+                        $this->traces->record($run['public_id'], 'node.failed', array_merge(['node' => $nodeId], $error));
                         $this->dispatchRunEvent('node.failed', new GraphNodeFailed($run['public_id'], $run['thread_id'], $graph->key(), $nodeId, $run['error']));
                         $this->dispatchRunEvent('run.failed', new GraphRunFailed($run['public_id'], $run['thread_id'], $graph->key(), payload: $run['error']));
 
@@ -426,9 +459,9 @@ class GraphRuntime
                     }
 
                     if ($resumeAt instanceof DateTimeInterface) {
-                        ContinueDelayedGraphJob::dispatch($run['public_id'], [
+                        $this->delayScheduler()->schedule($run['public_id'], [
                             'interrupt_id' => $interrupt['interrupt_id'],
-                        ])->delay($resumeAt);
+                        ], $resumeAt);
                     }
 
                     $this->dispatchRunEvent('interrupt.created', new GraphInterrupted($run['public_id'], $run['thread_id'], $graph->key(), $nodeId, $interrupt));
@@ -447,6 +480,7 @@ class GraphRuntime
                 }
 
                 $schedule = $nextSchedule;
+                $applyResumeContext = false;
             }
 
             $run = $this->transaction(fn () => $this->runs->update($run['public_id'], ['status' => 'completed', 'current_checkpoint_id' => $checkpointId]));
@@ -456,7 +490,7 @@ class GraphRuntime
         });
     }
 
-    protected function invokeNode(GraphDefinition $graph, string $nodeId, array $state, array $run, ?string $checkpointId): NodeResult
+    protected function invokeNode(GraphDefinition $graph, string $nodeId, array $state, array $run, ?string $checkpointId, ?array $resumePayload = null, ?string $interruptId = null): NodeResult
     {
         $node = $graph->node($nodeId);
         $instance = is_string($node) ? $this->container->make($node) : $node;
@@ -468,7 +502,7 @@ class GraphRuntime
         $retryPolicy = $graph->nodePolicy($nodeId)->retryPolicy();
 
         if ($retryPolicy === null) {
-            return $this->invokeNodeOnce($instance, $graph, $nodeId, $state, $run, $checkpointId);
+            return $this->invokeNodeOnce($instance, $graph, $nodeId, $state, $run, $checkpointId, $resumePayload, $interruptId);
         }
 
         $attempt = 0;
@@ -476,7 +510,7 @@ class GraphRuntime
 
         while (true) {
             $attempt++;
-            $context = $this->nodeContext($graph, $nodeId, $state, $run, $checkpointId);
+            $context = $this->nodeContext($graph, $nodeId, $state, $run, $checkpointId, $resumePayload, $interruptId);
 
             try {
                 $result = $this->callNode($instance, $context);
@@ -497,8 +531,9 @@ class GraphRuntime
                     'max_attempts' => $retryPolicy->maxAttempts(),
                     'delay_ms' => $delayMs,
                     'error' => [
-                        'type' => $exception::class,
                         'message' => $exception->getMessage(),
+                        'exception_class' => $exception::class,
+                        'code' => $exception->getCode(),
                     ],
                 ];
 
@@ -512,15 +547,15 @@ class GraphRuntime
         }
     }
 
-    protected function invokeNodeOnce(mixed $instance, GraphDefinition $graph, string $nodeId, array $state, array $run, ?string $checkpointId): NodeResult
+    protected function invokeNodeOnce(mixed $instance, GraphDefinition $graph, string $nodeId, array $state, array $run, ?string $checkpointId, ?array $resumePayload = null, ?string $interruptId = null): NodeResult
     {
         return $this->callNode(
             $instance,
-            $this->nodeContext($graph, $nodeId, $state, $run, $checkpointId),
+            $this->nodeContext($graph, $nodeId, $state, $run, $checkpointId, $resumePayload, $interruptId),
         );
     }
 
-    protected function nodeContext(GraphDefinition $graph, string $nodeId, array $state, array $run, ?string $checkpointId): NodeContext
+    protected function nodeContext(GraphDefinition $graph, string $nodeId, array $state, array $run, ?string $checkpointId, ?array $resumePayload = null, ?string $interruptId = null): NodeContext
     {
         return new NodeContext(
             state: $state,
@@ -531,7 +566,9 @@ class GraphRuntime
             graphMeta: ['key' => $graph->key(), 'version' => $graph->version()],
             memory: $this->memory,
             traces: $this->traces,
-            tasks: new TaskRunner(app(TaskStore::class), $run['public_id'], $nodeId, $checkpointId),
+            tasks: new TaskRunner($this->tasks, $run['public_id'], $nodeId, $checkpointId),
+            resumePayload: $resumePayload,
+            interruptId: $interruptId,
         );
     }
 
@@ -563,13 +600,14 @@ class GraphRuntime
 
     protected function failRun(array $run, GraphDefinition $graph, string $nodeId, array $state, Throwable $exception): RunResult
     {
+        $error = RuntimeError::fromThrowable($exception);
         $run = $this->transaction(fn () => $this->runs->update($run['public_id'], [
             'status' => 'failed',
-            'error' => ['message' => $exception->getMessage()],
+            'error' => $error,
         ]));
 
-        $this->traces->record($run['public_id'], 'node.failed', ['node' => $nodeId, 'message' => $exception->getMessage()]);
-        $this->dispatchRunEvent('node.failed', new GraphNodeFailed($run['public_id'], $run['thread_id'], $graph->key(), $nodeId, ['message' => $exception->getMessage()]));
+        $this->traces->record($run['public_id'], 'node.failed', array_merge(['node' => $nodeId], $error));
+        $this->dispatchRunEvent('node.failed', new GraphNodeFailed($run['public_id'], $run['thread_id'], $graph->key(), $nodeId, $error));
         $this->dispatchRunEvent('run.failed', new GraphRunFailed($run['public_id'], $run['thread_id'], $graph->key(), payload: $run['error']));
 
         return new RunResult($run, $state);
@@ -816,5 +854,10 @@ class GraphRuntime
     protected function scheduler(): RuntimeScheduler
     {
         return new RuntimeScheduler;
+    }
+
+    protected function delayScheduler(): DelayScheduler
+    {
+        return $this->delayScheduler ??= app(DelayScheduler::class);
     }
 }

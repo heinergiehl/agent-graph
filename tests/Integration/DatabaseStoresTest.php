@@ -68,5 +68,8 @@ it('persists runs checkpoints writes tasks and memory in the database', function
         ->and($writes->listForCheckpoint($checkpoint['checkpoint_id']))->toHaveCount(1)
         ->and($writes->listForRun($run['public_id']))->toHaveCount(1)
         ->and($tasks->findByKey('task-key')['result'])->toBe(['ok' => true])
+        ->and($tasks->list(['run_id' => $run['public_id']]))->toHaveCount(1)
+        ->and($tasks->list(['run_id' => $run['public_id'], 'status' => 'completed'])[0]['task_key'])->toBe('task-key')
+        ->and($tasks->list(['run_id' => $run['public_id'], 'status' => 'running']))->toHaveCount(0)
         ->and($memory->read([MemoryScope::actor('tenant-db', 'user-db')], 'preferences', 'language')['value'])->toBe('de');
 });

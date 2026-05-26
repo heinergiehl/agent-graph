@@ -51,6 +51,7 @@ All methods are available through the `AgentGraph` facade and `AgentGraphManager
 - `inspect(string $runId, bool $withHistory = false, bool $withTraces = false): ?RunSnapshot` returns a read-only run snapshot without mutating runtime state.
 - `timeline(string $runId, bool $includeState = false, bool $includeDiff = true): ?RunTimeline` returns ordered, read-only timeline steps built from checkpoints, writes, interrupts, failures, and state diffs.
 - `runs(array $filters = [], int $limit = 50): array` lists recent runs. Supported filters are `status`, `thread_id`, `graph_key`, and `graph_version`.
+- `tasks(array $filters = [], int $limit = 50): array` lists idempotent task records for inspection. Supported filters are `run_id`, `node_id`, `checkpoint_id`, and `status`.
 - `tool(string $graphKey): GraphTool` exposes a graph as a Laravel AI tool.
 
 Errors: missing runs, missing graph definitions, stale interrupt IDs, schema validation failures, and graph version mismatches throw `RuntimeException` or `InvalidArgumentException` depending on the failure.
@@ -95,8 +96,13 @@ Node context exposes:
 - `memory(): MemoryStore`
 - `traces(): TraceStore`
 - `tasks(): TaskRunner`
+- `hasResumePayload(): bool`
+- `resumePayload(): array`
+- `interruptId(): ?string`
 
 Use `tasks()->once()` for external side effects that must remain idempotent during retries, replay, or fork.
+
+`hasResumePayload()`, `resumePayload()`, and `interruptId()` are populated only for the node invocation that resumes a pending interrupt. Normal node starts return `false`, an empty payload, and `null`.
 
 Stability: stable.
 
@@ -116,6 +122,8 @@ Stability: stable.
 Accessor methods include `status()`, `writes()`, `nextNode()`, `sends()`, `interruptType()`, `interruptPayload()`, `failureMessage()`, and `meta()`.
 
 State writes are validated against graph state schema before persistence. Invalid node writes fail the run.
+
+Standard node metadata keys under `meta.node` are `id`, `label`, `type`, `status`, `category`, `source`, and `description`. Timeline and inspection APIs expose this metadata without requiring apps to inspect package tables.
 
 Stability: stable.
 
@@ -213,9 +221,9 @@ Stability: experimental public API.
 
 `AgentNode::make(string $id)` creates a node wrapping a Laravel AI agent.
 
-Configuration methods: `agent()`, `prompt()`, `attachments()`, `stream()`, `provider()`, `model()`, `timeout()`, `writeTextTo()`, `writeUsageTo()`, and `writeMetaTo()`.
+Configuration methods: `agent()`, `prompt()`, `attachments()`, `stream()`, `provider()`, `model()`, `timeout()`, `writeTextTo()`, `writeUsageTo()`, `writeMetaTo()`, and `onTextDelta()`.
 
-`stream()` delegates to Laravel AI's public `Agent::stream()` contract. Text deltas still dispatch `GraphStreamDelta`; when run-event observation is enabled, the same delta payload is also normalized as `stream.delta`.
+`stream()` delegates to Laravel AI's public `Agent::stream()` contract. Text deltas still dispatch `GraphStreamDelta`; when run-event observation is enabled, the same delta payload is also normalized as `stream.delta`. `onTextDelta(function (string $delta, array $payload, NodeContext $context, TextDelta $event): void {})` receives the same streamed text delta directly; callbacks may declare fewer parameters.
 
 Errors: missing or invalid agent configuration and non-string prompts throw `RuntimeException`.
 
@@ -225,9 +233,11 @@ Stability: stable.
 
 `AgentGraph::tool(string $graphKey)` exposes a graph as a Laravel AI tool.
 
-Configuration methods: `name()`, `description()`, and `thread()`.
+Configuration methods: `name()`, `description()`, `thread()`, `input()`, `output()`, and `meta()`.
 
-Tool responses are JSON with `status`, `run_id`, `thread_id`, `state`, `interrupt`, and `error`. Tool exceptions are converted into a failed JSON response.
+`input(Closure $mapper)` maps a Laravel AI tool `Request` into graph input for new runs and resume payloads. `meta(Closure|array $meta)` adds metadata to new runs only. `output(Closure $mapper)` maps the final `RunResult` and original `Request` into the tool response.
+
+Default tool responses are JSON with `status`, `run_id`, `thread_id`, `state`, `interrupt`, and `error`. Tool exceptions are converted into a failed JSON response.
 
 Stability: stable.
 
@@ -240,20 +250,27 @@ Production adapters may implement these contracts:
 - `InterruptStore`: create, find, list for run, pending for run, resolve.
 - `WriteStore`: create many, list for checkpoint, list for run.
 - `TraceStore`: record, list for run.
-- `TaskStore`: find by key, start, complete, fail.
+- `TaskStore`: find by key, list, start, complete, fail.
 - `MemoryStore`: write, read, search.
+- `EnumerableMemoryStore`: extends `MemoryStore` with `listNamespace(array $scopes, string $namespace): array`.
+- `DelayScheduler`: schedule delayed resume payloads for delay interrupts.
 
 Adapters must preserve JSON-serializable arrays for stored payloads and return decoded arrays matching database and in-memory store shapes.
+
+The default `DelayScheduler` dispatches `ContinueDelayedGraphJob`; Laravel applications can bind their own scheduler implementation.
 
 Stability: stable, with v1 contract changes documented in `UPGRADE.md`.
 
 ## Errors and Compatibility
 
 - Unknown state keys in run input, state-edit resume, fork patches, and node writes throw or fail strictly.
+- Run errors use a structured payload with `message`, `exception_class`, `code`, `previous`, and optional `details`/`meta`.
 - Normal `resume()` remains compatible with extra unknown payload keys, but known schema keys are type-validated.
 - Replay and fork require persisted `graph_version` to match the currently registered graph definition.
 - Supersteps store one checkpoint per frontier and preserve dynamic `Send` schedules in checkpoint metadata without a database migration.
 - Parallel interrupts inside a multi-node frontier fail the run with a clear error; single-node interrupts keep existing resume behavior.
 - Per-node retry policies are synchronous inside the current runtime. They retry thrown node exceptions only and may repeat side effects unless nodes use `tasks()->once()`.
 - Run-event observation is additive and does not change `GraphStreamDelta`, Laravel AI `StreamableAgentResponse`, `GraphTool` JSON shape, or provider behavior.
+- GraphTool mapping hooks are adapter conveniences; durable lifecycle observation belongs in `RunEvent` callbacks.
+- Parent/child run metadata keys are reserved for future subgraph and child-run workflows, but full graph-as-subgraph orchestration remains post-v1.
 - No new database migrations are required for v1 hardening, supersteps, or experimental time travel.

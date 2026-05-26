@@ -102,6 +102,11 @@ class AgentGraphManager
         return $this->runtime->runs($filters, $limit);
     }
 
+    public function tasks(array $filters = [], int $limit = 50): array
+    {
+        return $this->runtime->tasks($filters, $limit);
+    }
+
     public function timeTravelChildren(string $checkpointId, int $limit = 50): array
     {
         return $this->runtime->timeTravelChildren($checkpointId, $limit);

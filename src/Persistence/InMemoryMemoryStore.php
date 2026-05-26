@@ -2,12 +2,12 @@
 
 namespace Heiner\AgentGraph\Persistence;
 
-use Heiner\AgentGraph\Contracts\MemoryStore;
+use Heiner\AgentGraph\Contracts\EnumerableMemoryStore;
 use Heiner\AgentGraph\Events\GraphMemoryRead;
 use Heiner\AgentGraph\Events\GraphMemoryWritten;
 use Heiner\AgentGraph\Memory\MemoryScope;
 
-class InMemoryMemoryStore implements MemoryStore
+class InMemoryMemoryStore implements EnumerableMemoryStore
 {
     protected array $memories = [];
 
@@ -92,6 +92,27 @@ class InMemoryMemoryStore implements MemoryStore
 
             return $this->memories[$id];
         }, $results);
+    }
+
+    public function listNamespace(array $scopes, string $namespace): array
+    {
+        $results = [];
+
+        foreach ($this->orderScopes($scopes) as $scope) {
+            foreach ($this->memories as $memory) {
+                if ($memory['scope_type'] !== $scope->type
+                    || $memory['scope_id'] !== $scope->id
+                    || $memory['tenant_id'] !== $scope->tenantId
+                    || $memory['namespace'] !== $namespace
+                    || $this->isExpired($memory)) {
+                    continue;
+                }
+
+                $results[] = $memory;
+            }
+        }
+
+        return $results;
     }
 
     protected function identity(MemoryScope $scope, string $namespace, string $key): string

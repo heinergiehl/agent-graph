@@ -238,6 +238,41 @@ it('builds timeline steps for interrupted delayed failed and skipped nodes', fun
         ]);
 });
 
+it('records structured runtime errors with exception metadata', function () {
+    AgentGraph::define(
+        StateGraph::make('inspection_structured_error')
+            ->state(['answer' => 'string|null'])
+            ->node('fail', TimelineStructuredErrorNode::class)
+            ->edge(StateGraph::START, 'fail')
+            ->edge('fail', StateGraph::END)
+    );
+
+    $run = AgentGraph::graph('inspection_structured_error')->thread('timeline-thread-7')->run();
+    $error = $run->error();
+
+    expect($run->failed())->toBeTrue()
+        ->and($error)->toMatchArray([
+            'message' => 'outer failure',
+            'exception_class' => RuntimeException::class,
+            'code' => 123,
+            'previous' => [
+                'message' => 'inner failure',
+                'exception_class' => InvalidArgumentException::class,
+                'code' => 456,
+                'previous' => null,
+            ],
+        ])
+        ->and($error)->toHaveKeys(['message', 'exception_class', 'code', 'previous']);
+
+    $timelineError = AgentGraph::timeline($run->runId())->steps()[0]->error();
+
+    expect($timelineError)->toMatchArray([
+        'message' => 'outer failure',
+        'exception_class' => RuntimeException::class,
+        'code' => 123,
+    ]);
+});
+
 final class InspectionAnswerNode implements Node
 {
     public function __invoke(NodeContext $context): NodeResult
@@ -345,5 +380,13 @@ final class TimelineSkippedNode implements Node
                 'label' => 'Skip Me',
             ])
             ->skipped();
+    }
+}
+
+final class TimelineStructuredErrorNode implements Node
+{
+    public function __invoke(NodeContext $context): NodeResult
+    {
+        throw new RuntimeException('outer failure', 123, new InvalidArgumentException('inner failure', 456));
     }
 }

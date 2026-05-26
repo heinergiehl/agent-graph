@@ -48,6 +48,7 @@ it('rolls back checkpoint creation when write persistence fails', function () {
         runs: $runs = new DatabaseRunStore(app('db')),
         checkpoints: $checkpoints = new DatabaseCheckpointStore(app('db')),
         writes: new FailingWriteStore,
+        tasks: new DatabaseTaskStore(app('db')),
         interrupts: new DatabaseInterruptStore(app('db')),
         memory: new DatabaseMemoryStore(app('db')),
         traces: new DatabaseTraceStore(app('db')),

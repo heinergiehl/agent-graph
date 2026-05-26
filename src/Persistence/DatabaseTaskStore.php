@@ -21,6 +21,28 @@ class DatabaseTaskStore implements TaskStore
         return $record ? $this->decodeRecord($record, ['input', 'result', 'error', 'meta']) : null;
     }
 
+    public function list(array $filters = [], int $limit = 50): array
+    {
+        if ($limit <= 0) {
+            return [];
+        }
+
+        $query = $this->db->table($this->table());
+
+        foreach (['run_id', 'checkpoint_id', 'node_id', 'status'] as $filter) {
+            if (isset($filters[$filter]) && $filters[$filter] !== '') {
+                $query->where($filter, $filters[$filter]);
+            }
+        }
+
+        return $query
+            ->orderByDesc('id')
+            ->limit($limit)
+            ->get()
+            ->map(fn (object $record): array => $this->decodeRecord($record, ['input', 'result', 'error', 'meta']))
+            ->all();
+    }
+
     public function start(string $key, string $inputHash, array $input, array $context = []): array
     {
         $existing = $this->findByKey($key);

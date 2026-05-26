@@ -10,17 +10,18 @@ Implemented and ready for sandbox testing:
 - Typed state channels and reducers.
 - Durable runs, checkpoints, writes, resume, cancellation, max-step protection, and persisted failures.
 - Human-in-the-loop interrupts for input, approval, delay, webhook, manual review, and state edit.
-- Delay interrupts scheduled through `ContinueDelayedGraphJob`.
+- Delay interrupts scheduled through a replaceable `DelayScheduler`; the default still dispatches `ContinueDelayedGraphJob`.
 - Idempotent tasks with task-key/input-hash protection.
 - Scoped memory for run, thread, actor, tenant, application, and global scopes.
-- Memory TTL filtering, fallback order, keyword search, metadata, confidence, source, usage count, and `last_used_at`.
+- Memory TTL filtering, fallback order, namespace listing, keyword search, metadata, confidence, source, usage count, and `last_used_at`.
 - Database and in-memory stores.
 - Laravel events and redacted traces with payload limits.
 - Optional run-event observation for lifecycle, checkpoint, interrupt, failure, and stream-delta workflow events.
-- Laravel AI `AgentNode`, including streamed `TextDelta` handling.
+- Laravel AI `AgentNode`, including streamed `TextDelta` handling and optional direct text delta callbacks.
 - `GraphTool` for durable graph execution from Laravel AI tools.
 - Queue jobs, cache locks, install/make/doctor/prune commands.
 - Runtime inspection with run snapshots, run listing, checkpoint writes, pending interrupts, optional traces, and read-only run timelines.
+- Read-only task inspection for durable side-effect debugging.
 - Experimental checkpoint inspection, replay, fork, and lineage APIs for time-travel workflows.
 - Per-node retry policies for transient thrown node exceptions.
 - State schema key/type validation for run input, resume, state edit, fork, and node writes.
@@ -82,6 +83,13 @@ Implemented v1 hardening:
 - Deterministic supersteps and dynamic `Send` fan-out without Laravel AI provider coupling.
 - Additive run-event observation without replacing Laravel AI streaming or changing `GraphTool` JSON.
 - Per-node retry policies for thrown node exceptions without database migrations.
+- Resume context accessors for human-in-the-loop nodes.
+- Structured runtime errors for run results, graph tools, traces, and timelines.
+- Replaceable delay scheduling through `DelayScheduler`.
+- Enumerable memory listing through `EnumerableMemoryStore`.
+- Task inspection through `AgentGraph::tasks()`.
+- Bounded GraphTool input, output, and run metadata mapping hooks.
+- Standard `meta.node` conventions for inspector and timeline UIs.
 
 ## Post-v1 Features
 

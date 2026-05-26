@@ -35,6 +35,8 @@ class AgentNode implements Node
 
     protected ?string $metaChannel = null;
 
+    protected ?Closure $textDeltaCallback = null;
+
     protected function __construct(protected string $id) {}
 
     public static function make(string $id): self
@@ -112,6 +114,13 @@ class AgentNode implements Node
         return $this;
     }
 
+    public function onTextDelta(Closure $callback): self
+    {
+        $this->textDeltaCallback = $callback;
+
+        return $this;
+    }
+
     public function __invoke(NodeContext $context): NodeResult
     {
         $agent = $this->resolveAgent();
@@ -150,6 +159,7 @@ class AgentNode implements Node
                     ));
 
                     $context->traces()->record($context->runId(), 'stream.delta', $payload);
+                    $this->invokeTextDeltaCallback($event, $payload, $context);
                 }
             }
 
@@ -199,5 +209,22 @@ class AgentNode implements Node
         return $reflection->getNumberOfParameters() >= 2
             ? $value($context->state(), $context)
             : $value($context->state());
+    }
+
+    protected function invokeTextDeltaCallback(TextDelta $event, array $payload, NodeContext $context): void
+    {
+        if ($this->textDeltaCallback === null) {
+            return;
+        }
+
+        $arguments = [
+            $event->delta,
+            $payload,
+            $context,
+            $event,
+        ];
+        $reflection = new ReflectionFunction($this->textDeltaCallback);
+
+        ($this->textDeltaCallback)(...array_slice($arguments, 0, $reflection->getNumberOfParameters()));
     }
 }

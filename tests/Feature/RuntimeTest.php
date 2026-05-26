@@ -62,6 +62,38 @@ it('interrupts and resumes from the latest checkpoint', function () {
         ->and($completed->state('answer'))->toBe('Tracking ORD-123');
 });
 
+it('exposes resume payload and interrupt id to the resumed node', function () {
+    AgentGraph::define(
+        StateGraph::make('resume_context')
+            ->state([
+                'answer' => 'string|null',
+                'resume_payload' => 'array|null',
+                'resume_interrupt_id' => 'string|null',
+            ])
+            ->node('ask', ResumeAwareNode::class)
+            ->edge(StateGraph::START, 'ask')
+            ->edge('ask', StateGraph::END)
+    );
+
+    $interrupted = AgentGraph::graph('resume_context')
+        ->thread('resume-context-thread')
+        ->input([])
+        ->run();
+
+    expect($interrupted->interrupted())->toBeTrue()
+        ->and($interrupted->interrupt()['type'])->toBe('input');
+
+    $completed = AgentGraph::resume($interrupted->runId(), [
+        'interrupt_id' => $interrupted->interrupt()['interrupt_id'],
+        'answer' => 'approved',
+    ]);
+
+    expect($completed->completed())->toBeTrue()
+        ->and($completed->state('answer'))->toBe('approved')
+        ->and($completed->state('resume_payload'))->toBe(['answer' => 'approved'])
+        ->and($completed->state('resume_interrupt_id'))->toBe($interrupted->interrupt()['interrupt_id']);
+});
+
 it('executes side effect tasks once per idempotency key', function () {
     AgentGraph::define(
         StateGraph::make('tasks')
@@ -105,6 +137,25 @@ final class AskForOrderNode implements Node
         }
 
         return NodeResult::write([]);
+    }
+}
+
+final class ResumeAwareNode implements Node
+{
+    public function __invoke(NodeContext $context): NodeResult
+    {
+        if (! $context->hasResumePayload()) {
+            expect($context->resumePayload())->toBe([])
+                ->and($context->interruptId())->toBeNull();
+
+            return NodeResult::interrupt('input', ['prompt' => 'Approve?']);
+        }
+
+        return NodeResult::write([
+            'answer' => $context->state('answer'),
+            'resume_payload' => $context->resumePayload(),
+            'resume_interrupt_id' => $context->interruptId(),
+        ]);
     }
 }
 

@@ -20,8 +20,17 @@ Custom store adapters must implement the v1 contract additions:
 - `InterruptStore::find(string $interruptId): ?array`
 - `InterruptStore::listForRun(string $runId): array`
 - `WriteStore::listForCheckpoint(string $checkpointId): array`
+- `TaskStore::list(array $filters = [], int $limit = 50): array`
+
+Applications that expose memory inspection should resolve `EnumerableMemoryStore::class` for namespace listing. Custom memory stores can implement it with `listNamespace(array $scopes, string $namespace): array`.
 
 No new database migration is required for these APIs when using the package stores.
+
+`TaskStore::list()` is read-only and supports `run_id`, `node_id`, `checkpoint_id`, and `status` filters for inspector UIs.
+
+## Delay scheduling
+
+Delay interrupts now schedule through `DelayScheduler::class`. The package default still dispatches `ContinueDelayedGraphJob`, so existing queue behavior is unchanged. Applications that need custom delayed execution can bind their own `DelayScheduler` implementation.
 
 ## State schema validation
 
@@ -38,7 +47,17 @@ Review graphs that relied on loosely typed values such as string numbers for `in
 
 Use `AgentGraph::resume($runId, ['interrupt_id' => $interruptId, ...])` for normal input and approval flows.
 
+During the resumed node invocation, `$context->hasResumePayload()`, `$context->resumePayload()`, and `$context->interruptId()` expose the original resume payload separately from merged graph state.
+
 Use `AgentGraph::resumeWithStateEdit($runId, $interruptId, $statePatch, $resolvedBy)` for manual state correction. It only accepts pending `state_edit` interrupts and validates the patch before resolving the interrupt.
+
+## Structured errors
+
+Failed runs now return structured error arrays with `message`, `exception_class`, `code`, `previous`, and optional `details` or `meta`. Existing code that only reads `error()['message']` remains compatible. Code that relied on graph-tool exception errors using a `type` key should switch to `exception_class`.
+
+## GraphTool mapping hooks
+
+`GraphTool` now supports `input()`, `output()`, and `meta()` hooks. These hooks are additive and do not replace Laravel AI tool invocation. Use them to map tool requests and responses; keep lifecycle persistence in run-event observers.
 
 ## Time travel replay and fork safety
 

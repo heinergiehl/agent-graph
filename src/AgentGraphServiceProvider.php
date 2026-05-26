@@ -9,6 +9,8 @@ use Heiner\AgentGraph\Console\MakeNodeCommand;
 use Heiner\AgentGraph\Console\PruneCommand;
 use Heiner\AgentGraph\Contracts\CheckpointStore;
 use Heiner\AgentGraph\Contracts\Clock;
+use Heiner\AgentGraph\Contracts\DelayScheduler;
+use Heiner\AgentGraph\Contracts\EnumerableMemoryStore;
 use Heiner\AgentGraph\Contracts\InterruptStore;
 use Heiner\AgentGraph\Contracts\LockProvider;
 use Heiner\AgentGraph\Contracts\MemoryStore;
@@ -33,6 +35,7 @@ use Heiner\AgentGraph\Persistence\InMemoryWriteStore;
 use Heiner\AgentGraph\Runtime\GraphRuntime;
 use Heiner\AgentGraph\Runtime\RunEventDispatcher;
 use Heiner\AgentGraph\Support\CacheLockProvider;
+use Heiner\AgentGraph\Support\QueueDelayScheduler;
 use Heiner\AgentGraph\Support\SystemClock;
 use Illuminate\Support\ServiceProvider;
 
@@ -44,6 +47,7 @@ class AgentGraphServiceProvider extends ServiceProvider
 
         $this->app->singleton(Clock::class, SystemClock::class);
         $this->app->singleton(LockProvider::class, CacheLockProvider::class);
+        $this->app->singleton(DelayScheduler::class, QueueDelayScheduler::class);
 
         $this->registerStores();
 
@@ -99,6 +103,8 @@ class AgentGraphServiceProvider extends ServiceProvider
         $this->app->alias(TaskStore::class, 'agent-graph.tasks');
         $this->app->alias(InterruptStore::class, 'agent-graph.interrupts');
         $this->app->alias(MemoryStore::class, 'agent-graph.memory');
+        $this->app->alias(MemoryStore::class, EnumerableMemoryStore::class);
+        $this->app->alias(MemoryStore::class, 'agent-graph.memory.enumerable');
         $this->app->alias(TraceStore::class, 'agent-graph.traces');
     }
 }
