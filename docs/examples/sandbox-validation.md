@@ -1,6 +1,6 @@
 # Sandbox Validation
 
-Date: 2026-05-25
+Date: 2026-05-26
 
 Sandbox app: `C:\Users\Heiner\Documents\agent-graph-sandbox`
 
@@ -60,4 +60,4 @@ The sandbox Feature test passed:
 
 ## Notes
 
-Because the package is not tagged yet, the path repository install used `heiner/agent-graph:*@dev`. After publishing `0.9.0-beta`, consumers should require the released beta constraint instead.
+Because the package is not tagged yet, the path repository install used `heiner/agent-graph:*@dev`. After publishing `0.12.0`, consumers should require the released beta constraint instead.

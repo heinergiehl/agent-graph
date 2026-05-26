@@ -46,7 +46,7 @@ Target: hardened MVP API stability after 0.12 sandbox and chatbot integration te
 
 - Added production guidance for runtime recovery, queue retry safety, state edits, replay/fork side-effect safety, and API stability.
 
-## 0.12.0 - Unreleased
+## 0.12.0 - 2026-05-26
 
 ### Added
 
