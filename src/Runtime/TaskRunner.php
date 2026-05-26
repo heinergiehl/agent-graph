@@ -3,6 +3,7 @@
 namespace Heiner\AgentGraph\Runtime;
 
 use Closure;
+use Heiner\AgentGraph\Contracts\LeasingTaskStore;
 use Heiner\AgentGraph\Contracts\TaskStore;
 use Heiner\AgentGraph\Events\GraphTaskCompleted;
 use Heiner\AgentGraph\Events\GraphTaskFailed;
@@ -37,6 +38,10 @@ class TaskRunner
 
             if ($existing['status'] === 'completed') {
                 return $existing['result'];
+            }
+
+            if ($this->tasks instanceof LeasingTaskStore && $this->tasks->activeLeaseUntil($existing) !== null) {
+                throw new RuntimeException("Task key [{$key}] is already running.");
             }
         }
 

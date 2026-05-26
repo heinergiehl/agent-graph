@@ -7,12 +7,14 @@ This document describes the public API surface exposed by the 0.12 beta and inte
 ### `StateGraph`
 
 - `StateGraph::make(string $key, string $version = '1'): StateGraph` creates a graph builder. The key identifies the graph; the version is persisted on runs and checkpoints.
-- `state(array $schema): self` defines state channels and simple schema types such as `string`, `string|null`, `int`, `bool`, `array`, `messages`, and `mixed`.
+- `state(array|StateSchema $schema): self` defines state channels and schema types such as `string`, `string|null`, `int`, `bool`, `array`, `messages`, `mixed`, or structured `StateSchema` definitions.
 - `reducer(string $channel, mixed $reducer): self` configures channel reducers. Built-ins include `append`, `merge`, `messages`/`add_messages`, and `max`/`max_confidence`.
 - `node(string $id, callable|string $node): self` registers an invokable node class, callable, or `Node` implementation.
 - `edge(string $from, string $to): self` registers a static edge.
 - `conditional(string $from, Closure $resolver, array $routes): self` registers conditional routing.
 - `retry(string $nodeId, int $maxAttempts = 3, int $delayMs = 0, float $backoff = 1.0, ?int $maxDelayMs = null, ?callable $when = null): self` configures retry for thrown exceptions from one node.
+- `timeout(string $nodeId, float $seconds): self` configures portable wall-clock timeout detection for one node.
+- `concurrency(string $nodeId, int $limit = 1, ?string $key = null): self` configures lock-backed node concurrency.
 - `compile(): GraphDefinition` validates and returns an immutable graph definition.
 
 Errors: invalid graph structure throws `InvalidArgumentException`.
@@ -27,11 +29,23 @@ Errors: unknown nodes, endpoints, or invalid graph structure throw `InvalidArgum
 
 Stability: stable for read-only metadata and endpoint helpers.
 
-### `NodePolicy` and `RetryPolicy`
+### `StateSchema`
+
+`StateSchema::make()` creates a builder for structured schema definitions. Methods include `string()`, `integer()`, `boolean()`, `array()`, `object()`, `enum()`, `messages()`, `channel()`, and `toArray()`.
+
+String schemas remain supported for backward compatibility. Structured object validation currently validates provided nested properties and enum values.
+
+Stability: additive beta API.
+
+### `NodePolicy`, `RetryPolicy`, `TimeoutPolicy`, and `ConcurrencyPolicy`
 
 `GraphDefinition::nodePolicy($nodeId)` returns a `NodePolicy`. Unknown nodes return the default empty policy for read-only inspection; policy configuration for unknown nodes fails during graph compile.
 
 `RetryPolicy` exposes `maxAttempts()`, `delayMs()`, `backoff()`, `maxDelayMs()`, `delayForAttempt()`, and `shouldRetry()`.
+
+`TimeoutPolicy` exposes `seconds()`. Timeout checks are portable wall-clock checks around node execution and do not terminate PHP execution mid-call.
+
+`ConcurrencyPolicy` exposes `limit()` and `key()`. The default runtime enforces `limit: 1` with AgentGraph's `LockProvider`; higher limits are reserved for custom limiters/adapters.
 
 `maxAttempts` is the total attempt count including the first attempt. `delayMs` is the first retry delay, `backoff` multiplies later delays, and `maxDelayMs` caps retry delays when set. The optional `when(Throwable $exception, int $attempt, NodeContext $context): bool` predicate can stop retrying before attempts are exhausted.
 
@@ -46,6 +60,7 @@ All methods are available through the `AgentGraph` facade and `AgentGraphManager
 - `define(StateGraph|GraphDefinition $graph): GraphDefinition` registers a graph.
 - `graph(string $key): PendingGraphRun` creates a pending run builder for a registered graph.
 - `resume(string $runId, array $payload = [], ?callable $onEvent = null, bool $collectEvents = false): RunResult` resumes a run. If a pending interrupt exists, `interrupt_id` must match it.
+- `resumeStrict(string $runId, array $payload = [], ?callable $onEvent = null, bool $collectEvents = false): RunResult` resumes a run while rejecting unknown state keys.
 - `resumeWithStateEdit(string $runId, string $interruptId, array $statePatch, ?string $resolvedBy = null, ?callable $onEvent = null, bool $collectEvents = false): RunResult` resolves a `state_edit` interrupt after strict schema validation.
 - `cancel(string $runId, array $meta = []): RunResult` marks a run cancelled.
 - `inspect(string $runId, bool $withHistory = false, bool $withTraces = false): ?RunSnapshot` returns a read-only run snapshot without mutating runtime state.
@@ -53,7 +68,13 @@ All methods are available through the `AgentGraph` facade and `AgentGraphManager
 - `runs(array $filters = [], int $limit = 50): array` lists recent runs. Supported filters are `status`, `thread_id`, `graph_key`, and `graph_version`.
 - `childRuns(string $parentRunId, int $limit = 50): array` lists runs whose metadata points to a parent run under `meta.parent.run_id`.
 - `tasks(array $filters = [], int $limit = 50): array` lists idempotent task records for inspection. Supported filters are `run_id`, `node_id`, `checkpoint_id`, and `status`.
+- `nodeExecutions(string $runId): array` lists experimental queued-superstep node execution records.
+- `expireInterrupts(mixed $now = null): int` expires pending interrupts whose `expires_at` is due.
 - `tool(string $graphKey): GraphTool` exposes a graph as a Laravel AI tool.
+- `durableTool(string $graphKey): DurableGraphTool` exposes an active-thread durable graph tool for Laravel AI.
+- `session(string $graphKey, string $threadId): DurableGraphSession` creates an active-thread workflow session.
+- `memory(): MemoryManager` returns memory writer/export/delete helpers.
+- `migrationsPath(): string` returns the package migration path.
 
 Errors: missing runs, missing graph definitions, stale interrupt IDs, schema validation failures, and graph version mismatches throw `RuntimeException` or `InvalidArgumentException` depending on the failure.
 
@@ -121,6 +142,7 @@ Stability: stable.
 - `withMeta(array $meta): self`
 - `withNodeMeta(array $meta): self` stores generic inspectable node metadata under `meta.node`.
 - `skipped(): self` marks the node metadata status as `skipped`.
+- `withInterruptPolicy(InterruptPolicy $policy): self` attaches interrupt expiry/resolver metadata.
 
 Accessor methods include `status()`, `writes()`, `nextNode()`, `sends()`, `interruptType()`, `interruptPayload()`, `failureMessage()`, and `meta()`.
 
@@ -129,6 +151,16 @@ State writes are validated against graph state schema before persistence. Invali
 Standard node metadata keys under `meta.node` are `id`, `label`, `type`, `status`, `category`, `source`, and `description`. Timeline and inspection APIs expose this metadata without requiring apps to inspect package tables.
 
 Stability: stable.
+
+### `SubgraphNode`
+
+`SubgraphNode::make(string $id, string|GraphDefinition $graph)` creates a node that runs another graph as a child run.
+
+Configuration methods: `isolated(?Closure $input = null, ?Closure $output = null)`, `shared(?Closure $input = null, ?Closure $output = null)`, and `mapped(?Closure $input = null, ?Closure $output = null)`.
+
+Child runs are persisted as normal runs with `run.meta.parent`. Child interrupts bubble to the parent as `subgraph` interrupts containing `child_run_id`, `child_interrupt_id`, and the child interrupt payload. Resuming the parent with those child identifiers resumes the child first, then maps the child state back into the parent writes.
+
+Stability: additive beta API.
 
 ### `Send`
 
@@ -228,13 +260,23 @@ Stability: experimental public API.
 
 `AgentNode::make(string $id)` creates a node wrapping a Laravel AI agent.
 
-Configuration methods: `agent()`, `prompt()`, `attachments()`, `stream()`, `provider()`, `model()`, `timeout()`, `writeTextTo()`, `writeUsageTo()`, `writeMetaTo()`, and `onTextDelta()`.
+Configuration methods: `agent()`, `prompt()`, `attachments()`, `stream()`, `provider()`, `model()`, `timeout()`, `writeTextTo()`, `writeUsageTo()`, `writeMetaTo()`, `writeStructuredTo()`, `writeToolCallsTo()`, `writeToolResultsTo()`, `writeStepsTo()`, `writeStreamEventsTo()`, and `onTextDelta()`.
 
 `stream()` delegates to Laravel AI's public `Agent::stream()` contract. Text deltas still dispatch `GraphStreamDelta`; when run-event observation is enabled, the same delta payload is also normalized as `stream.delta`. `onTextDelta(function (string $delta, array $payload, NodeContext $context, TextDelta $event): void {})` receives the same streamed text delta directly; callbacks may declare fewer parameters.
 
 Errors: missing or invalid agent configuration and non-string prompts throw `RuntimeException`.
 
 Stability: stable.
+
+### `DurableGraphSession`
+
+`AgentGraph::session(string $graphKey, string $threadId)` returns an active-thread workflow session.
+
+Methods: `start(array $input = [], array $meta = [])`, `run(array $input = [], array $meta = [])`, `resume(array $payload = [], bool $strict = false)`, `cancel(array $meta = [])`, `status()`, and `activeRun()`.
+
+`run()` returns the active interrupted/delayed/running run for the graph+thread when one exists; otherwise it starts a new run.
+
+Stability: additive beta API.
 
 ### `GraphTool`
 
@@ -248,18 +290,41 @@ Default tool responses are JSON with `status`, `run_id`, `thread_id`, `state`, `
 
 Stability: stable.
 
+### `DurableGraphTool`
+
+`AgentGraph::durableTool(string $graphKey)` exposes `DurableGraphSession` as a Laravel AI `Tool`.
+
+Configuration methods: `name()`, `description()`, `thread()`, and `strictResume()`.
+
+The default response is JSON with `status`, `run_id`, `thread_id`, `state`, `interrupt`, `summary`, and `error`. The existing `GraphTool` response shape is unchanged.
+
+Stability: additive beta API.
+
+## Memory Manager
+
+`AgentGraph::memory()` returns a `MemoryManager`.
+
+Methods: `writeExtracted(MemoryScope $scope, string $namespace, string $text, array $meta = [])`, `export(MemoryScope $scope, ?string $namespace = null)`, `deleteScope()`, `deleteNamespace()`, `deleteKey()`, `embeddings()`, and `vectors()`.
+
+Default bindings are deterministic and do not require vector infrastructure. Applications can replace `MemoryExtractor`, `EmbeddingGenerator`, or `VectorMemoryStore`. `PgvectorMemoryStore` and `stubs/pgvector-memory-migration.stub` are optional pgvector starting points.
+
+Stability: additive beta API.
+
 ## Store Contracts
 
 Production adapters may implement these contracts:
 
-- `RunStore`: create, find, list, list child runs, list time-travel children, update.
+- `RunStore`: create, find, list, latest for thread+graph, list child runs, list time-travel children, update.
 - `CheckpointStore`: create, find, latest for run, list for run.
-- `InterruptStore`: create, find, list for run, pending for run, resolve.
+- `InterruptStore`: create, find, list for run, pending for run, resolve, expire pending.
 - `WriteStore`: create many, list for checkpoint, list for run.
 - `TraceStore`: record, list for run.
 - `TaskStore`: find by key, list, start, complete, fail.
-- `MemoryStore`: write, read, search.
+- `LeasingTaskStore`: extends task storage with active lease inspection.
+- `MemoryStore`: write, read, search, export/delete privacy APIs.
 - `EnumerableMemoryStore`: extends `MemoryStore` with `listNamespace(array $scopes, string $namespace): array`.
+- `NodeExecutionStore`: record and list experimental queued-superstep node execution records.
+- `MemoryExtractor`, `EmbeddingGenerator`, and `VectorMemoryStore`: optional agentic/vector memory extension contracts.
 - `DelayScheduler`: schedule delayed resume payloads for delay interrupts.
 
 Adapters must preserve JSON-serializable arrays for stored payloads and return decoded arrays matching database and in-memory store shapes.
@@ -273,11 +338,12 @@ Stability: stable, with v1 contract changes documented in `UPGRADE.md`.
 - Unknown state keys in run input, state-edit resume, fork patches, and node writes throw or fail strictly.
 - Run errors use a structured payload with `message`, `exception_class`, `code`, `previous`, and optional `details`/`meta`.
 - Normal `resume()` remains compatible with extra unknown payload keys, but known schema keys are type-validated.
+- `resumeStrict()` rejects unknown state keys for public endpoints that need stricter input control.
 - Replay and fork require persisted `graph_version` to match the currently registered graph definition.
 - Supersteps store one checkpoint per frontier and preserve dynamic `Send` schedules in checkpoint metadata without a database migration.
 - Parallel interrupts inside a multi-node frontier fail the run with a clear error; single-node interrupts keep existing resume behavior.
 - Per-node retry policies are synchronous inside the current runtime. They retry thrown node exceptions only and may repeat side effects unless nodes use `tasks()->once()`.
 - Run-event observation is additive and does not change `GraphStreamDelta`, Laravel AI `StreamableAgentResponse`, `GraphTool` JSON shape, or provider behavior.
-- GraphTool mapping hooks are adapter conveniences; durable lifecycle observation belongs in `RunEvent` callbacks.
-- Parent/child run metadata is stored under `run.meta.parent` for inspection and lineage. Full graph-as-subgraph orchestration remains post-v1.
-- No new database migrations are required for v1 hardening, supersteps, or experimental time travel.
+- GraphTool mapping hooks are adapter conveniences; durable active-thread semantics belong in `DurableGraphSession` or `DurableGraphTool`.
+- Parent/child run metadata is stored under `run.meta.parent` for inspection and lineage. `SubgraphNode` uses this same lineage.
+- The hardening migration adds interrupt expiry and experimental node execution records. Existing published migrations remain valid; apps must run the additive migration.

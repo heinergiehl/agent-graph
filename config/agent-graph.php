@@ -7,6 +7,23 @@ return [
 
     'max_parallel_nodes' => env('AGENT_GRAPH_MAX_PARALLEL_NODES', 50),
 
+    'database' => [
+        'connection' => env('AGENT_GRAPH_DB_CONNECTION'),
+    ],
+
+    'locks' => [
+        'ttl_seconds' => env('AGENT_GRAPH_LOCK_TTL_SECONDS', 30),
+        'block_seconds' => env('AGENT_GRAPH_LOCK_BLOCK_SECONDS', 5),
+    ],
+
+    'tasks' => [
+        'lease_seconds' => env('AGENT_GRAPH_TASK_LEASE_SECONDS', 300),
+    ],
+
+    'execution' => [
+        'mode' => env('AGENT_GRAPH_EXECUTION_MODE', 'sync'),
+    ],
+
     'tables' => [
         'runs' => 'agent_graph_runs',
         'checkpoints' => 'agent_graph_checkpoints',
@@ -14,11 +31,16 @@ return [
         'tasks' => 'agent_graph_tasks',
         'interrupts' => 'agent_graph_interrupts',
         'memories' => 'agent_graph_memories',
+        'node_executions' => 'agent_graph_node_executions',
         'traces' => 'agent_graph_traces',
     ],
 
     'memory' => [
         'fallback_order' => ['run', 'thread', 'actor', 'tenant', 'application', 'global'],
+    ],
+
+    'vector_memory' => [
+        'table' => env('AGENT_GRAPH_VECTOR_MEMORY_TABLE', 'agent_graph_vector_memories'),
     ],
 
     'tracing' => [

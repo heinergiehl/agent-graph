@@ -115,6 +115,54 @@ class InMemoryMemoryStore implements EnumerableMemoryStore
         return $results;
     }
 
+    public function exportScope(MemoryScope $scope, ?string $namespace = null): array
+    {
+        return array_values(array_filter($this->memories, function (array $memory) use ($scope, $namespace): bool {
+            return $memory['scope_type'] === $scope->type
+                && $memory['scope_id'] === $scope->id
+                && $memory['tenant_id'] === $scope->tenantId
+                && ($namespace === null || $memory['namespace'] === $namespace);
+        }));
+    }
+
+    public function deleteScope(MemoryScope $scope): int
+    {
+        return $this->deleteWhere(fn (array $memory): bool => $memory['scope_type'] === $scope->type
+            && $memory['scope_id'] === $scope->id
+            && $memory['tenant_id'] === $scope->tenantId);
+    }
+
+    public function deleteNamespace(MemoryScope $scope, string $namespace): int
+    {
+        return $this->deleteWhere(fn (array $memory): bool => $memory['scope_type'] === $scope->type
+            && $memory['scope_id'] === $scope->id
+            && $memory['tenant_id'] === $scope->tenantId
+            && $memory['namespace'] === $namespace);
+    }
+
+    public function deleteKey(MemoryScope $scope, string $namespace, string $key): int
+    {
+        return $this->deleteWhere(fn (array $memory): bool => $memory['scope_type'] === $scope->type
+            && $memory['scope_id'] === $scope->id
+            && $memory['tenant_id'] === $scope->tenantId
+            && $memory['namespace'] === $namespace
+            && $memory['key'] === $key);
+    }
+
+    protected function deleteWhere(callable $predicate): int
+    {
+        $deleted = 0;
+
+        foreach ($this->memories as $id => $memory) {
+            if ($predicate($memory)) {
+                unset($this->memories[$id]);
+                $deleted++;
+            }
+        }
+
+        return $deleted;
+    }
+
     protected function identity(MemoryScope $scope, string $namespace, string $key): string
     {
         return implode('|', [$scope->type, $scope->tenantId, $scope->id, $namespace, $key]);

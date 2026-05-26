@@ -8,7 +8,7 @@ AgentGraph does not replace Laravel AI providers, agents, tools, streaming, or s
 
 `0.12.x` is a public beta intended for sandbox and real chatbot integration testing. Breaking changes are allowed before v1, but they will be documented in `CHANGELOG.md` and `UPGRADE.md`.
 
-The v1 target is a hardened MVP: stable graph execution, checkpoints, interrupts/resume, idempotent tasks, scoped memory, traces, queues, run-event observation, Laravel AI agent nodes, and graphs as tools. Experimental checkpoint inspection, replay, and forking APIs are available for post-v1-style workflows. Deterministic superstep fan-out/fan-in and per-node retry policies are available for LangGraph-style workflows; queue-backed worker parallelism, pgvector semantic memory, OpenTelemetry export, and visual workflow editing are intentionally outside v1.
+The v1 target is a hardened MVP: stable graph execution, checkpoints, interrupts/resume, idempotent tasks, scoped memory, traces, queues, run-event observation, Laravel AI agent nodes, graphs as tools, native subgraph nodes, and durable app workflow sessions. Experimental checkpoint inspection, replay, forking, queued-superstep execution records, and vector memory contracts are available for post-v1-style workflows. Full external worker scheduling, OpenTelemetry export, and visual workflow editing remain outside the stable v1 core.
 
 CI currently validates the 0.12 beta line against PHP 8.3/8.4, Laravel 12/13, and `laravel/ai ^0.7`. `laravel/ai ^1.0` stays declared for forward compatibility but should remain non-blocking until upstream tags a 1.x release.
 
@@ -177,7 +177,7 @@ AgentGraph::inspect($child->runId())->parent();
 AgentGraph::childRuns($parentRunId, limit: 25);
 ```
 
-Parent metadata is stored under `run.meta.parent`. It is an inspection convention only; AgentGraph does not yet schedule, cancel, or orchestrate full subgraphs through this API.
+Parent metadata is stored under `run.meta.parent`. Manual child runs and native `SubgraphNode` child runs use the same lineage shape so inspector UIs can show delegated work consistently.
 
 ## Supersteps and Send
 
@@ -217,6 +217,62 @@ StateGraph::make('support')
 `maxAttempts` includes the first attempt. Retry attempts emit `node.retrying` Laravel events, traces, and normalized `RunEvent` objects when observation is enabled. Successful retried writes include `runtime.retry` metadata with attempts, max attempts, and failed attempts.
 
 Retries can repeat node side effects. Wrap external API calls, emails, payments, CRM writes, and other irreversible work in `$context->tasks()->once()` with stable task keys before enabling retry policies in production.
+
+## Runtime Hardening
+
+Per-node timeout and concurrency policies are additive to retry policies:
+
+```php
+StateGraph::make('support')
+    ->node('call_api', CallApiNode::class)
+    ->timeout('call_api', seconds: 10)
+    ->concurrency('call_api', limit: 1, key: 'support-api');
+```
+
+Timeouts are portable wall-clock checks after node execution returns. Concurrency uses AgentGraph's lock provider and does not change Laravel AI provider, queue, or streaming behavior.
+
+Idempotent tasks now use leases. A running task key cannot be executed again until its lease expires; completed task keys still return their stored result and key reuse with different input is rejected.
+
+For stricter human-resume flows, use `resumeStrict()`:
+
+```php
+$run = AgentGraph::resumeStrict($runId, [
+    'interrupt_id' => $interruptId,
+    'approved' => true,
+]);
+```
+
+Normal `resume()` remains permissive for unknown payload keys while still validating known state channels.
+
+Interrupts can carry expiry policy metadata:
+
+```php
+use Heiner\AgentGraph\Graph\InterruptPolicy;
+
+return NodeResult::interrupt('approval', ['prompt' => 'Approve?'])
+    ->withInterruptPolicy(InterruptPolicy::expiresAfter(600));
+
+AgentGraph::expireInterrupts();
+```
+
+## Subgraphs
+
+Use `SubgraphNode` to run a registered graph as a durable child run. Child runs are normal AgentGraph runs with `run.meta.parent` lineage.
+
+```php
+use Heiner\AgentGraph\Runtime\SubgraphNode;
+
+StateGraph::make('parent')
+    ->state(['message' => 'string', 'answer' => 'string'])
+    ->node('delegate', SubgraphNode::make('delegate', 'child_graph')
+        ->mapped(
+            input: fn (array $state) => ['child_input' => $state['message']],
+            output: fn (array $childState) => ['answer' => $childState['child_answer']],
+        ))
+    ->edge(StateGraph::START, 'delegate');
+```
+
+Supported modes are `isolated()`, `shared()`, and `mapped()`. Child interrupts bubble as parent `subgraph` interrupts with `child_run_id` and `child_interrupt_id`; resuming the parent forwards the answer to the child before continuing the parent node. Parallel interrupt restrictions still apply.
 
 ## Time Travel
 
@@ -288,6 +344,20 @@ AgentNode::make('answer')
     ->writeTextTo('answer');
 ```
 
+`AgentNode` can also copy public Laravel AI response metadata into graph state without touching provider internals:
+
+```php
+AgentNode::make('answer')
+    ->agent(App\Ai\SupportAgent::class)
+    ->prompt(fn (array $state) => $state['input'])
+    ->writeTextTo('answer')
+    ->writeStructuredTo('structured')
+    ->writeToolCallsTo('tool_calls')
+    ->writeToolResultsTo('tool_results')
+    ->writeStepsTo('steps')
+    ->writeStreamEventsTo('stream_events');
+```
+
 ## Graphs as Tools
 
 ```php
@@ -323,6 +393,38 @@ Interrupted runs return a machine-readable `interrupt` payload. Failed runs retu
 
 Use `output()` when a parent agent needs a narrower JSON response. Long-running lifecycle observation should use `RunEvent` callbacks instead of GraphTool persistence hooks.
 
+For active-thread app workflows, use a durable session or durable tool instead of changing `GraphTool`:
+
+```php
+$run = AgentGraph::session('support_triage', $conversationId)
+    ->run(['input' => $message]);
+
+$status = AgentGraph::session('support_triage', $conversationId)->status();
+```
+
+```php
+AgentGraph::durableTool('support_triage')
+    ->description('Start, inspect, resume, or cancel the active support workflow.');
+```
+
+`DurableGraphTool` returns JSON with `status`, `run_id`, `thread_id`, `state`, `interrupt`, `summary`, and `error`.
+
+## Memory Manager
+
+`AgentGraph::memory()` wraps the configured memory store with extractor and privacy helpers:
+
+```php
+use Heiner\AgentGraph\Memory\MemoryScope;
+
+$scope = MemoryScope::thread($conversationId, tenantId: $tenantId);
+
+AgentGraph::memory()->writeExtracted($scope, 'profile', $text, ['source' => 'chat']);
+AgentGraph::memory()->export($scope, 'profile');
+AgentGraph::memory()->deleteNamespace($scope, 'profile');
+```
+
+Vector memory is contract-based and optional. The default bindings are deterministic/in-memory test-safe adapters. `PgvectorMemoryStore` and `stubs/pgvector-memory-migration.stub` are provided for applications that want PostgreSQL pgvector without making pgvector a core dependency.
+
 ## Stable v1 Public APIs
 
 The 0.12 beta exposes the intended v1-stable API surface documented in [`docs/api-reference.md`](docs/api-reference.md). In short:
@@ -332,6 +434,7 @@ The 0.12 beta exposes the intended v1-stable API surface documented in [`docs/ap
 - `NodeResult` for writes, gotos, interrupts, completion, and failures.
 - `Send` for dynamic fan-out and map/reduce style supersteps.
 - `RetryPolicy` and per-node `StateGraph::retry()` configuration for thrown node exceptions.
+- `TimeoutPolicy`, `ConcurrencyPolicy`, and per-node `StateGraph::timeout()` / `StateGraph::concurrency()` configuration.
 - `AgentGraph` facade for defining, running, resuming, state-edit resuming, inspecting, listing, cancelling, and exposing tools.
 - `RunSnapshot` for read-only runtime inspection.
 - `RunTimeline` for ordered checkpoint/write/interrupt/failure timelines with optional state diffs.
@@ -339,6 +442,8 @@ The 0.12 beta exposes the intended v1-stable API surface documented in [`docs/ap
 - `CheckpointSnapshot` for read-only checkpoint inspection and experimental time-travel workflows.
 - `AgentNode` for Laravel AI agent execution.
 - `GraphTool` for Laravel AI tool integration with optional input, output, and run metadata mapping.
+- `DurableGraphSession` and `DurableGraphTool` for active-thread app workflows.
+- `SubgraphNode` for native child graph execution with parent/child lineage.
 - Store contracts for production adapters and tests, including enumerable memory inspection and replaceable delay scheduling.
 
 `checkpoint()`, `replay()`, `fork()`, and `timeTravelChildren()` are public experimental APIs. They are documented and tested, but remain outside the stable v1 core until time-travel workflows have more production mileage.
@@ -358,6 +463,9 @@ The 0.12 beta exposes the intended v1-stable API surface documented in [`docs/ap
 - Use `timeTravelChildren()` to inspect replay/fork lineage for a source checkpoint.
 - Use `resumeWithStateEdit()` for manual state correction flows.
 - Use per-node retry policies for transient thrown exceptions, and keep side effects idempotent with `tasks()->once()`.
+- Configure `agent-graph.tasks.lease_seconds` for the maximum expected side-effect duration.
+- Use `resumeStrict()` for public endpoints that should reject unknown resume payload keys.
+- Keep `GraphTool` generic; use `DurableGraphTool` for active-run-per-thread application semantics.
 - Use explicit reducers for any state channel that can be written by more than one node in the same superstep.
 - Keep graph definitions generic; product-specific UI belongs in consuming apps.
 - For multi-tenant memory, always include tenant or actor scope in reads and writes.
@@ -365,4 +473,4 @@ The 0.12 beta exposes the intended v1-stable API surface documented in [`docs/ap
 
 ## Status
 
-This MVP includes the durable runtime core, deterministic supersteps, dynamic `Send` fan-out, per-node retry policies, database and in-memory stores, scoped memory, interrupts, tasks, traces, queue jobs, Laravel AI adapter, graph tool adapter, run-event observation, commands, tests, docs, and experimental checkpoint replay/fork APIs. Post-MVP work includes queue-backed parallel workers, visual timeline tooling, pgvector semantic memory, OpenTelemetry export, and visual editor serialization.
+This MVP includes the durable runtime core, deterministic supersteps, dynamic `Send` fan-out, per-node retry/timeout/concurrency policies, database and in-memory stores, scoped memory, interrupts with expiry, task leases, traces, queue jobs, Laravel AI adapter, graph tool adapters, subgraph nodes, run-event observation, commands, tests, docs, and experimental checkpoint replay/fork APIs. Post-MVP work includes full external worker scheduling, visual timeline tooling, production pgvector adapters, OpenTelemetry export, and visual editor serialization.

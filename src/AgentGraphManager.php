@@ -4,8 +4,11 @@ namespace Heiner\AgentGraph;
 
 use Heiner\AgentGraph\Graph\GraphDefinition;
 use Heiner\AgentGraph\Graph\StateGraph;
+use Heiner\AgentGraph\LaravelAi\DurableGraphTool;
 use Heiner\AgentGraph\LaravelAi\GraphTool;
+use Heiner\AgentGraph\Memory\MemoryManager;
 use Heiner\AgentGraph\Runtime\CheckpointSnapshot;
+use Heiner\AgentGraph\Runtime\DurableGraphSession;
 use Heiner\AgentGraph\Runtime\GraphRuntime;
 use Heiner\AgentGraph\Runtime\PendingGraphRun;
 use Heiner\AgentGraph\Runtime\RunEventDispatcher;
@@ -53,6 +56,16 @@ class AgentGraphManager
             $onEvent,
             $collectEvents,
             fn (): RunResult => $this->runtime->resume($runId, $payload, $this->graphs),
+            $runId,
+        );
+    }
+
+    public function resumeStrict(string $runId, array $payload = [], ?callable $onEvent = null, bool $collectEvents = false): RunResult
+    {
+        return $this->observe(
+            $onEvent,
+            $collectEvents,
+            fn (): RunResult => $this->runtime->resume($runId, $payload, $this->graphs, strictKeys: true),
             $runId,
         );
     }
@@ -112,6 +125,16 @@ class AgentGraphManager
         return $this->runtime->tasks($filters, $limit);
     }
 
+    public function nodeExecutions(string $runId): array
+    {
+        return $this->runtime->nodeExecutions($runId);
+    }
+
+    public function expireInterrupts(mixed $now = null): int
+    {
+        return $this->runtime->expireInterrupts($now);
+    }
+
     public function timeTravelChildren(string $checkpointId, int $limit = 50): array
     {
         return $this->runtime->timeTravelChildren($checkpointId, $limit);
@@ -120,6 +143,26 @@ class AgentGraphManager
     public function tool(string $graphKey): GraphTool
     {
         return new GraphTool($this, $graphKey);
+    }
+
+    public function durableTool(string $graphKey): DurableGraphTool
+    {
+        return new DurableGraphTool($this, $graphKey);
+    }
+
+    public function session(string $graphKey, string $threadId): DurableGraphSession
+    {
+        return new DurableGraphSession($this, $graphKey, $threadId);
+    }
+
+    public function memory(): MemoryManager
+    {
+        return app(MemoryManager::class);
+    }
+
+    public function migrationsPath(): string
+    {
+        return dirname(__DIR__).'/database/migrations';
     }
 
     protected function observe(?callable $onEvent, bool $collectEvents, callable $callback, ?string $runId = null): RunResult

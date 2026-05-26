@@ -25,6 +25,7 @@ class DatabaseInterruptStore implements InterruptStore
             'type' => $interrupt['type'],
             'status' => 'pending',
             'payload' => $this->encode($interrupt['payload'] ?? []),
+            'expires_at' => $interrupt['expires_at'] ?? null,
             'created_at' => $now,
             'updated_at' => $now,
         ]);
@@ -71,6 +72,18 @@ class DatabaseInterruptStore implements InterruptStore
         ]);
 
         return $this->find($interruptId);
+    }
+
+    public function expirePending(mixed $now = null): int
+    {
+        return $this->db->table($this->table())
+            ->where('status', 'pending')
+            ->whereNotNull('expires_at')
+            ->where('expires_at', '<=', $now ?? now())
+            ->update([
+                'status' => 'expired',
+                'updated_at' => now(),
+            ]);
     }
 
     protected function table(): string

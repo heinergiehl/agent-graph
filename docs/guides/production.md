@@ -10,6 +10,7 @@ Recommended production settings:
 - keep trace redaction keys updated
 - prune traces and old runs according to your retention policy
 - wrap every external side effect in `$context->tasks()->once()`
+- configure `agent-graph.tasks.lease_seconds` longer than expected external side effects
 - define reducers for channels written by multiple fan-out branches
 - configure per-node retries only for transient thrown exceptions
 - avoid storing raw secrets in state, memory, traces, task input, or interrupt payloads
@@ -46,6 +47,8 @@ Use `AgentGraph::resumeWithStateEdit($runId, $interruptId, $statePatch, $resolve
 
 Normal input and approval resumes should continue to use `AgentGraph::resume($runId, ['interrupt_id' => $interruptId, ...])`.
 
+Use `AgentGraph::resumeStrict()` for public endpoints that should reject unknown resume payload keys. If review or approval windows expire, attach `InterruptPolicy` to the interrupt result and call `AgentGraph::expireInterrupts()` from scheduled maintenance.
+
 ## Queue and retry safety
 
 Delayed continuation jobs are safe to retry. A delayed job no-ops when the run is already `completed`, `cancelled`, or `failed`, or when its interrupt is no longer the pending delay interrupt.
@@ -53,6 +56,8 @@ Delayed continuation jobs are safe to retry. A delayed job no-ops when the run i
 Delay interrupts schedule through `DelayScheduler::class`. The default implementation dispatches `ContinueDelayedGraphJob`; bind a custom scheduler only when your app needs a different delayed-execution backend.
 
 Keep external side effects inside `$context->tasks()->once()` so queue retries do not repeat irreversible work.
+
+Task leases prevent duplicate active execution for the same idempotency key. Completed tasks continue to return their stored result, and reusing a key with different input still fails.
 
 ## Node retry policies
 
@@ -64,7 +69,7 @@ Retrying can execute node code more than once. Keep irreversible side effects in
 
 ## Superstep fan-out
 
-Static multi-edges, conditional fan-out, and dynamic `Send` run deterministically in one process. They model LangGraph-style supersteps but do not create queue-backed worker parallelism yet.
+Static multi-edges, conditional fan-out, and dynamic `Send` run deterministically in one process by default. Opt-in `queued_supersteps` mode records per-node execution rows for inspection while preserving the same reducer/checkpoint semantics. Full external worker scheduling remains experimental.
 
 Every node in the same superstep reads the same base state. Writes are merged only after the frontier finishes. Configure an explicit reducer for any channel that can be written by more than one branch.
 

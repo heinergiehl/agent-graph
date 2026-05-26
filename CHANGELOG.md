@@ -26,11 +26,24 @@ Target: hardened MVP API stability after 0.12 sandbox and chatbot integration te
 - Added state schema type validation for run input, resume payloads, state-edit patches, fork patches, and node writes.
 - Added graph version compatibility checks for resume, replay, and fork.
 - Added API reference documentation for the v1 public surface.
+- Added Laravel-AI-safe architecture guard coverage to prevent provider/gateway/internal imports from AgentGraph source.
+- Added task leases through `LeasingTaskStore` and `locked_until` handling for idempotent side effects.
+- Added `StateGraph::timeout()`, `StateGraph::concurrency()`, `TimeoutPolicy`, and `ConcurrencyPolicy`.
+- Added `AgentGraph::resumeStrict()` for strict resume payload validation.
+- Added `DurableGraphSession` and `DurableGraphTool` for active-run-per-thread workflows without changing `GraphTool`.
+- Added native `SubgraphNode` child graph execution with isolated/shared/mapped modes and interrupt bubbling.
+- Added `AgentNode` writers for structured output, tool calls, tool results, steps, and public stream events.
+- Added `MemoryManager`, memory extraction/vector contracts, default deterministic memory extraction, and memory export/delete privacy APIs.
+- Added interrupt expiry policies through `InterruptPolicy`, `NodeResult::withInterruptPolicy()`, and `AgentGraph::expireInterrupts()`.
+- Added `StateSchema` builder for structured schema declarations.
+- Added experimental node execution records for opt-in `queued_supersteps` mode.
 
 ### Changed
 
 - Store contracts now include checkpoint lookup, checkpoint write listing, interrupt listing, run listing, child-run listing, and time-travel child listing methods used by inspection and time travel.
+- Store contracts now include active run lookup, interrupt expiry, memory privacy operations, task lease inspection, and node execution records.
 - `TaskStore` adapters must expose read-only task listing for inspector UIs.
+- Package migrations now use `publishesMigrations()` and `AgentGraphMigration` so migration connection can be configured.
 - Failed run payloads now include structured error metadata: `message`, `exception_class`, `code`, `previous`, and optional `details`/`meta`.
 - `resume()` remains compatible with extra payload fields, but known state schema keys are now type-validated.
 - Replay and fork create new runs and require persisted `graph_version` to match the currently registered graph definition.

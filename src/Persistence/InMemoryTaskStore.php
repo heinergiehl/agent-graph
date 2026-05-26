@@ -2,9 +2,11 @@
 
 namespace Heiner\AgentGraph\Persistence;
 
-use Heiner\AgentGraph\Contracts\TaskStore;
+use Carbon\CarbonImmutable;
+use DateTimeInterface;
+use Heiner\AgentGraph\Contracts\LeasingTaskStore;
 
-class InMemoryTaskStore implements TaskStore
+class InMemoryTaskStore implements LeasingTaskStore
 {
     protected array $tasks = [];
 
@@ -36,6 +38,19 @@ class InMemoryTaskStore implements TaskStore
         return array_slice($tasks, 0, $limit);
     }
 
+    public function activeLeaseUntil(array $task): ?DateTimeInterface
+    {
+        if (($task['status'] ?? null) !== 'running' || empty($task['locked_until'])) {
+            return null;
+        }
+
+        $lockedUntil = $task['locked_until'] instanceof DateTimeInterface
+            ? CarbonImmutable::instance($task['locked_until'])
+            : CarbonImmutable::parse($task['locked_until']);
+
+        return $lockedUntil->isFuture() ? $lockedUntil : null;
+    }
+
     public function start(string $key, string $inputHash, array $input, array $context = []): array
     {
         $task = $this->tasks[$key] ?? [
@@ -47,6 +62,7 @@ class InMemoryTaskStore implements TaskStore
             'result' => null,
             'error' => null,
             'attempts' => 0,
+            'locked_until' => null,
             'run_id' => null,
             'checkpoint_id' => null,
             'node_id' => null,
@@ -56,6 +72,7 @@ class InMemoryTaskStore implements TaskStore
 
         $task['status'] = 'running';
         $task['attempts']++;
+        $task['locked_until'] = now()->addSeconds((int) config('agent-graph.tasks.lease_seconds', 300));
         $task['updated_at'] = now();
         $task = array_merge($task, $context);
 
@@ -68,6 +85,7 @@ class InMemoryTaskStore implements TaskStore
     {
         $this->tasks[$key]['status'] = 'completed';
         $this->tasks[$key]['result'] = $result;
+        $this->tasks[$key]['locked_until'] = null;
         $this->tasks[$key]['updated_at'] = now();
 
         return $this->tasks[$key];
@@ -77,6 +95,7 @@ class InMemoryTaskStore implements TaskStore
     {
         $this->tasks[$key]['status'] = 'failed';
         $this->tasks[$key]['error'] = ['message' => $message, 'meta' => $meta];
+        $this->tasks[$key]['locked_until'] = null;
         $this->tasks[$key]['updated_at'] = now();
 
         return $this->tasks[$key];

@@ -10,6 +10,7 @@ use Heiner\AgentGraph\Contracts\InterruptStore;
 use Heiner\AgentGraph\Contracts\LockProvider;
 use Heiner\AgentGraph\Contracts\MemoryStore;
 use Heiner\AgentGraph\Contracts\Node;
+use Heiner\AgentGraph\Contracts\NodeExecutionStore;
 use Heiner\AgentGraph\Contracts\RunStore;
 use Heiner\AgentGraph\Contracts\TaskStore;
 use Heiner\AgentGraph\Contracts\TraceStore;
@@ -52,6 +53,7 @@ class GraphRuntime
         protected ?DelayScheduler $delayScheduler = null,
         protected ?RunInspector $inspector = null,
         protected ?RunEventDispatcher $events = null,
+        protected ?NodeExecutionStore $nodeExecutions = null,
     ) {}
 
     public function run(GraphDefinition $graph, string $threadId, array $input = [], array $meta = []): RunResult
@@ -67,7 +69,7 @@ class GraphRuntime
     /**
      * @param  array<string, GraphDefinition>  $graphs
      */
-    public function resume(string $runId, array $payload, array $graphs): RunResult
+    public function resume(string $runId, array $payload, array $graphs, bool $strictKeys = false): RunResult
     {
         $run = $this->runs->find($runId) ?? throw new RuntimeException("Run [{$runId}] was not found.");
         $graph = $graphs[$run['graph_key']] ?? throw new RuntimeException("Graph [{$run['graph_key']}] is not defined.");
@@ -77,7 +79,7 @@ class GraphRuntime
 
         $resumePayload = $payload;
         unset($resumePayload['interrupt_id']);
-        $this->assertStatePatchMatchesSchema($graph, $resumePayload, strictKeys: false);
+        $this->assertStatePatchMatchesSchema($graph, $resumePayload, strictKeys: $strictKeys);
 
         if (isset($payload['interrupt_id'])) {
             $this->assertMatchingPendingInterrupt($runId, (string) $payload['interrupt_id'], $interrupt);
@@ -269,6 +271,21 @@ class GraphRuntime
         return $this->tasks->list($filters, $limit);
     }
 
+    public function nodeExecutions(string $runId): array
+    {
+        return $this->nodeExecutionStore()->listForRun($runId);
+    }
+
+    public function latestForThreadGraph(string $threadId, string $graphKey, array $statuses = ['running', 'interrupted', 'delayed']): ?array
+    {
+        return $this->runs->latestForThreadGraph($threadId, $graphKey, $statuses);
+    }
+
+    public function expireInterrupts(mixed $now = null): int
+    {
+        return $this->interrupts->expirePending($now ?? now());
+    }
+
     public function timeTravelChildren(string $checkpointId, int $limit = 50): array
     {
         return $this->runs->listTimeTravelChildren($checkpointId, $limit);
@@ -316,7 +333,7 @@ class GraphRuntime
                 $nextSchedule = [];
                 $interrupted = null;
 
-                foreach ($schedule as $scheduledNode) {
+                foreach ($schedule as $scheduleIndex => $scheduledNode) {
                     $nodeId = $scheduledNode->node();
                     $nodeState = array_merge($baseState, $scheduledNode->input());
                     $this->dispatchRunEvent('node.started', new GraphNodeStarted($run['public_id'], $run['thread_id'], $graph->key(), $nodeId));
@@ -360,6 +377,8 @@ class GraphRuntime
                     if ($result->status() === 'interrupted') {
                         $interrupted = ['node_id' => $nodeId, 'result' => $result];
                     }
+
+                    $this->recordNodeExecutionIfEnabled($run['public_id'], $step + 1, $scheduleIndex, $nodeId, $result);
 
                     $branchState = $reducer->apply($nodeState, $result->writes());
                     $results[] = ['node_id' => $nodeId, 'result' => $result];
@@ -446,6 +465,7 @@ class GraphRuntime
                                 'node_id' => $nodeId,
                                 'type' => $result->interruptType(),
                                 'payload' => $payload,
+                                'expires_at' => $result->interruptPolicy()?->expiresAtValue(),
                             ]);
 
                             $updates = [
@@ -505,51 +525,74 @@ class GraphRuntime
         }
 
         $retryPolicy = $graph->nodePolicy($nodeId)->retryPolicy();
+        $timeoutPolicy = $graph->nodePolicy($nodeId)->timeoutPolicy();
+        $concurrencyPolicy = $graph->nodePolicy($nodeId)->concurrencyPolicy();
 
-        if ($retryPolicy === null) {
-            return $this->invokeNodeOnce($instance, $graph, $nodeId, $state, $run, $checkpointId, $resumePayload, $interruptId);
-        }
+        $invoke = function () use ($instance, $graph, $nodeId, $state, $run, $checkpointId, $resumePayload, $interruptId, $retryPolicy): NodeResult {
+            if ($retryPolicy === null) {
+                return $this->invokeNodeOnce($instance, $graph, $nodeId, $state, $run, $checkpointId, $resumePayload, $interruptId);
+            }
 
-        $attempt = 0;
-        $failedAttempts = 0;
+            $attempt = 0;
+            $failedAttempts = 0;
 
-        while (true) {
-            $attempt++;
-            $context = $this->nodeContext($graph, $nodeId, $state, $run, $checkpointId, $resumePayload, $interruptId);
+            while (true) {
+                $attempt++;
+                $context = $this->nodeContext($graph, $nodeId, $state, $run, $checkpointId, $resumePayload, $interruptId);
 
-            try {
-                $result = $this->callNode($instance, $context);
+                try {
+                    $result = $this->callNode($instance, $context);
 
-                return $this->withRetryMeta($result, $retryPolicy, $attempt, $failedAttempts);
-            } catch (Throwable $exception) {
-                $failedAttempts++;
+                    return $this->withRetryMeta($result, $retryPolicy, $attempt, $failedAttempts);
+                } catch (Throwable $exception) {
+                    $failedAttempts++;
 
-                if ($attempt >= $retryPolicy->maxAttempts() || ! $retryPolicy->shouldRetry($exception, $attempt, $context)) {
-                    throw $exception;
-                }
+                    if ($attempt >= $retryPolicy->maxAttempts() || ! $retryPolicy->shouldRetry($exception, $attempt, $context)) {
+                        throw $exception;
+                    }
 
-                $delayMs = $retryPolicy->delayForAttempt($attempt);
-                $payload = [
-                    'node' => $nodeId,
-                    'attempt' => $attempt,
-                    'next_attempt' => $attempt + 1,
-                    'max_attempts' => $retryPolicy->maxAttempts(),
-                    'delay_ms' => $delayMs,
-                    'error' => [
-                        'message' => $exception->getMessage(),
-                        'exception_class' => $exception::class,
-                        'code' => $exception->getCode(),
-                    ],
-                ];
+                    $delayMs = $retryPolicy->delayForAttempt($attempt);
+                    $payload = [
+                        'node' => $nodeId,
+                        'attempt' => $attempt,
+                        'next_attempt' => $attempt + 1,
+                        'max_attempts' => $retryPolicy->maxAttempts(),
+                        'delay_ms' => $delayMs,
+                        'error' => [
+                            'message' => $exception->getMessage(),
+                            'exception_class' => $exception::class,
+                            'code' => $exception->getCode(),
+                        ],
+                    ];
 
-                $this->traces->record($run['public_id'], 'node.retrying', $payload);
-                $this->dispatchRunEvent('node.retrying', new GraphNodeRetrying($run['public_id'], $run['thread_id'], $graph->key(), $nodeId, $payload));
+                    $this->traces->record($run['public_id'], 'node.retrying', $payload);
+                    $this->dispatchRunEvent('node.retrying', new GraphNodeRetrying($run['public_id'], $run['thread_id'], $graph->key(), $nodeId, $payload));
 
-                if ($delayMs > 0) {
-                    usleep($delayMs * 1000);
+                    if ($delayMs > 0) {
+                        usleep($delayMs * 1000);
+                    }
                 }
             }
+        };
+
+        $timed = function () use ($invoke, $timeoutPolicy, $nodeId): NodeResult {
+            $started = microtime(true);
+            $result = $invoke();
+
+            if ($timeoutPolicy !== null && (microtime(true) - $started) > $timeoutPolicy->seconds()) {
+                throw new RuntimeException("Node [{$nodeId}] timed out after {$timeoutPolicy->seconds()} seconds.");
+            }
+
+            return $result;
+        };
+
+        if ($concurrencyPolicy !== null && $concurrencyPolicy->limit() === 1) {
+            $key = $concurrencyPolicy->key() ?? 'agent-graph:node:'.$graph->key().':'.$nodeId;
+
+            return $this->locks->withLock($key, $timed);
         }
+
+        return $timed();
     }
 
     protected function invokeNodeOnce(mixed $instance, GraphDefinition $graph, string $nodeId, array $state, array $run, ?string $checkpointId, ?array $resumePayload = null, ?string $interruptId = null): NodeResult
@@ -868,6 +911,32 @@ class GraphRuntime
     protected function events(): RunEventDispatcher
     {
         return $this->events ??= app(RunEventDispatcher::class);
+    }
+
+    protected function nodeExecutionStore(): NodeExecutionStore
+    {
+        return $this->nodeExecutions ??= app(NodeExecutionStore::class);
+    }
+
+    protected function recordNodeExecutionIfEnabled(string $runId, int $step, int $scheduleIndex, string $nodeId, NodeResult $result): void
+    {
+        if (config('agent-graph.execution.mode', 'sync') !== 'queued_supersteps') {
+            return;
+        }
+
+        $this->nodeExecutionStore()->record([
+            'run_id' => $runId,
+            'step' => $step,
+            'schedule_index' => $scheduleIndex,
+            'node_id' => $nodeId,
+            'status' => $result->status(),
+            'writes' => $result->writes(),
+            'next_schedule' => array_map(fn (Send $send): array => $send->toArray(), $result->sends()),
+            'interrupt' => $result->status() === 'interrupted'
+                ? ['type' => $result->interruptType(), 'payload' => $result->interruptPayload()]
+                : null,
+            'meta' => $result->meta(),
+        ]);
     }
 
     protected function scheduler(): RuntimeScheduler

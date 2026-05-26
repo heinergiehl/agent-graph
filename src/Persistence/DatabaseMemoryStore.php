@@ -145,6 +145,39 @@ class DatabaseMemoryStore implements EnumerableMemoryStore
         return $results;
     }
 
+    public function exportScope(MemoryScope $scope, ?string $namespace = null): array
+    {
+        $query = $this->queryForScope($scope);
+
+        if ($namespace !== null) {
+            $query->where('namespace', $namespace);
+        }
+
+        return $query
+            ->orderBy('id')
+            ->get()
+            ->map(fn ($record): array => $this->decodeRecord($record, ['value', 'meta']))
+            ->all();
+    }
+
+    public function deleteScope(MemoryScope $scope): int
+    {
+        return $this->queryForScope($scope)->delete();
+    }
+
+    public function deleteNamespace(MemoryScope $scope, string $namespace): int
+    {
+        return $this->queryForScope($scope)->where('namespace', $namespace)->delete();
+    }
+
+    public function deleteKey(MemoryScope $scope, string $namespace, string $key): int
+    {
+        return $this->queryForScope($scope)
+            ->where('namespace', $namespace)
+            ->where('key', $key)
+            ->delete();
+    }
+
     protected function queryForScope(MemoryScope $scope)
     {
         return $this->db->table($this->table())

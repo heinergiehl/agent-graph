@@ -15,9 +15,9 @@ class MemoryScope
         return new self('run', $runId);
     }
 
-    public static function thread(string $threadId): self
+    public static function thread(string $threadId, ?string $tenantId = null): self
     {
-        return new self('thread', $threadId);
+        return new self('thread', $threadId, $tenantId);
     }
 
     public static function actor(string $tenantId, string $actorId): self
