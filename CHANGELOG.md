@@ -2,17 +2,6 @@
 
 All notable changes to AgentGraph are documented here.
 
-## 0.9.0-beta - 2026-05-25
-
-Public beta for real Laravel sandbox testing before v1.
-
-- Added durable graph runtime, checkpoints, writes, interrupts, resume, idempotent tasks, scoped memory, tracing, queue jobs, commands, Laravel AI `AgentNode`, and graph-as-tool support.
-- Added stream delta dispatching through `GraphStreamDelta` and redacted stream traces.
-- Added stable `GraphTool` JSON responses with `status`, `run_id`, `thread_id`, `state`, `interrupt`, and `error`.
-- Added delayed interrupt scheduling via `ContinueDelayedGraphJob`.
-- Hardened memory TTL filtering, usage accounting, serialization failures, task key reuse, and persistence rollback behavior.
-- Added package doctor/prune commands and release documentation.
-
 ## v1.0.0 - Unreleased
 
 Target: hardened MVP API stability after 0.9 sandbox and chatbot integration testing.
@@ -46,3 +35,36 @@ Target: hardened MVP API stability after 0.9 sandbox and chatbot integration tes
 ### Documentation
 
 - Added production guidance for runtime recovery, queue retry safety, state edits, replay/fork side-effect safety, and API stability.
+
+## 0.11.0 - 2026-05-26
+
+### Added
+
+- Added deterministic superstep execution for static and conditional fan-out.
+- Added dynamic `Send` API for map/reduce style fan-out.
+- Added reducer-enforced concurrent writes for superstep branches.
+- Added normalized run-event observation with `RunEvent`, `onEvent()`, `collectEvents()`, and collected `RunResult::events()`.
+- Added `stream.delta` run events for existing Laravel AI `GraphStreamDelta` payloads without changing Laravel AI streaming behavior.
+
+### Documentation
+
+- Documented run-event observation as workflow events, not SSE, Vercel protocol support, or a Laravel AI streaming replacement.
+
+## 0.10.0 - 2026-05-26
+
+### Added
+
+- Added generic run timeline inspection for debuggers, admin UIs, and replay tooling.
+- Added checkpoint `stateBefore()` and `stateAfter()` helpers.
+- Added state diffs with redaction/truncation for timeline steps.
+
+## 0.9.0-beta - 2026-05-25
+
+Public beta for real Laravel sandbox testing before v1.
+
+- Added durable graph runtime, checkpoints, writes, interrupts, resume, idempotent tasks, scoped memory, tracing, queue jobs, commands, Laravel AI `AgentNode`, and graph-as-tool support.
+- Added stream delta dispatching through `GraphStreamDelta` and redacted stream traces.
+- Added stable `GraphTool` JSON responses with `status`, `run_id`, `thread_id`, `state`, `interrupt`, and `error`.
+- Added delayed interrupt scheduling via `ContinueDelayedGraphJob`.
+- Hardened memory TTL filtering, usage accounting, serialization failures, task key reuse, and persistence rollback behavior.
+- Added package doctor/prune commands and release documentation.

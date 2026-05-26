@@ -6,9 +6,9 @@ AgentGraph does not replace Laravel AI providers, agents, tools, streaming, or s
 
 ## Beta Status
 
-`0.9.x` is a public beta intended for sandbox and real chatbot integration testing. Breaking changes are allowed before v1, but they will be documented in `CHANGELOG.md` and `UPGRADE.md`.
+`0.11.x` is a public beta intended for sandbox and real chatbot integration testing. Breaking changes are allowed before v1, but they will be documented in `CHANGELOG.md` and `UPGRADE.md`.
 
-The v1 target is a hardened MVP: stable graph execution, checkpoints, interrupts/resume, idempotent tasks, scoped memory, traces, queues, Laravel AI agent nodes, and graphs as tools. Experimental checkpoint inspection, replay, and forking APIs are available for post-v1-style workflows. Deterministic superstep fan-out/fan-in is available for LangGraph-style map/reduce workflows; queue-backed worker parallelism, pgvector semantic memory, OpenTelemetry export, and visual workflow editing are intentionally outside v1.
+The v1 target is a hardened MVP: stable graph execution, checkpoints, interrupts/resume, idempotent tasks, scoped memory, traces, queues, run-event observation, Laravel AI agent nodes, and graphs as tools. Experimental checkpoint inspection, replay, and forking APIs are available for post-v1-style workflows. Deterministic superstep fan-out/fan-in is available for LangGraph-style map/reduce workflows; queue-backed worker parallelism, pgvector semantic memory, OpenTelemetry export, and visual workflow editing are intentionally outside v1.
 
 ## Installation
 

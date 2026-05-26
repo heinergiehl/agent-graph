@@ -37,6 +37,16 @@ Implemented for the next beta:
 - One checkpoint per superstep with all completed nodes and scheduled `Send` metadata.
 - Timeline support for parallel checkpoints through `nodeIds()` / `completed_nodes`.
 
+## 0.11 Run Event Observation Scope
+
+Implemented for the next beta:
+
+- `RunEvent` DTO for normalized workflow events.
+- Per-run `onEvent()` callbacks and optional `RunResult::events()` collection.
+- Normalized lifecycle events for runs, nodes, checkpoints, interrupts, failures, and resumes.
+- `stream.delta` observation for existing Laravel AI `GraphStreamDelta` payloads.
+- No SSE helper, no Vercel protocol adapter, and no replacement for Laravel AI model streaming.
+
 ## v1 Hardening Checklist
 
 These items should be completed before tagging `v1.0.0`:
