@@ -15,12 +15,12 @@ CI currently validates the 0.13 beta line against PHP 8.3/8.4, Laravel 12/13, an
 ## Installation
 
 ```bash
-composer require heiner/agent-graph:^0.13@beta
+composer require heiner/agent-graph:~0.13.0@beta
 php artisan agent-graph:install
 php artisan migrate
 ```
 
-The explicit `@beta` stability flag is required for the 0.13 beta line in Laravel apps that keep Composer's default stable minimum stability. After a stable v1 release, the install command will no longer need the beta flag.
+The explicit `@beta` stability flag is required for the 0.13 beta line in Laravel apps that keep Composer's default stable minimum stability. The `~0.13.0` constraint tracks 0.13 beta tags while staying below the next minor beta line. After a stable v1 release, the install command will no longer need the beta flag.
 
 `agent-graph:install` publishes the package config and migrations. The database store uses these tables by default:
 

@@ -2,6 +2,14 @@
 
 All notable changes to AgentGraph are documented here.
 
+## 0.13.0-beta.4 - 2026-05-27
+
+Target: shell-portable Packagist install documentation for the public 0.13 beta line.
+
+### Changed
+
+- Updated beta install docs from `^0.13@beta` to `~0.13.0@beta`, which avoids Windows `composer.bat` caret escaping while still tracking the 0.13 beta line.
+
 ## 0.13.0-beta.3 - 2026-05-27
 
 Target: Packagist readiness for the public 0.13 beta line.

@@ -46,13 +46,13 @@ Before Packagist registration, validate the public GitHub tag through Composer's
 
 ```bash
 composer config repositories.agent-graph vcs https://github.com/heinergiehl/agent-graph.git
-composer require heiner/agent-graph:^0.13@beta --no-interaction --no-progress
+composer require heiner/agent-graph:~0.13.0@beta --no-interaction --no-progress
 ```
 
 After Packagist registration, remove the custom repository entry and use the normal beta install command from `README.md`:
 
 ```bash
-composer require heiner/agent-graph:^0.13@beta
+composer require heiner/agent-graph:~0.13.0@beta
 ```
 
 ## Results
