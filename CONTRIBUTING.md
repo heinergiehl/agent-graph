@@ -30,3 +30,14 @@ composer audit --no-dev
 For release work, also validate the package in a fresh Laravel sandbox app. Before Packagist registration, use the public GitHub repository as a Composer VCS repository and require the tagged beta constraint. After Packagist registration, repeat the same smoke test without a custom repository entry.
 
 `composer.lock` stays ignored because this repository is a library; run security audits against the local resolved dependency set before tagging.
+
+## Packagist Updates
+
+Packagist can be updated through its GitHub hook or through this repository's `Update Packagist` GitHub Actions workflow.
+
+For the GitHub Actions path, add these repository secrets:
+
+- `PACKAGIST_USERNAME`: the Packagist account name that maintains the package.
+- `PACKAGIST_API_TOKEN`: the API token from the Packagist profile page.
+
+The workflow runs on pushes to `main`, version tags, and manual dispatch. If the secrets are missing, it skips with a notice so normal CI does not fail.
