@@ -1,4 +1,7 @@
 /references export-ignore
+/AGENTGRAPH_SDK_SPEC.md export-ignore
+/docs/examples/sandbox-validation.md export-ignore
+/docs/superpowers export-ignore
 /.github export-ignore
 /.idea export-ignore
 /.vscode export-ignore

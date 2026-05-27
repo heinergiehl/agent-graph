@@ -1,12 +1,12 @@
-# Sandbox Validation
+# Sandbox And Release Install Validation
 
-Date: 2026-05-26
+Date: 2026-05-27
 
-Sandbox app: `C:\Users\Heiner\Documents\agent-graph-sandbox`
+This note records the manual Laravel app validation used before the public beta release. It is intentionally excluded from Composer distribution archives through `.gitattributes`.
 
-Package path repository: `C:\Users\Heiner\Documents\agent-graph`
+## Pre-release Path Repository Validation
 
-## Environment
+The original sandbox used a local path repository before the package was public and tagged:
 
 - Laravel app: `laravel/laravel` v13.7.0
 - Laravel framework: v13.11.2
@@ -38,6 +38,21 @@ php artisan vendor:publish --tag=agent-graph-config --force --no-interaction
 php artisan vendor:publish --tag=agent-graph-migrations --force --no-interaction
 php artisan migrate --no-interaction
 php artisan test --filter=AgentGraphWorkerQueueSmokeTest
+```
+
+## Public Beta Install Smoke
+
+Before Packagist registration, validate the public GitHub tag through Composer's VCS repository support:
+
+```bash
+composer config repositories.agent-graph vcs https://github.com/heinergiehl/agent-graph.git
+composer require heiner/agent-graph:^0.13@beta --no-interaction --no-progress
+```
+
+After Packagist registration, remove the custom repository entry and use the normal beta install command from `README.md`:
+
+```bash
+composer require heiner/agent-graph:^0.13@beta
 ```
 
 ## Results
@@ -76,7 +91,3 @@ The sandbox Feature test passed:
 - A delay interrupt dispatches `ContinueDelayedGraphJob`.
 - `GraphTool` starts an interrupted graph and resumes it to completion with stable JSON responses.
 - Worker-backed `queued_supersteps` dispatch `NodeExecutionJob` / `ContinueSuperstepJob` records, run through `php artisan queue:work database --queue=agent-graph-smoke --stop-when-empty`, complete fan-out/fan-in, and resume an interrupt to completion.
-
-## Notes
-
-Because the package is not tagged yet, the path repository install used `heiner/agent-graph:*@dev`. After publishing the 0.13 beta, consumers should require the released beta constraint instead.

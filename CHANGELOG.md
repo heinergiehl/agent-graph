@@ -2,6 +2,20 @@
 
 All notable changes to AgentGraph are documented here.
 
+## 0.13.0-beta.3 - 2026-05-27
+
+Target: Packagist readiness for the public 0.13 beta line.
+
+### Changed
+
+- Documented the beta Composer install command as `composer require heiner/agent-graph:^0.13@beta`.
+- Added Composer author metadata for the Packagist package page.
+- Clarified release smoke-test guidance for pre-Packagist VCS installs and post-Packagist normal installs.
+
+### Packaging
+
+- Excluded internal handoff, sandbox validation, and agent working-plan artifacts from Composer distribution archives.
+
 ## 0.13.0-beta.2 - 2026-05-27
 
 Target: hardened 0.13 beta API stability after sandbox and chatbot integration testing.

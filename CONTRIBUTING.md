@@ -27,4 +27,6 @@ composer check
 composer audit --no-dev
 ```
 
-For release work, also validate the package in a fresh Laravel sandbox app via a local path repository. `composer.lock` stays ignored because this repository is a library; run security audits against the local resolved dependency set before tagging.
+For release work, also validate the package in a fresh Laravel sandbox app. Before Packagist registration, use the public GitHub repository as a Composer VCS repository and require the tagged beta constraint. After Packagist registration, repeat the same smoke test without a custom repository entry.
+
+`composer.lock` stays ignored because this repository is a library; run security audits against the local resolved dependency set before tagging.
