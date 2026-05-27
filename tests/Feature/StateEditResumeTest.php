@@ -83,7 +83,7 @@ it('rejects wrong or stale state edit interrupt ids', function () {
         $interrupted->runId(),
         $interrupted->interrupt()['interrupt_id'],
         ['draft' => 'copy again'],
-    ))->toThrow(InvalidArgumentException::class, 'has no pending interrupt');
+    ))->toThrow(RuntimeException::class, 'cannot be resumed');
 });
 
 it('keeps normal resume compatible for input interrupts', function () {

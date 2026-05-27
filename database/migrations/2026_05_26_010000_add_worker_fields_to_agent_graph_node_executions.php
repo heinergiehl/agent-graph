@@ -24,10 +24,10 @@ return new class extends AgentGraphMigration
     public function down(): void
     {
         Schema::table(config('agent-graph.tables.node_executions', 'agent_graph_node_executions'), function (Blueprint $table): void {
-            $table->dropUnique('agent_graph_node_executions_execution_id_unique');
-            $table->dropIndex('agent_graph_node_executions_checkpoint_id_index');
-            $table->dropIndex('agent_graph_node_executions_interrupt_id_index');
-            $table->dropIndex('agent_graph_node_executions_locked_until_index');
+            $table->dropUnique(['execution_id']);
+            $table->dropIndex(['checkpoint_id']);
+            $table->dropIndex(['interrupt_id']);
+            $table->dropIndex(['locked_until']);
             $table->dropColumn([
                 'execution_id',
                 'checkpoint_id',

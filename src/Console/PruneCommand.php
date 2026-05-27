@@ -2,7 +2,9 @@
 
 namespace Heiner\AgentGraph\Console;
 
+use Heiner\AgentGraph\Support\AgentGraphDatabase;
 use Illuminate\Console\Command;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 
 class PruneCommand extends Command
@@ -33,7 +35,7 @@ class PruneCommand extends Command
         $dryRun = (bool) $this->option('dry-run');
 
         if ($this->option('runs')) {
-            $query = DB::table(config('agent-graph.tables.runs'))
+            $query = $this->databaseTable('runs')
                 ->whereIn('status', ['completed', 'failed', 'cancelled'])
                 ->where('updated_at', '<', $cutoff);
 
@@ -41,14 +43,14 @@ class PruneCommand extends Command
         }
 
         if ($this->option('traces')) {
-            $query = DB::table(config('agent-graph.tables.traces'))
+            $query = $this->databaseTable('traces')
                 ->where('created_at', '<', $cutoff);
 
             $this->line('traces pruned: '.$this->prune($query, $dryRun));
         }
 
         if ($this->option('tasks')) {
-            $query = DB::table(config('agent-graph.tables.tasks'))
+            $query = $this->databaseTable('tasks')
                 ->whereIn('status', ['completed', 'failed'])
                 ->where('updated_at', '<', $cutoff);
 
@@ -56,7 +58,7 @@ class PruneCommand extends Command
         }
 
         if ($this->option('memories')) {
-            $query = DB::table(config('agent-graph.tables.memories'))
+            $query = $this->databaseTable('memories')
                 ->whereNotNull('expires_at')
                 ->where('expires_at', '<=', now());
 
@@ -75,5 +77,10 @@ class PruneCommand extends Command
         }
 
         return $count;
+    }
+
+    protected function databaseTable(string $name): Builder
+    {
+        return DB::connection(AgentGraphDatabase::connectionName())->table(config('agent-graph.tables.'.$name));
     }
 }

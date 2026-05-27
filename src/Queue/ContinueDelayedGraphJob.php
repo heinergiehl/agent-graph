@@ -4,6 +4,7 @@ namespace Heiner\AgentGraph\Queue;
 
 use Heiner\AgentGraph\AgentGraphManager;
 use Heiner\AgentGraph\Runtime\RunResult;
+use Heiner\AgentGraph\Runtime\RunStatus;
 
 class ContinueDelayedGraphJob extends ResumeGraphJob
 {
@@ -15,7 +16,7 @@ class ContinueDelayedGraphJob extends ResumeGraphJob
             return parent::handle($manager);
         }
 
-        if (in_array($snapshot->status(), ['completed', 'cancelled', 'failed'], true)) {
+        if (RunStatus::isTerminal($snapshot->status())) {
             return $snapshot->toRunResult();
         }
 

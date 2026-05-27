@@ -4,11 +4,14 @@ namespace Heiner\AgentGraph\Persistence;
 
 use Heiner\AgentGraph\Contracts\NodeExecutionStore;
 use Heiner\AgentGraph\Persistence\Concerns\SerializesDatabaseValues;
+use Heiner\AgentGraph\Persistence\Concerns\UsesAgentGraphDatabaseConnection;
 use Illuminate\Database\DatabaseManager;
+use RuntimeException;
 
 class DatabaseNodeExecutionStore implements NodeExecutionStore
 {
     use SerializesDatabaseValues;
+    use UsesAgentGraphDatabaseConnection;
 
     public function __construct(protected DatabaseManager $db) {}
 
@@ -25,7 +28,7 @@ class DatabaseNodeExecutionStore implements NodeExecutionStore
         $executionId = $execution['execution_id'] ?? 'nex_'.str()->ulid();
         $now = now();
 
-        $this->db->table($this->table())->insert([
+        $this->query()->insert([
             'execution_id' => $executionId,
             'run_id' => $execution['run_id'],
             'checkpoint_id' => $execution['checkpoint_id'] ?? null,
@@ -49,20 +52,26 @@ class DatabaseNodeExecutionStore implements NodeExecutionStore
             'updated_at' => $now,
         ]);
 
-        return $this->find($executionId) ?? $this->listForRun((string) $execution['run_id'])[0] ?? [];
+        $record = $this->find($executionId);
+
+        if ($record === null) {
+            throw new RuntimeException("Node execution [{$executionId}] could not be read after it was recorded.");
+        }
+
+        return $record;
     }
 
     public function find(string $executionId): ?array
     {
-        $record = $this->db->table($this->table())->where('execution_id', $executionId)->first();
+        $record = $this->query()->where('execution_id', $executionId)->first();
 
         return $record ? $this->decodeExecution($record) : null;
     }
 
     public function claim(string $executionId, mixed $lockedUntil): ?array
     {
-        return $this->db->transaction(function () use ($executionId, $lockedUntil): ?array {
-            $record = $this->db->table($this->table())->where('execution_id', $executionId)->lockForUpdate()->first();
+        return $this->connection()->transaction(function () use ($executionId, $lockedUntil): ?array {
+            $record = $this->query()->where('execution_id', $executionId)->lockForUpdate()->first();
 
             if ($record === null) {
                 return null;
@@ -80,7 +89,7 @@ class DatabaseNodeExecutionStore implements NodeExecutionStore
                 return null;
             }
 
-            $this->db->table($this->table())->where('execution_id', $executionId)->update([
+            $this->query()->where('execution_id', $executionId)->update([
                 'status' => 'running',
                 'locked_until' => $lockedUntil,
                 'started_at' => $execution['started_at'] ?? now(),
@@ -108,7 +117,7 @@ class DatabaseNodeExecutionStore implements NodeExecutionStore
 
     public function listForRun(string $runId): array
     {
-        return $this->db->table($this->table())
+        return $this->query()
             ->where('run_id', $runId)
             ->orderBy('id')
             ->get()
@@ -118,7 +127,7 @@ class DatabaseNodeExecutionStore implements NodeExecutionStore
 
     public function listForRunStep(string $runId, int $step): array
     {
-        return $this->db->table($this->table())
+        return $this->query()
             ->where('run_id', $runId)
             ->where('step', $step)
             ->orderBy('schedule_index')
@@ -141,9 +150,19 @@ class DatabaseNodeExecutionStore implements NodeExecutionStore
         $result['finished_at'] = now();
         $result['updated_at'] = now();
 
-        $this->db->table($this->table())->where('execution_id', $executionId)->update($result);
+        $updated = $this->query()->where('execution_id', $executionId)->update($result);
 
-        return $this->find($executionId) ?? [];
+        if ($updated < 1) {
+            throw new RuntimeException("Node execution [{$executionId}] was not found.");
+        }
+
+        $record = $this->find($executionId);
+
+        if ($record === null) {
+            throw new RuntimeException("Node execution [{$executionId}] could not be read after it was updated.");
+        }
+
+        return $record;
     }
 
     protected function decodeExecution(object $record): array

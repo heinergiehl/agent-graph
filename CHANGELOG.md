@@ -2,9 +2,29 @@
 
 All notable changes to AgentGraph are documented here.
 
-## v1.0.0 - Unreleased
+## 0.13.0-beta.2 - 2026-05-27
 
-Target: hardened MVP API stability after 0.12 sandbox and chatbot integration testing.
+Target: hardened 0.13 beta API stability after sandbox and chatbot integration testing.
+
+### Changed
+
+- `AgentGraph::session(...)->run()` now performs active-run lookup and run creation under an AgentGraph session lock. `AgentGraph::graph(...)->thread(...)->run()` continues to intentionally create a new run.
+- `resume()`, `resumeWithStateEdit()`, and `cancel()` now reject terminal `completed`, `cancelled`, and `failed` runs instead of mutating historical run state.
+- State schema validation now rejects unknown schema types and validates every item in structured array schemas.
+- `PgvectorMemoryStore` now rejects empty or non-finite embeddings, and empty-scope or non-positive-limit searches now return an empty result without querying.
+- The default lock TTL is now 300 seconds. Production apps should set `AGENT_GRAPH_LOCK_TTL_SECONDS` longer than the longest expected node execution.
+
+### Fixed
+
+- Database stores, runtime transactions, `agent-graph:doctor`, `agent-graph:prune`, and optional pgvector memory writes now consistently respect `agent-graph.database.connection` / `AGENT_GRAPH_DB_CONNECTION`.
+- Delayed continuation jobs now dispatch on the configured AgentGraph execution queue connection and queue.
+- Queued node execution persistence now throws on missing execution reads or updates instead of returning an empty or unrelated record.
+- Package migration rollbacks now use column-based index drops so custom table names remain rollback-safe.
+- The pgvector migration stub now uses the configured AgentGraph database connection for schema and direct `DB::statement()` calls, and quotes the vector table name before altering it.
+
+### Documentation
+
+- Documented package tables, migration/connection configuration, store drivers, queue env settings, lock TTL guidance, terminal run guards, strict schema behavior, optional experimental pgvector positioning, and prune retention behavior.
 
 ## 0.13.0-beta.1 - 2026-05-26
 

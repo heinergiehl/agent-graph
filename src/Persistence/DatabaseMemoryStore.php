@@ -7,18 +7,20 @@ use Heiner\AgentGraph\Events\GraphMemoryRead;
 use Heiner\AgentGraph\Events\GraphMemoryWritten;
 use Heiner\AgentGraph\Memory\MemoryScope;
 use Heiner\AgentGraph\Persistence\Concerns\SerializesDatabaseValues;
+use Heiner\AgentGraph\Persistence\Concerns\UsesAgentGraphDatabaseConnection;
 use Illuminate\Database\DatabaseManager;
 
 class DatabaseMemoryStore implements EnumerableMemoryStore
 {
     use SerializesDatabaseValues;
+    use UsesAgentGraphDatabaseConnection;
 
     public function __construct(protected DatabaseManager $db) {}
 
     public function write(MemoryScope $scope, string $namespace, string $key, mixed $value, string $type = 'fact', ?string $content = null, array $meta = []): array
     {
         $now = now();
-        $query = $this->db->table($this->table())
+        $query = $this->query()
             ->where('scope_type', $scope->type)
             ->where('scope_id', $scope->id)
             ->where('tenant_id', $scope->tenantId)
@@ -39,7 +41,7 @@ class DatabaseMemoryStore implements EnumerableMemoryStore
         if ($query->exists()) {
             $query->update($attributes);
         } else {
-            $this->db->table($this->table())->insert(array_merge($attributes, [
+            $this->query()->insert(array_merge($attributes, [
                 'scope_type' => $scope->type,
                 'scope_id' => $scope->id,
                 'tenant_id' => $scope->tenantId,
@@ -68,14 +70,14 @@ class DatabaseMemoryStore implements EnumerableMemoryStore
                 ->first();
 
             if ($record !== null) {
-                $this->db->table($this->table())->where('id', $record->id)->update([
+                $this->query()->where('id', $record->id)->update([
                     'usage_count' => $record->usage_count + 1,
                     'last_used_at' => now(),
                     'updated_at' => now(),
                 ]);
                 event(new GraphMemoryRead(payload: ['scope' => $scope->type, 'namespace' => $namespace, 'key' => $key]));
 
-                $record = $this->db->table($this->table())->where('id', $record->id)->first();
+                $record = $this->query()->where('id', $record->id)->first();
 
                 return $this->decodeRecord($record, ['value', 'meta']);
             }
@@ -109,13 +111,13 @@ class DatabaseMemoryStore implements EnumerableMemoryStore
             }
 
             foreach ($builder->get() as $record) {
-                $this->db->table($this->table())->where('id', $record->id)->update([
+                $this->query()->where('id', $record->id)->update([
                     'usage_count' => $record->usage_count + 1,
                     'last_used_at' => now(),
                     'updated_at' => now(),
                 ]);
 
-                $record = $this->db->table($this->table())->where('id', $record->id)->first();
+                $record = $this->query()->where('id', $record->id)->first();
                 $results[] = $this->decodeRecord($record, ['value', 'meta']);
             }
         }
@@ -180,7 +182,7 @@ class DatabaseMemoryStore implements EnumerableMemoryStore
 
     protected function queryForScope(MemoryScope $scope)
     {
-        return $this->db->table($this->table())
+        return $this->query()
             ->where('scope_type', $scope->type)
             ->where('scope_id', $scope->id)
             ->where('tenant_id', $scope->tenantId);

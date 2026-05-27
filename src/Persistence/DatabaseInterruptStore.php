@@ -4,11 +4,13 @@ namespace Heiner\AgentGraph\Persistence;
 
 use Heiner\AgentGraph\Contracts\InterruptStore;
 use Heiner\AgentGraph\Persistence\Concerns\SerializesDatabaseValues;
+use Heiner\AgentGraph\Persistence\Concerns\UsesAgentGraphDatabaseConnection;
 use Illuminate\Database\DatabaseManager;
 
 class DatabaseInterruptStore implements InterruptStore
 {
     use SerializesDatabaseValues;
+    use UsesAgentGraphDatabaseConnection;
 
     public function __construct(protected DatabaseManager $db) {}
 
@@ -17,7 +19,7 @@ class DatabaseInterruptStore implements InterruptStore
         $interruptId = 'int_'.str()->ulid();
         $now = now();
 
-        $this->db->table($this->table())->insert([
+        $this->query()->insert([
             'interrupt_id' => $interruptId,
             'run_id' => $interrupt['run_id'],
             'checkpoint_id' => $interrupt['checkpoint_id'],
@@ -35,14 +37,14 @@ class DatabaseInterruptStore implements InterruptStore
 
     public function find(string $interruptId): ?array
     {
-        $record = $this->db->table($this->table())->where('interrupt_id', $interruptId)->first();
+        $record = $this->query()->where('interrupt_id', $interruptId)->first();
 
         return $record ? $this->decodeRecord($record, ['payload', 'response']) : null;
     }
 
     public function listForRun(string $runId): array
     {
-        return $this->db->table($this->table())
+        return $this->query()
             ->where('run_id', $runId)
             ->orderBy('id')
             ->get()
@@ -52,7 +54,7 @@ class DatabaseInterruptStore implements InterruptStore
 
     public function pendingForRun(string $runId): ?array
     {
-        $record = $this->db->table($this->table())
+        $record = $this->query()
             ->where('run_id', $runId)
             ->where('status', 'pending')
             ->orderByDesc('id')
@@ -63,7 +65,7 @@ class DatabaseInterruptStore implements InterruptStore
 
     public function resolve(string $interruptId, array $response, ?string $resolvedBy = null): array
     {
-        $this->db->table($this->table())->where('interrupt_id', $interruptId)->update([
+        $this->query()->where('interrupt_id', $interruptId)->update([
             'status' => 'resolved',
             'response' => $this->encode($response),
             'resolved_by' => $resolvedBy,
@@ -76,7 +78,7 @@ class DatabaseInterruptStore implements InterruptStore
 
     public function expirePending(mixed $now = null): int
     {
-        return $this->db->table($this->table())
+        return $this->query()
             ->where('status', 'pending')
             ->whereNotNull('expires_at')
             ->where('expires_at', '<=', $now ?? now())

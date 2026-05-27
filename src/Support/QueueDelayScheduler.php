@@ -10,6 +10,6 @@ class QueueDelayScheduler implements DelayScheduler
 {
     public function schedule(string $runId, array $payload, DateTimeInterface $resumeAt): void
     {
-        ContinueDelayedGraphJob::dispatch($runId, $payload)->delay($resumeAt);
+        AgentGraphQueue::configure(ContinueDelayedGraphJob::dispatch($runId, $payload))->delay($resumeAt);
     }
 }

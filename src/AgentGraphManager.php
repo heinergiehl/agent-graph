@@ -50,6 +50,11 @@ class AgentGraphManager
         return $this->observe($onEvent, $collectEvents, fn (): RunResult => $this->runtime->run($graph, $threadId, $input, $meta));
     }
 
+    public function runSession(string $graphKey, string $threadId, array $input = [], array $meta = []): RunResult
+    {
+        return $this->runtime->runSession($this->definition($graphKey), $threadId, $input, $meta);
+    }
+
     public function resume(string $runId, array $payload = [], ?callable $onEvent = null, bool $collectEvents = false): RunResult
     {
         return $this->observe(
@@ -148,6 +153,11 @@ class AgentGraphManager
     public function timeTravelChildren(string $checkpointId, int $limit = 50): array
     {
         return $this->runtime->timeTravelChildren($checkpointId, $limit);
+    }
+
+    public function latestForThreadGraph(string $threadId, string $graphKey): ?array
+    {
+        return $this->runtime->latestForThreadGraph($threadId, $graphKey);
     }
 
     public function tool(string $graphKey): GraphTool

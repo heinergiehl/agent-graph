@@ -13,7 +13,7 @@ class CacheLockProvider implements LockProvider
 
         if (method_exists($store, 'lock')) {
             return cache()
-                ->lock($key, (int) config('agent-graph.locks.ttl_seconds', 30))
+                ->lock($key, (int) config('agent-graph.locks.ttl_seconds', 300))
                 ->block((int) config('agent-graph.locks.block_seconds', 5), $callback);
         }
 

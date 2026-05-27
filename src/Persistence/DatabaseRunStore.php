@@ -4,11 +4,13 @@ namespace Heiner\AgentGraph\Persistence;
 
 use Heiner\AgentGraph\Contracts\RunStore;
 use Heiner\AgentGraph\Persistence\Concerns\SerializesDatabaseValues;
+use Heiner\AgentGraph\Persistence\Concerns\UsesAgentGraphDatabaseConnection;
 use Illuminate\Database\DatabaseManager;
 
 class DatabaseRunStore implements RunStore
 {
     use SerializesDatabaseValues;
+    use UsesAgentGraphDatabaseConnection;
 
     public function __construct(protected DatabaseManager $db) {}
 
@@ -17,7 +19,7 @@ class DatabaseRunStore implements RunStore
         $publicId = 'run_'.str()->ulid();
         $now = now();
 
-        $this->db->table($this->table())->insert([
+        $this->query()->insert([
             'public_id' => $publicId,
             'thread_id' => $threadId,
             'graph_key' => $graphKey,
@@ -35,14 +37,14 @@ class DatabaseRunStore implements RunStore
 
     public function find(string $runId): ?array
     {
-        $record = $this->db->table($this->table())->where('public_id', $runId)->first();
+        $record = $this->query()->where('public_id', $runId)->first();
 
         return $record ? $this->decodeRecord($record, ['input', 'error', 'meta']) : null;
     }
 
     public function list(array $filters = [], int $limit = 50): array
     {
-        $query = $this->db->table($this->table());
+        $query = $this->query();
 
         foreach (['status', 'thread_id', 'graph_key', 'graph_version'] as $field) {
             if (isset($filters[$field])) {
@@ -60,7 +62,7 @@ class DatabaseRunStore implements RunStore
 
     public function latestForThreadGraph(string $threadId, string $graphKey, array $statuses = []): ?array
     {
-        $query = $this->db->table($this->table())
+        $query = $this->query()
             ->where('thread_id', $threadId)
             ->where('graph_key', $graphKey);
 
@@ -77,7 +79,7 @@ class DatabaseRunStore implements RunStore
     {
         $limit = max(1, min($limit, 500));
 
-        return $this->db->table($this->table())
+        return $this->query()
             ->orderByDesc('id')
             ->limit(1000)
             ->get()
@@ -92,7 +94,7 @@ class DatabaseRunStore implements RunStore
     {
         $limit = max(1, min($limit, 500));
 
-        return $this->db->table($this->table())
+        return $this->query()
             ->orderByDesc('id')
             ->limit(1000)
             ->get()
@@ -121,7 +123,7 @@ class DatabaseRunStore implements RunStore
             $attributes['failed_at'] ??= now();
         }
 
-        $this->db->table($this->table())->where('public_id', $runId)->update($attributes);
+        $this->query()->where('public_id', $runId)->update($attributes);
 
         return $this->find($runId);
     }

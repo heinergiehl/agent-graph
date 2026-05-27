@@ -8,6 +8,7 @@ use Heiner\AgentGraph\Graph\StateGraph;
 use Heiner\AgentGraph\Persistence\DatabaseCheckpointStore;
 use Heiner\AgentGraph\Persistence\DatabaseInterruptStore;
 use Heiner\AgentGraph\Persistence\DatabaseMemoryStore;
+use Heiner\AgentGraph\Persistence\DatabaseNodeExecutionStore;
 use Heiner\AgentGraph\Persistence\DatabaseRunStore;
 use Heiner\AgentGraph\Persistence\DatabaseTaskStore;
 use Heiner\AgentGraph\Persistence\DatabaseTraceStore;
@@ -70,6 +71,31 @@ it('rolls back checkpoint creation when write persistence fails', function () {
         ->and($runs->find($result->runId())['status'])->toBe('failed');
 });
 
+it('raises when database node execution updates target a missing execution', function (string $method, array $payload) {
+    $store = new DatabaseNodeExecutionStore(app('db'));
+
+    expect(fn () => $store->{$method}('missing-execution', $payload))
+        ->toThrow(RuntimeException::class, 'Node execution [missing-execution] was not found.');
+})->with([
+    ['complete', ['writes' => []]],
+    ['interrupt', ['interrupt' => ['type' => 'input', 'payload' => []]]],
+    ['fail', ['message' => 'failed']],
+]);
+
+it('raises when a recorded database node execution cannot be read back by execution id', function () {
+    $runs = new DatabaseRunStore(app('db'));
+    $run = $runs->create('record_missing_readback', '1', 'thread-readback');
+    $store = new MissingAfterInsertNodeExecutionStore(app('db'));
+
+    expect(fn () => $store->record([
+        'execution_id' => 'nex_missing_readback',
+        'run_id' => $run['public_id'],
+        'step' => 1,
+        'node_id' => 'answer',
+        'status' => 'pending',
+    ]))->toThrow(RuntimeException::class, 'Node execution [nex_missing_readback] could not be read after it was recorded.');
+});
+
 final class FailingWriteStore implements WriteStore
 {
     public function createMany(string $runId, string $checkpointId, string $nodeId, array $writes, array $meta = []): void
@@ -93,5 +119,13 @@ final class RollbackAnswerNode implements Node
     public function __invoke(NodeContext $context): NodeResult
     {
         return NodeResult::write(['answer' => 'persist me']);
+    }
+}
+
+final class MissingAfterInsertNodeExecutionStore extends DatabaseNodeExecutionStore
+{
+    public function find(string $executionId): ?array
+    {
+        return null;
     }
 }

@@ -24,13 +24,7 @@ class DurableGraphSession
 
     public function run(array $input = [], array $meta = []): RunResult
     {
-        $active = $this->activeRun();
-
-        if ($active !== null) {
-            return $this->manager->inspect($active['public_id'])->toRunResult();
-        }
-
-        return $this->start($input, $meta);
+        return $this->manager->runSession($this->graphKey, $this->threadId, $input, $meta);
     }
 
     public function resume(array $payload = [], bool $strict = false): RunResult
@@ -91,6 +85,6 @@ class DurableGraphSession
 
     public function activeRun(): ?array
     {
-        return app(GraphRuntime::class)->latestForThreadGraph($this->threadId, $this->graphKey);
+        return $this->manager->latestForThreadGraph($this->threadId, $this->graphKey);
     }
 }

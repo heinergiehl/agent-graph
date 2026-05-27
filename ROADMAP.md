@@ -1,6 +1,6 @@
 # AgentGraph Roadmap
 
-AgentGraph `0.12.x` is the active public beta for real Laravel app testing. The goal for v1 is a hardened MVP for durable agent workflows in Laravel, not a complete LangGraph platform clone.
+AgentGraph `0.13.x` is the active public beta for real Laravel app testing. The goal for v1 is a hardened MVP for durable agent workflows in Laravel, not a complete LangGraph platform clone.
 
 ## 0.9 Beta Scope
 
@@ -77,7 +77,7 @@ These items should be completed before tagging `v1.0.0`:
 - Add tenant/actor memory examples that make cross-tenant boundaries unambiguous.
 - Keep the compatibility CI matrix green for PHP 8.3/8.4, Laravel 12/13, and `laravel/ai ^0.7`.
   `laravel/ai ^1.0` is declared in `composer.json` for forward compatibility, but should only be enabled in blocking CI after a 1.x release exists upstream.
-- Test the Filament Agentic Chatbot refactor against the 0.12 package before locking v1.
+- Test the Filament Agentic Chatbot refactor against the 0.13 package before locking v1.
 - Review `CHANGELOG.md` and `UPGRADE.md` before tagging.
 
 Implemented v1 hardening:

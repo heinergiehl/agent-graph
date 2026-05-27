@@ -32,6 +32,28 @@ it('marks delay interrupts as delayed runs with resume metadata', function () {
     });
 });
 
+it('dispatches delayed continuation jobs on the configured execution connection and queue', function () {
+    Queue::fake();
+    config()->set('agent-graph.execution.queue_connection', 'agent-graph-delay-connection');
+    config()->set('agent-graph.execution.queue', 'agent-graph-delay-queue');
+
+    AgentGraph::define(
+        StateGraph::make('delay_queue_config_graph')
+            ->state(['ready' => 'bool|null'])
+            ->node('wait', DelayNode::class)
+            ->edge(StateGraph::START, 'wait')
+            ->edge('wait', StateGraph::END)
+    );
+
+    $run = AgentGraph::graph('delay_queue_config_graph')->thread('delay-queue-config-thread')->input([])->run();
+
+    Queue::assertPushed(ContinueDelayedGraphJob::class, function (ContinueDelayedGraphJob $job) use ($run): bool {
+        return $job->runId === $run->runId()
+            && $job->connection === 'agent-graph-delay-connection'
+            && $job->queue === 'agent-graph-delay-queue';
+    });
+});
+
 it('delegates delay interrupt scheduling to the bound scheduler', function () {
     $scheduler = new RecordingDelayScheduler;
     app()->instance(DelayScheduler::class, $scheduler);

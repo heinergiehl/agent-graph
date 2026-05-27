@@ -4,7 +4,7 @@
 
 | Version | Status |
 | --- | --- |
-| 0.9.x | Public beta security fixes |
+| 0.13.x | Public beta security fixes |
 | 1.x | Supported after v1 release |
 
 ## Reporting

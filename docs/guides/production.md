@@ -11,10 +11,44 @@ Recommended production settings:
 - prune traces and old runs according to your retention policy
 - wrap every external side effect in `$context->tasks()->once()`
 - configure `agent-graph.tasks.lease_seconds` longer than expected external side effects
+- configure `agent-graph.locks.ttl_seconds` longer than the longest expected node execution
 - define reducers for channels written by multiple fan-out branches
 - configure per-node retries only for transient thrown exceptions
 - avoid storing raw secrets in state, memory, traces, task input, or interrupt payloads
 - avoid doing slow network I/O inside run-event listeners
+
+## Database, migrations, and stores
+
+The default store driver is `database`. Keep it for production:
+
+```dotenv
+AGENT_GRAPH_STORE=database
+```
+
+Use `AGENT_GRAPH_DB_CONNECTION` when AgentGraph tables should live on a dedicated Laravel database connection:
+
+```dotenv
+AGENT_GRAPH_DB_CONNECTION=agent_graph
+```
+
+Set this before publishing or running migrations. Package migrations, database stores, runtime transactions, `agent-graph:doctor`, `agent-graph:prune`, and the optional `PgvectorMemoryStore` all use the same configured connection. If the env var is unset, AgentGraph uses Laravel's `database.default` connection.
+
+Published migrations create and maintain these package tables:
+
+- `agent_graph_runs`
+- `agent_graph_checkpoints`
+- `agent_graph_writes`
+- `agent_graph_tasks`
+- `agent_graph_interrupts`
+- `agent_graph_memories`
+- `agent_graph_node_executions`
+- `agent_graph_traces`
+
+Applications can override table names in `config/agent-graph.php`, but do that before migrating. Do not read these tables directly from application UI code; prefer `AgentGraph::inspect()`, `AgentGraph::runs()`, `AgentGraph::tasks()`, and the memory manager APIs.
+
+Use `AGENT_GRAPH_STORE=memory` only for tests or throwaway local experiments. In-memory stores are process-local and lose all runtime state between requests and workers.
+
+`PgvectorMemoryStore` is optional and experimental. Use it only for semantic memory features such as long-term memory search, similar-case lookup, example selection, or semantic routing. Do not use pgvector for AgentGraph run state, checkpoints, interrupts, queues, task audit, or trace persistence; those remain relational store responsibilities.
 
 ## Memory tenancy
 
@@ -47,19 +81,51 @@ Use `AgentGraph::resumeWithStateEdit($runId, $interruptId, $statePatch, $resolve
 
 Normal input and approval resumes should continue to use `AgentGraph::resume($runId, ['interrupt_id' => $interruptId, ...])`.
 
+Terminal runs are immutable for runtime control APIs. `completed`, `cancelled`, and `failed` runs reject `resume()`, `resumeWithStateEdit()`, and `cancel()`; use replay or fork when a workflow needs follow-up work from historical state.
+
 Use `AgentGraph::resumeStrict()` for public endpoints that should reject unknown resume payload keys. If review or approval windows expire, attach `InterruptPolicy` to the interrupt result and call `AgentGraph::expireInterrupts()` from scheduled maintenance.
 
 ## Queue and retry safety
 
 Delayed continuation jobs are safe to retry. A delayed job no-ops when the run is already `completed`, `cancelled`, or `failed`, or when its interrupt is no longer the pending delay interrupt.
 
-Delay interrupts schedule through `DelayScheduler::class`. The default implementation dispatches `ContinueDelayedGraphJob`; bind a custom scheduler only when your app needs a different delayed-execution backend.
+Delay interrupts schedule through `DelayScheduler::class`. The default implementation dispatches `ContinueDelayedGraphJob` on the configured AgentGraph execution queue connection and queue; bind a custom scheduler only when your app needs a different delayed-execution backend.
 
 Keep external side effects inside `$context->tasks()->once()` so queue retries do not repeat irreversible work.
 
 Task leases prevent duplicate active execution for the same idempotency key. Completed tasks continue to return their stored result, and reusing a key with different input still fails.
 
 `queued_supersteps` is opt-in. Configure `agent-graph.execution.mode=queued_supersteps`, optionally set `agent-graph.execution.queue_connection` and `agent-graph.execution.queue`, and run Laravel workers for that queue. Queued workers must boot the same graph definitions as the process that started or resumed the run.
+
+Equivalent env settings:
+
+```dotenv
+AGENT_GRAPH_EXECUTION_MODE=queued_supersteps
+AGENT_GRAPH_EXECUTION_QUEUE_CONNECTION=database
+AGENT_GRAPH_EXECUTION_QUEUE=agent-graph
+AGENT_GRAPH_EXECUTION_NODE_LEASE_SECONDS=300
+AGENT_GRAPH_LOCK_TTL_SECONDS=300
+```
+
+Keep `AGENT_GRAPH_EXECUTION_MODE=sync` unless graph definitions are registered during app boot and workers are guaranteed to process `NodeExecutionJob` and `ContinueSuperstepJob`.
+
+Set `AGENT_GRAPH_LOCK_TTL_SECONDS` longer than the longest expected node execution or active session start path. A lock expiring too early can allow duplicate protected work while the first PHP process is still running.
+
+## Pruning
+
+`agent-graph:prune` deletes only the targets you explicitly select and uses the same configured database connection as the stores:
+
+```bash
+php artisan agent-graph:prune --runs --traces --tasks --memories --days=30 --dry-run
+```
+
+- `--runs` deletes completed, failed, or cancelled runs with `updated_at` older than `--days`.
+- `--traces` deletes traces with `created_at` older than `--days`.
+- `--tasks` deletes completed or failed tasks with `updated_at` older than `--days`.
+- `--memories` deletes memories whose `expires_at` is in the past; `--days` does not affect memory expiry.
+- `--dry-run` counts matching records without deleting them.
+
+Run pruning from scheduled maintenance according to your product's retention policy.
 
 ## Node retry policies
 

@@ -12,7 +12,7 @@ return [
     ],
 
     'locks' => [
-        'ttl_seconds' => env('AGENT_GRAPH_LOCK_TTL_SECONDS', 30),
+        'ttl_seconds' => env('AGENT_GRAPH_LOCK_TTL_SECONDS', 300),
         'block_seconds' => env('AGENT_GRAPH_LOCK_BLOCK_SECONDS', 5),
     ],
 

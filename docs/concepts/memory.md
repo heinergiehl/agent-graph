@@ -13,7 +13,9 @@ Scopes:
 - `application`
 - `global`
 
-Semantic/vector memory is intentionally deferred to an optional adapter.
+Semantic/vector memory is intentionally optional. Laravel AI can generate embeddings; AgentGraph persists vectors only when an application binds a `VectorMemoryStore`.
+
+`PgvectorMemoryStore` is an experimental adapter for PostgreSQL pgvector. Use it for semantic long-term memory, similar-case lookup, example selection, semantic routing, or memory deduplication. Do not use pgvector for run state, checkpoints, interrupts, queues, task audit, or traces.
 
 Applications that need UI/debug inspection can resolve `EnumerableMemoryStore` and call `listNamespace($scopes, $namespace)`. Listing follows the configured memory fallback order and omits expired records without incrementing usage counters.
 

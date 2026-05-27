@@ -24,6 +24,7 @@ Run before opening a PR:
 ```bash
 composer validate --strict
 composer check
+composer audit --no-dev
 ```
 
-For release work, also validate the package in a fresh Laravel sandbox app via a local path repository.
+For release work, also validate the package in a fresh Laravel sandbox app via a local path repository. `composer.lock` stays ignored because this repository is a library; run security audits against the local resolved dependency set before tagging.

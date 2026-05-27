@@ -1,13 +1,13 @@
 # AgentGraph API Reference
 
-This document describes the public API surface exposed by the 0.12 beta and intended for v1 stabilization. APIs marked experimental are public but may receive compatibility-preserving hardening before a later stable time-travel release.
+This document describes the public API surface exposed by the 0.13 beta and intended for v1 stabilization. APIs marked experimental are public but may receive compatibility-preserving hardening before a later stable time-travel release.
 
 ## Graph Definition
 
 ### `StateGraph`
 
 - `StateGraph::make(string $key, string $version = '1'): StateGraph` creates a graph builder. The key identifies the graph; the version is persisted on runs and checkpoints.
-- `state(array|StateSchema $schema): self` defines state channels and schema types such as `string`, `string|null`, `int`, `bool`, `array`, `messages`, `mixed`, or structured `StateSchema` definitions.
+- `state(array|StateSchema $schema): self` defines state channels and schema types such as `string`, `string|null`, `int`, `bool`, `array`, `messages`, `mixed`, or structured `StateSchema` definitions. Unknown schema types throw instead of being treated as permissive `mixed`.
 - `reducer(string $channel, mixed $reducer): self` configures channel reducers. Built-ins include `append`, `merge`, `messages`/`add_messages`, and `max`/`max_confidence`.
 - `node(string $id, callable|string $node): self` registers an invokable node class, callable, or `Node` implementation.
 - `edge(string $from, string $to): self` registers a static edge.
@@ -33,7 +33,9 @@ Stability: stable for read-only metadata and endpoint helpers.
 
 `StateSchema::make()` creates a builder for structured schema definitions. Methods include `string()`, `integer()`, `boolean()`, `array()`, `object()`, `enum()`, `messages()`, `channel()`, and `toArray()`.
 
-String schemas remain supported for backward compatibility. Structured object validation currently validates provided nested properties and enum values.
+String schemas remain supported for backward compatibility. Supported primitive types are `mixed`, `null`, `string`, `int`, `integer`, `float`, `double`, `bool`, `boolean`, `array`, `messages`, and `object`. Supported structured types are `enum`, `array`, and `object`; structured definitions without `type` remain compatible as `mixed`.
+
+Structured object validation validates provided nested properties and enum values. Structured arrays require a PHP list and validate every item against the configured `items` schema.
 
 Stability: additive beta API.
 
@@ -58,11 +60,11 @@ Stability: stable.
 All methods are available through the `AgentGraph` facade and `AgentGraphManager`.
 
 - `define(StateGraph|GraphDefinition $graph): GraphDefinition` registers a graph.
-- `graph(string $key): PendingGraphRun` creates a pending run builder for a registered graph.
-- `resume(string $runId, array $payload = [], ?callable $onEvent = null, bool $collectEvents = false): RunResult` resumes a run. If a pending interrupt exists, `interrupt_id` must match it.
+- `graph(string $key): PendingGraphRun` creates a pending run builder for a registered graph. Calling `run()` on the builder intentionally creates a new run.
+- `resume(string $runId, array $payload = [], ?callable $onEvent = null, bool $collectEvents = false): RunResult` resumes an active run. If a pending interrupt exists, `interrupt_id` must match it. Terminal runs cannot be resumed.
 - `resumeStrict(string $runId, array $payload = [], ?callable $onEvent = null, bool $collectEvents = false): RunResult` resumes a run while rejecting unknown state keys.
-- `resumeWithStateEdit(string $runId, string $interruptId, array $statePatch, ?string $resolvedBy = null, ?callable $onEvent = null, bool $collectEvents = false): RunResult` resolves a `state_edit` interrupt after strict schema validation.
-- `cancel(string $runId, array $meta = []): RunResult` marks a run cancelled.
+- `resumeWithStateEdit(string $runId, string $interruptId, array $statePatch, ?string $resolvedBy = null, ?callable $onEvent = null, bool $collectEvents = false): RunResult` resolves a `state_edit` interrupt on an active run after strict schema validation.
+- `cancel(string $runId, array $meta = []): RunResult` marks an active `running`, `interrupted`, or `delayed` run cancelled.
 - `inspect(string $runId, bool $withHistory = false, bool $withTraces = false): ?RunSnapshot` returns a read-only run snapshot without mutating runtime state.
 - `timeline(string $runId, bool $includeState = false, bool $includeDiff = true): ?RunTimeline` returns ordered, read-only timeline steps built from checkpoints, writes, interrupts, failures, and state diffs.
 - `runs(array $filters = [], int $limit = 50): array` lists recent runs. Supported filters are `status`, `thread_id`, `graph_key`, and `graph_version`.
@@ -76,7 +78,7 @@ All methods are available through the `AgentGraph` facade and `AgentGraphManager
 - `memory(): MemoryManager` returns memory writer/export/delete helpers.
 - `migrationsPath(): string` returns the package migration path.
 
-Errors: missing runs, missing graph definitions, stale interrupt IDs, schema validation failures, and graph version mismatches throw `RuntimeException` or `InvalidArgumentException` depending on the failure.
+Errors: missing runs, missing graph definitions, stale interrupt IDs, terminal resume/cancel attempts, schema validation failures, and graph version mismatches throw `RuntimeException` or `InvalidArgumentException` depending on the failure.
 
 Stability: stable.
 
@@ -276,7 +278,7 @@ Stability: stable.
 
 Methods: `start(array $input = [], array $meta = [])`, `run(array $input = [], array $meta = [])`, `resume(array $payload = [], bool $strict = false)`, `cancel(array $meta = [])`, `status()`, and `activeRun()`.
 
-`run()` returns the active interrupted/delayed/running run for the graph+thread when one exists; otherwise it starts a new run.
+`run()` returns the active interrupted/delayed/running run for the graph+thread when one exists; otherwise it starts a new run. The active-run lookup and start path are protected by an AgentGraph session lock. `start()` always creates a fresh run.
 
 Stability: additive beta API.
 
@@ -308,7 +310,7 @@ Stability: additive beta API.
 
 Methods: `writeExtracted(MemoryScope $scope, string $namespace, string $text, array $meta = [])`, `export(MemoryScope $scope, ?string $namespace = null)`, `deleteScope()`, `deleteNamespace()`, `deleteKey()`, `embeddings()`, and `vectors()`.
 
-Default bindings are deterministic and do not require vector infrastructure. Applications can replace `MemoryExtractor`, `EmbeddingGenerator`, or `VectorMemoryStore`. `PgvectorMemoryStore` and `stubs/pgvector-memory-migration.stub` are optional pgvector starting points.
+Default bindings are deterministic and do not require vector infrastructure. Applications can replace `MemoryExtractor`, `EmbeddingGenerator`, or `VectorMemoryStore`. Laravel AI can generate embeddings; AgentGraph stores vectors only through the configured vector store. `PgvectorMemoryStore` and `stubs/pgvector-memory-migration.stub` are optional experimental pgvector starting points.
 
 Stability: additive beta API.
 
@@ -331,16 +333,21 @@ Production adapters may implement these contracts:
 
 Adapters must preserve JSON-serializable arrays for stored payloads and return decoded arrays matching database and in-memory store shapes.
 
-The default `DelayScheduler` dispatches `ContinueDelayedGraphJob`; Laravel applications can bind their own scheduler implementation.
+The package database stores use `agent-graph.database.connection`, which maps to `AGENT_GRAPH_DB_CONNECTION`. The same configured connection is used by package migrations, runtime transactions, `agent-graph:doctor`, `agent-graph:prune`, and the optional `PgvectorMemoryStore`.
+
+The default `DelayScheduler` dispatches `ContinueDelayedGraphJob` on the configured AgentGraph execution queue connection and queue; Laravel applications can bind their own scheduler implementation.
 
 Stability: stable, with v1 contract changes documented in `UPGRADE.md`.
 
 ## Errors and Compatibility
 
 - Unknown state keys in run input, state-edit resume, fork patches, and node writes throw or fail strictly.
+- Unknown schema definition types throw instead of being silently accepted.
+- Structured array schemas require list values and validate every item against `items`.
 - Run errors use a structured payload with `message`, `exception_class`, `code`, `previous`, and optional `details`/`meta`.
 - Normal `resume()` remains compatible with extra unknown payload keys, but known schema keys are type-validated.
 - `resumeStrict()` rejects unknown state keys for public endpoints that need stricter input control.
+- Terminal `completed`, `cancelled`, and `failed` runs cannot be resumed, state-edit resumed, or cancelled again.
 - Replay and fork require persisted `graph_version` to match the currently registered graph definition.
 - Supersteps store one checkpoint per frontier and preserve dynamic `Send` schedules in checkpoint metadata.
 - `queued_supersteps` is opt-in and uses Laravel Queue jobs for worker-backed node execution. Sync execution remains the default.

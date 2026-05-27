@@ -4,11 +4,13 @@ namespace Heiner\AgentGraph\Persistence;
 
 use Heiner\AgentGraph\Contracts\WriteStore;
 use Heiner\AgentGraph\Persistence\Concerns\SerializesDatabaseValues;
+use Heiner\AgentGraph\Persistence\Concerns\UsesAgentGraphDatabaseConnection;
 use Illuminate\Database\DatabaseManager;
 
 class DatabaseWriteStore implements WriteStore
 {
     use SerializesDatabaseValues;
+    use UsesAgentGraphDatabaseConnection;
 
     public function __construct(protected DatabaseManager $db) {}
 
@@ -17,7 +19,7 @@ class DatabaseWriteStore implements WriteStore
         $now = now();
 
         foreach ($writes as $channel => $value) {
-            $this->db->table($this->table())->insert([
+            $this->query()->insert([
                 'checkpoint_id' => $checkpointId,
                 'run_id' => $runId,
                 'node_id' => $nodeId,
@@ -34,7 +36,7 @@ class DatabaseWriteStore implements WriteStore
 
     public function listForCheckpoint(string $checkpointId): array
     {
-        return $this->db->table($this->table())
+        return $this->query()
             ->where('checkpoint_id', $checkpointId)
             ->orderBy('id')
             ->get()
@@ -44,7 +46,7 @@ class DatabaseWriteStore implements WriteStore
 
     public function listForRun(string $runId): array
     {
-        return $this->db->table($this->table())
+        return $this->query()
             ->where('run_id', $runId)
             ->orderBy('id')
             ->get()

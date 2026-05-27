@@ -6,11 +6,11 @@ AgentGraph does not replace Laravel AI providers, agents, tools, streaming, or s
 
 ## Beta Status
 
-`0.12.x` is a public beta intended for sandbox and real chatbot integration testing. Breaking changes are allowed before v1, but they will be documented in `CHANGELOG.md` and `UPGRADE.md`.
+`0.13.x` is a public beta intended for sandbox and real chatbot integration testing. Breaking changes are allowed before v1, but they will be documented in `CHANGELOG.md` and `UPGRADE.md`.
 
 The v1 target is a hardened MVP: stable graph execution, checkpoints, interrupts/resume, idempotent tasks, scoped memory, traces, queues, run-event observation, Laravel AI agent nodes, graphs as tools, native subgraph nodes, and durable app workflow sessions. Experimental checkpoint inspection, replay, forking, worker-backed queued supersteps, and vector memory contracts are available for post-v1-style workflows. OpenTelemetry export and visual workflow editing remain outside the stable v1 core.
 
-CI currently validates the 0.12 beta line against PHP 8.3/8.4, Laravel 12/13, and `laravel/ai ^0.7`. `laravel/ai ^1.0` stays declared for forward compatibility but should remain non-blocking until upstream tags a 1.x release.
+CI currently validates the 0.13 beta line against PHP 8.3/8.4, Laravel 12/13, and `laravel/ai ^0.7`. `laravel/ai ^1.0` stays declared for forward compatibility but should remain non-blocking until upstream tags a 1.x release.
 
 ## Installation
 
@@ -19,6 +19,36 @@ composer require heiner/agent-graph
 php artisan agent-graph:install
 php artisan migrate
 ```
+
+`agent-graph:install` publishes the package config and migrations. The database store uses these tables by default:
+
+- `agent_graph_runs`
+- `agent_graph_checkpoints`
+- `agent_graph_writes`
+- `agent_graph_tasks`
+- `agent_graph_interrupts`
+- `agent_graph_memories`
+- `agent_graph_node_executions`
+- `agent_graph_traces`
+
+Set `AGENT_GRAPH_DB_CONNECTION` when AgentGraph tables should live on a non-default Laravel database connection. Migrations, database stores, `agent-graph:doctor`, `agent-graph:prune`, runtime transactions, and the optional `PgvectorMemoryStore` all use the configured connection. Leave it unset to use `database.default`.
+
+Useful production env settings:
+
+```dotenv
+AGENT_GRAPH_STORE=database
+AGENT_GRAPH_DB_CONNECTION=agent_graph
+AGENT_GRAPH_EXECUTION_MODE=sync
+AGENT_GRAPH_EXECUTION_QUEUE_CONNECTION=database
+AGENT_GRAPH_EXECUTION_QUEUE=agent-graph
+AGENT_GRAPH_TASK_LEASE_SECONDS=300
+AGENT_GRAPH_EXECUTION_NODE_LEASE_SECONDS=300
+AGENT_GRAPH_LOCK_TTL_SECONDS=300
+```
+
+Use `AGENT_GRAPH_STORE=memory` only for tests and local throwaway runs. Use `AGENT_GRAPH_EXECUTION_MODE=queued_supersteps` only when workers boot the same graph definitions and process the configured queue.
+
+Set `AGENT_GRAPH_LOCK_TTL_SECONDS` longer than the longest expected node execution or active session start path. The default is 300 seconds.
 
 ## First Graph
 
@@ -74,6 +104,8 @@ $run = AgentGraph::resume($runId, [
     'approved' => true,
 ]);
 ```
+
+Only active runs can be resumed. `completed`, `cancelled`, and `failed` runs reject `resume()` and `resumeWithStateEdit()` so terminal history is not mutated accidentally.
 
 The resumed node can read the original resume response separately from merged graph state:
 
@@ -244,6 +276,10 @@ $run = AgentGraph::resumeStrict($runId, [
 
 Normal `resume()` remains permissive for unknown payload keys while still validating known state channels.
 
+State schemas are strict about schema definitions. Unknown primitive types such as `strng`, unknown union members, and unknown structured types throw during validation. Structured arrays declared with `StateSchema::array('ids', 'string')` require a PHP list, and every item is validated against the item schema.
+
+`cancel()` applies only to active runs: `running`, `interrupted`, or `delayed`. Terminal runs remain unchanged.
+
 Interrupts can carry expiry policy metadata:
 
 ```php
@@ -402,6 +438,8 @@ $run = AgentGraph::session('support_triage', $conversationId)
 $status = AgentGraph::session('support_triage', $conversationId)->status();
 ```
 
+`AgentGraph::graph(...)->thread(...)->run()` intentionally creates a new run. `AgentGraph::session(...)->run()` is active-thread idempotent: it returns the existing `running`, `interrupted`, or `delayed` run for the graph+thread when one exists, and that check/start path is protected by an AgentGraph session lock. Use `session()->start()` when you explicitly want a fresh run.
+
 ```php
 AgentGraph::durableTool('support_triage')
     ->description('Start, inspect, resume, or cancel the active support workflow.');
@@ -423,11 +461,11 @@ AgentGraph::memory()->export($scope, 'profile');
 AgentGraph::memory()->deleteNamespace($scope, 'profile');
 ```
 
-Vector memory is contract-based and optional. The default bindings are deterministic/in-memory test-safe adapters. `PgvectorMemoryStore` and `stubs/pgvector-memory-migration.stub` are provided for applications that want PostgreSQL pgvector without making pgvector a core dependency.
+Vector memory is contract-based and optional. Laravel AI can provide embeddings; AgentGraph stores vectors only when an application binds a vector store. The default bindings are deterministic/in-memory test-safe adapters. `PgvectorMemoryStore` and `stubs/pgvector-memory-migration.stub` are optional experimental starting points for semantic memory on PostgreSQL pgvector, not core persistence for runs, checkpoints, interrupts, queues, or audit logs.
 
 ## Stable v1 Public APIs
 
-The 0.12 beta exposes the intended v1-stable API surface documented in [`docs/api-reference.md`](docs/api-reference.md). In short:
+The 0.13 beta exposes the intended v1-stable API surface documented in [`docs/api-reference.md`](docs/api-reference.md). In short:
 
 - `StateGraph` for fluent graph definitions.
 - `Node` and `NodeContext` for runtime node implementation.
@@ -452,8 +490,10 @@ The 0.12 beta exposes the intended v1-stable API surface documented in [`docs/ap
 
 - Run and monitor the published migrations.
 - Use database stores as the source of truth.
+- Set `AGENT_GRAPH_DB_CONNECTION` before migrating when AgentGraph should use a dedicated connection.
 - Configure queue workers for background and delayed graph continuation.
 - Keep `execution.mode=sync` unless a graph is registered during app boot and workers can process `NodeExecutionJob` / `ContinueSuperstepJob`.
+- Run `php artisan agent-graph:prune --dry-run --traces --tasks --memories` before enabling retention deletes.
 - Keep trace redaction keys current for your domain.
 - Scope memory by tenant or actor before using it in multi-tenant apps.
 - Use idempotent task keys for every external side effect.
@@ -465,7 +505,9 @@ The 0.12 beta exposes the intended v1-stable API surface documented in [`docs/ap
 - Use `resumeWithStateEdit()` for manual state correction flows.
 - Use per-node retry policies for transient thrown exceptions, and keep side effects idempotent with `tasks()->once()`.
 - Configure `agent-graph.tasks.lease_seconds` for the maximum expected side-effect duration.
+- Configure `agent-graph.locks.ttl_seconds` longer than the longest expected node execution.
 - Use `resumeStrict()` for public endpoints that should reject unknown resume payload keys.
+- Treat terminal runs as immutable for resume/state-edit/cancel flows; use replay or fork for follow-up work from historical state.
 - Keep `GraphTool` generic; use `DurableGraphTool` for active-run-per-thread application semantics.
 - Use explicit reducers for any state channel that can be written by more than one node in the same superstep.
 - Keep graph definitions generic; product-specific UI belongs in consuming apps.
@@ -474,4 +516,4 @@ The 0.12 beta exposes the intended v1-stable API surface documented in [`docs/ap
 
 ## Status
 
-This MVP includes the durable runtime core, deterministic supersteps, dynamic `Send` fan-out, per-node retry/timeout/concurrency policies, database and in-memory stores, scoped memory, interrupts with expiry, task leases, traces, queue jobs, worker-backed queued supersteps, Laravel AI adapter, graph tool adapters, subgraph nodes, run-event observation, commands, tests, docs, and experimental checkpoint replay/fork APIs. Post-MVP work includes visual timeline tooling, production pgvector adapters, OpenTelemetry export, and visual editor serialization.
+This MVP includes the durable runtime core, deterministic supersteps, dynamic `Send` fan-out, per-node retry/timeout/concurrency policies, database and in-memory stores, scoped memory, interrupts with expiry, task leases, traces, queue jobs, worker-backed queued supersteps, Laravel AI adapter, graph tool adapters, subgraph nodes, run-event observation, commands, tests, docs, optional experimental vector-memory adapters, and experimental checkpoint replay/fork APIs. Post-MVP work includes visual timeline tooling, production-grade pgvector CI/adapter hardening, OpenTelemetry export, and visual editor serialization.

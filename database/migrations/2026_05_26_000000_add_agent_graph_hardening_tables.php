@@ -33,7 +33,7 @@ return new class extends AgentGraphMigration
         Schema::dropIfExists(config('agent-graph.tables.node_executions', 'agent_graph_node_executions'));
 
         Schema::table(config('agent-graph.tables.interrupts', 'agent_graph_interrupts'), function (Blueprint $table): void {
-            $table->dropIndex('agent_graph_interrupts_expires_at_index');
+            $table->dropIndex(['expires_at']);
             $table->dropColumn('expires_at');
         });
     }

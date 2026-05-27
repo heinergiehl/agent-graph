@@ -1,8 +1,8 @@
 # Upgrade Guide
 
-## 0.12 Beta To v1
+## 0.13 Beta To v1
 
-AgentGraph 0.12 is the active public beta. v1 freezes the durable runtime core, documents the public API, and tightens validation around state, resume, queues, and time travel.
+AgentGraph 0.13 is the active public beta. v1 freezes the durable runtime core, documents the public API, and tightens validation around state, resume, queues, and time travel.
 
 ## Public API stability
 
@@ -107,7 +107,9 @@ AgentGraph only uses Laravel AI public contracts, response DTOs, and streaming e
 
 `SubgraphNode` is now available for child graph execution. Child runs are persisted as normal runs and use `run.meta.parent` lineage. If child graphs can interrupt, callers must resume the parent with the bubbled `child_run_id` and `child_interrupt_id`.
 
-`AgentGraph::memory()` adds extraction/export/delete helpers. Default memory/vector bindings are deterministic and infrastructure-free; production vector stores should bind custom `VectorMemoryStore` implementations.
+`AgentGraph::memory()` adds extraction/export/delete helpers. Default memory/vector bindings are deterministic and infrastructure-free. Laravel AI can provide embeddings, but durable vector storage is application-controlled through `VectorMemoryStore`.
+
+`PgvectorMemoryStore` is an optional experimental adapter for semantic memory, similar-case lookup, example selection, and semantic routing. It is not used for runs, checkpoints, interrupts, queues, or audit logs. It now rejects empty or non-finite embeddings and returns an empty result for empty-scope or non-positive-limit searches.
 
 ## Time travel replay and fork safety
 

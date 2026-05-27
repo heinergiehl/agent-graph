@@ -4,12 +4,14 @@ namespace Heiner\AgentGraph\Persistence;
 
 use Heiner\AgentGraph\Contracts\CheckpointStore;
 use Heiner\AgentGraph\Persistence\Concerns\SerializesDatabaseValues;
+use Heiner\AgentGraph\Persistence\Concerns\UsesAgentGraphDatabaseConnection;
 use Illuminate\Database\DatabaseManager;
 use RuntimeException;
 
 class DatabaseCheckpointStore implements CheckpointStore
 {
     use SerializesDatabaseValues;
+    use UsesAgentGraphDatabaseConnection;
 
     public function __construct(protected DatabaseManager $db) {}
 
@@ -18,7 +20,7 @@ class DatabaseCheckpointStore implements CheckpointStore
         $checkpointId = 'chk_'.str()->ulid();
         $now = now();
 
-        $this->db->table($this->table())->insert([
+        $this->query()->insert([
             'checkpoint_id' => $checkpointId,
             'parent_checkpoint_id' => $checkpoint['parent_checkpoint_id'] ?? null,
             'run_id' => $checkpoint['run_id'],
@@ -40,21 +42,21 @@ class DatabaseCheckpointStore implements CheckpointStore
 
     public function find(string $checkpointId): ?array
     {
-        $record = $this->db->table($this->table())->where('checkpoint_id', $checkpointId)->first();
+        $record = $this->query()->where('checkpoint_id', $checkpointId)->first();
 
         return $record ? $this->decodeRecord($record, ['state', 'next_nodes', 'completed_nodes', 'interrupts', 'meta']) : null;
     }
 
     public function latestForRun(string $runId): ?array
     {
-        $record = $this->db->table($this->table())->where('run_id', $runId)->orderByDesc('step')->first();
+        $record = $this->query()->where('run_id', $runId)->orderByDesc('step')->first();
 
         return $record ? $this->decodeRecord($record, ['state', 'next_nodes', 'completed_nodes', 'interrupts', 'meta']) : null;
     }
 
     public function listForRun(string $runId): array
     {
-        return $this->db->table($this->table())
+        return $this->query()
             ->where('run_id', $runId)
             ->orderBy('step')
             ->get()

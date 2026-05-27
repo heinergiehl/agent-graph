@@ -35,6 +35,8 @@ use Heiner\AgentGraph\Queue\NodeExecutionJob;
 use Heiner\AgentGraph\State\Reducer;
 use Heiner\AgentGraph\State\StateReducer;
 use Heiner\AgentGraph\State\StateSchemaValidator;
+use Heiner\AgentGraph\Support\AgentGraphDatabase;
+use Heiner\AgentGraph\Support\AgentGraphQueue;
 use Illuminate\Contracts\Container\Container;
 use InvalidArgumentException;
 use RuntimeException;
@@ -68,12 +70,30 @@ class GraphRuntime
         return $this->continue($graph, $run, $input, [$graph->entryNode()]);
     }
 
+    public function runSession(GraphDefinition $graph, string $threadId, array $input = [], array $meta = []): RunResult
+    {
+        return $this->locks->withLock('agent-graph:session:'.$graph->key().':'.$threadId, function () use ($graph, $threadId, $input, $meta): RunResult {
+            $active = $this->latestForThreadGraph($threadId, $graph->key());
+
+            if ($active !== null) {
+                $snapshot = $this->inspect($active['public_id']);
+
+                if ($snapshot !== null) {
+                    return $snapshot->toRunResult();
+                }
+            }
+
+            return $this->run($graph, $threadId, $input, $meta);
+        });
+    }
+
     /**
      * @param  array<string, GraphDefinition>  $graphs
      */
     public function resume(string $runId, array $payload, array $graphs, bool $strictKeys = false): RunResult
     {
         $run = $this->runs->find($runId) ?? throw new RuntimeException("Run [{$runId}] was not found.");
+        $this->assertRunCanResume($run);
         $graph = $graphs[$run['graph_key']] ?? throw new RuntimeException("Graph [{$run['graph_key']}] is not defined.");
         $this->assertGraphVersionMatches($run, $graph, 'Run');
         $checkpoint = $this->checkpoints->latestForRun($runId) ?? throw new RuntimeException("Run [{$runId}] has no checkpoint.");
@@ -107,6 +127,7 @@ class GraphRuntime
     public function resumeWithStateEdit(string $runId, string $interruptId, array $statePatch, array $graphs, ?string $resolvedBy = null): RunResult
     {
         $run = $this->runs->find($runId) ?? throw new RuntimeException("Run [{$runId}] was not found.");
+        $this->assertRunCanResume($run);
         $graph = $graphs[$run['graph_key']] ?? throw new RuntimeException("Graph [{$run['graph_key']}] is not defined.");
         $this->assertGraphVersionMatches($run, $graph, 'Run');
         $checkpoint = $this->checkpoints->latestForRun($runId) ?? throw new RuntimeException("Run [{$runId}] has no checkpoint.");
@@ -140,6 +161,11 @@ class GraphRuntime
     public function cancel(string $runId, array $meta = []): RunResult
     {
         $run = $this->runs->find($runId) ?? throw new RuntimeException("Run [{$runId}] was not found.");
+
+        if (! RunStatus::isActive($run['status'] ?? null)) {
+            throw new RuntimeException("Run [{$runId}] is {$run['status']} and cannot be cancelled.");
+        }
+
         $run = $this->runs->update($runId, [
             'status' => 'cancelled',
             'cancelled_at' => now(),
@@ -278,7 +304,7 @@ class GraphRuntime
         return $this->nodeExecutionStore()->listForRun($runId);
     }
 
-    public function latestForThreadGraph(string $threadId, string $graphKey, array $statuses = ['running', 'interrupted', 'delayed']): ?array
+    public function latestForThreadGraph(string $threadId, string $graphKey, array $statuses = RunStatus::ACTIVE): ?array
     {
         return $this->runs->latestForThreadGraph($threadId, $graphKey, $statuses);
     }
@@ -307,7 +333,7 @@ class GraphRuntime
 
         $existingRun = $this->runs->find((string) $existing['run_id']);
 
-        if ($existingRun === null || in_array($existingRun['status'], ['completed', 'cancelled', 'failed'], true)) {
+        if ($existingRun === null || RunStatus::isTerminal($existingRun['status'] ?? null)) {
             return $existing;
         }
 
@@ -403,7 +429,7 @@ class GraphRuntime
 
             $latestCheckpoint = $this->checkpoints->latestForRun($runId);
 
-            if (in_array($run['status'], ['completed', 'cancelled', 'failed'], true)) {
+            if (RunStatus::isTerminal($run['status'] ?? null)) {
                 return new RunResult($run, $latestCheckpoint['state'] ?? $run['input'] ?? []);
             }
 
@@ -889,28 +915,12 @@ class GraphRuntime
 
     protected function dispatchNodeExecution(string $executionId): void
     {
-        $dispatch = NodeExecutionJob::dispatch($executionId);
-
-        if ($connection = $this->executionQueueConnection()) {
-            $dispatch->onConnection($connection);
-        }
-
-        if ($queue = $this->executionQueue()) {
-            $dispatch->onQueue($queue);
-        }
+        AgentGraphQueue::configure(NodeExecutionJob::dispatch($executionId));
     }
 
     protected function dispatchContinueSuperstep(string $runId, int $step): void
     {
-        $dispatch = ContinueSuperstepJob::dispatch($runId, $step);
-
-        if ($connection = $this->executionQueueConnection()) {
-            $dispatch->onConnection($connection);
-        }
-
-        if ($queue = $this->executionQueue()) {
-            $dispatch->onQueue($queue);
-        }
+        AgentGraphQueue::configure(ContinueSuperstepJob::dispatch($runId, $step));
     }
 
     protected function failQueuedRun(array $run, GraphDefinition $graph, string $nodeId, array $error): void
@@ -924,20 +934,6 @@ class GraphRuntime
     protected function queuesSupersteps(): bool
     {
         return config('agent-graph.execution.mode', 'sync') === 'queued_supersteps';
-    }
-
-    protected function executionQueueConnection(): ?string
-    {
-        $connection = config('agent-graph.execution.queue_connection');
-
-        return is_string($connection) && $connection !== '' ? $connection : null;
-    }
-
-    protected function executionQueue(): ?string
-    {
-        $queue = config('agent-graph.execution.queue');
-
-        return is_string($queue) && $queue !== '' ? $queue : null;
     }
 
     protected function invokeNode(GraphDefinition $graph, string $nodeId, array $state, array $run, ?string $checkpointId, ?array $resumePayload = null, ?string $interruptId = null): NodeResult
@@ -1101,7 +1097,7 @@ class GraphRuntime
 
     protected function transaction(callable $callback): mixed
     {
-        return $this->container->make('db')->transaction($callback);
+        return $this->container->make('db')->connection(AgentGraphDatabase::connectionName())->transaction($callback);
     }
 
     protected function nextNodesFor(GraphDefinition $graph, string $nodeId, NodeResult $result, array $state): array
@@ -1287,6 +1283,13 @@ class GraphRuntime
 
         if (($interrupt['interrupt_id'] ?? null) !== $interruptId) {
             throw new InvalidArgumentException("Interrupt [{$interruptId}] does not match the pending interrupt for run [{$runId}].");
+        }
+    }
+
+    protected function assertRunCanResume(array $run): void
+    {
+        if (RunStatus::isTerminal($run['status'] ?? null)) {
+            throw new RuntimeException("Run [{$run['public_id']}] is {$run['status']} and cannot be resumed.");
         }
     }
 

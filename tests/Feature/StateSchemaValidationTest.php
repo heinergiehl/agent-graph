@@ -5,6 +5,7 @@ use Heiner\AgentGraph\Facades\AgentGraph;
 use Heiner\AgentGraph\Graph\StateGraph;
 use Heiner\AgentGraph\Runtime\NodeContext;
 use Heiner\AgentGraph\Runtime\NodeResult;
+use Heiner\AgentGraph\State\StateSchema;
 
 it('rejects invalid run input before creating a run', function () {
     AgentGraph::define(
@@ -68,6 +69,22 @@ it('fails a run when a node writes an invalid state value', function () {
         ->and(app('agent-graph.runs')->find($run->runId())['status'])->toBe('failed');
 });
 
+it('fails a run when a node writes an invalid structured array item', function () {
+    AgentGraph::define(
+        StateGraph::make('schema_array_item_write_validation')
+            ->state(StateSchema::make()->array('ids', 'string'))
+            ->node('bad', SchemaBadArrayItemWriteNode::class)
+            ->edge(StateGraph::START, 'bad')
+            ->edge('bad', StateGraph::END)
+    );
+
+    $run = AgentGraph::graph('schema_array_item_write_validation')->run();
+
+    expect($run->failed())->toBeTrue()
+        ->and($run->error()['message'])->toContain('State value [ids] must match schema type')
+        ->and(app('agent-graph.runs')->find($run->runId())['status'])->toBe('failed');
+});
+
 it('keeps normal resume compatible with unknown fields but validates known keys', function () {
     AgentGraph::define(
         StateGraph::make('schema_resume_validation')
@@ -123,6 +140,14 @@ final class SchemaBadWriteNode implements Node
     public function __invoke(NodeContext $context): NodeResult
     {
         return NodeResult::write(['count' => 'bad']);
+    }
+}
+
+final class SchemaBadArrayItemWriteNode implements Node
+{
+    public function __invoke(NodeContext $context): NodeResult
+    {
+        return NodeResult::write(['ids' => ['valid', 123]]);
     }
 }
 

@@ -6,6 +6,7 @@ use Carbon\CarbonImmutable;
 use DateTimeInterface;
 use Heiner\AgentGraph\Contracts\LeasingTaskStore;
 use Heiner\AgentGraph\Persistence\Concerns\SerializesDatabaseValues;
+use Heiner\AgentGraph\Persistence\Concerns\UsesAgentGraphDatabaseConnection;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Database\QueryException;
 use RuntimeException;
@@ -13,12 +14,13 @@ use RuntimeException;
 class DatabaseTaskStore implements LeasingTaskStore
 {
     use SerializesDatabaseValues;
+    use UsesAgentGraphDatabaseConnection;
 
     public function __construct(protected DatabaseManager $db) {}
 
     public function findByKey(string $key): ?array
     {
-        $record = $this->db->table($this->table())->where('task_key', $key)->first();
+        $record = $this->query()->where('task_key', $key)->first();
 
         return $record ? $this->decodeRecord($record, ['input', 'result', 'error', 'meta']) : null;
     }
@@ -40,7 +42,7 @@ class DatabaseTaskStore implements LeasingTaskStore
             return [];
         }
 
-        $query = $this->db->table($this->table());
+        $query = $this->query();
 
         foreach (['run_id', 'checkpoint_id', 'node_id', 'status'] as $filter) {
             if (isset($filters[$filter]) && $filters[$filter] !== '') {
@@ -63,7 +65,7 @@ class DatabaseTaskStore implements LeasingTaskStore
 
         if ($existing === null) {
             try {
-                $this->db->table($this->table())->insert([
+                $this->query()->insert([
                     'task_key' => $key,
                     'status' => 'running',
                     'input_hash' => $inputHash,
@@ -92,7 +94,7 @@ class DatabaseTaskStore implements LeasingTaskStore
             throw new RuntimeException("Task key [{$key}] was reused with different input.");
         }
 
-        $this->db->table($this->table())->where('task_key', $key)->update([
+        $this->query()->where('task_key', $key)->update([
             'status' => 'running',
             'attempts' => $existing['attempts'] + 1,
             'locked_until' => $this->leaseUntil(),
@@ -104,7 +106,7 @@ class DatabaseTaskStore implements LeasingTaskStore
 
     public function complete(string $key, mixed $result): array
     {
-        $this->db->table($this->table())->where('task_key', $key)->update([
+        $this->query()->where('task_key', $key)->update([
             'status' => 'completed',
             'result' => $this->encode($result),
             'locked_until' => null,
@@ -116,7 +118,7 @@ class DatabaseTaskStore implements LeasingTaskStore
 
     public function fail(string $key, string $message, array $meta = []): array
     {
-        $this->db->table($this->table())->where('task_key', $key)->update([
+        $this->query()->where('task_key', $key)->update([
             'status' => 'failed',
             'error' => $this->encode(['message' => $message, 'meta' => $meta]),
             'locked_until' => null,
