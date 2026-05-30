@@ -2,7 +2,6 @@
 
 use Heiner\AgentGraph\AgentGraphManager;
 use Heiner\AgentGraph\Contracts\CheckpointStore;
-use Heiner\AgentGraph\Contracts\DelayScheduler;
 use Heiner\AgentGraph\Contracts\InterruptStore;
 use Heiner\AgentGraph\Contracts\LockProvider;
 use Heiner\AgentGraph\Contracts\MemoryStore;
@@ -20,6 +19,7 @@ use Heiner\AgentGraph\Runtime\GraphRuntime;
 use Heiner\AgentGraph\Runtime\NodeContext;
 use Heiner\AgentGraph\Runtime\NodeResult;
 use Heiner\AgentGraph\Runtime\RunEventDispatcher;
+use Heiner\AgentGraph\Support\DelaySchedulerResolver;
 
 it('strict resume rejects unknown state keys while normal resume stays permissive', function () {
     AgentGraph::define(
@@ -69,6 +69,29 @@ it('compiles timeout and concurrency policies and fails nodes that exceed timeou
 
     expect($run->status())->toBe('failed')
         ->and($run->error()['message'])->toContain('timed out');
+});
+
+it('applies per run max step runtime options without mutating global config', function () {
+    config()->set('agent-graph.max_steps', 10);
+
+    AgentGraph::define(
+        StateGraph::make('runtime_options_max_steps')
+            ->state(['count' => 'int|null'])
+            ->node('loop', RuntimeOptionsLoopNode::class)
+            ->edge(StateGraph::START, 'loop')
+            ->edge('loop', 'loop')
+            ->compile(),
+    );
+
+    $run = AgentGraph::graph('runtime_options_max_steps')
+        ->thread('runtime-options-thread')
+        ->options(['max_steps' => 1])
+        ->run();
+
+    expect($run->status())->toBe('failed')
+        ->and($run->error()['code'])->toBe('max_steps_exceeded')
+        ->and(app('agent-graph.checkpoints')->listForRun($run->runId()))->toHaveCount(1)
+        ->and(config('agent-graph.max_steps'))->toBe(10);
 });
 
 it('rejects resume attempts for terminal runs without resolving pending interrupts', function (string $status) {
@@ -144,7 +167,7 @@ it('runs durable sessions under a session lock before checking active runs', fun
         memory: app(MemoryStore::class),
         traces: app(TraceStore::class),
         locks: $locks,
-        delayScheduler: app(DelayScheduler::class),
+        delaySchedulers: app(DelaySchedulerResolver::class),
         events: app(RunEventDispatcher::class),
         nodeExecutions: app(NodeExecutionStore::class),
     );
@@ -192,6 +215,14 @@ final class SlowNode implements Node
         usleep(25_000);
 
         return NodeResult::end(['done' => true]);
+    }
+}
+
+final class RuntimeOptionsLoopNode implements Node
+{
+    public function __invoke(NodeContext $context): NodeResult
+    {
+        return NodeResult::write(['count' => ((int) $context->state('count')) + 1]);
     }
 }
 

@@ -26,7 +26,7 @@ class DurableGraphTool implements Stringable, Tool
         protected AgentGraphManager $manager,
         protected string $graphKey,
     ) {
-        $this->name = 'durable_'.$graphKey;
+        $this->name = ToolName::fromGraphKey('durable', $graphKey);
         $this->description = "Run or resume the active {$graphKey} agent graph session.";
     }
 
@@ -36,7 +36,7 @@ class DurableGraphTool implements Stringable, Tool
             return $this->name;
         }
 
-        $this->name = $name;
+        $this->name = ToolName::assertValid($name);
 
         return $this;
     }

@@ -13,21 +13,22 @@ class DurableGraphSession
         protected string $threadId,
     ) {}
 
-    public function start(array $input = [], array $meta = []): RunResult
+    public function start(array $input = [], array $meta = [], RuntimeOptions|array $options = []): RunResult
     {
         return $this->manager->graph($this->graphKey)
             ->thread($this->threadId)
             ->input($input)
             ->meta($meta)
+            ->options($options)
             ->run();
     }
 
-    public function run(array $input = [], array $meta = []): RunResult
+    public function run(array $input = [], array $meta = [], RuntimeOptions|array $options = []): RunResult
     {
-        return $this->manager->runSession($this->graphKey, $this->threadId, $input, $meta);
+        return $this->manager->runSession($this->graphKey, $this->threadId, $input, $meta, $options);
     }
 
-    public function resume(array $payload = [], bool $strict = false): RunResult
+    public function resume(array $payload = [], bool $strict = false, RuntimeOptions|array $options = []): RunResult
     {
         $runId = $payload['run_id'] ?? $this->activeRun()['public_id'] ?? null;
 
@@ -38,8 +39,8 @@ class DurableGraphSession
         unset($payload['run_id']);
 
         return $strict
-            ? $this->manager->resumeStrict($runId, $payload)
-            : $this->manager->resume($runId, $payload);
+            ? $this->manager->resumeStrict($runId, $payload, options: $options)
+            : $this->manager->resume($runId, $payload, options: $options);
     }
 
     public function cancel(array $meta = []): RunResult

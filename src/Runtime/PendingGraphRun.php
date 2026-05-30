@@ -19,10 +19,14 @@ class PendingGraphRun
 
     protected bool $collectEvents = false;
 
+    protected RuntimeOptions $options;
+
     public function __construct(
         protected AgentGraphManager $manager,
         protected GraphDefinition $graph,
-    ) {}
+    ) {
+        $this->options = new RuntimeOptions;
+    }
 
     public function thread(string $threadId): self
     {
@@ -84,6 +88,18 @@ class PendingGraphRun
         return $this;
     }
 
+    public function options(RuntimeOptions|array $options): self
+    {
+        $this->options = RuntimeOptions::from($options);
+
+        return $this;
+    }
+
+    public function maxSteps(int $maxSteps): self
+    {
+        return $this->options(['max_steps' => $maxSteps]);
+    }
+
     public function run(): RunResult
     {
         return $this->manager->run(
@@ -93,6 +109,7 @@ class PendingGraphRun
             $this->meta,
             $this->onEvent,
             $this->collectEvents,
+            $this->options,
         );
     }
 }

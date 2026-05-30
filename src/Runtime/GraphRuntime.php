@@ -37,6 +37,7 @@ use Heiner\AgentGraph\State\StateReducer;
 use Heiner\AgentGraph\State\StateSchemaValidator;
 use Heiner\AgentGraph\Support\AgentGraphDatabase;
 use Heiner\AgentGraph\Support\AgentGraphQueue;
+use Heiner\AgentGraph\Support\DelaySchedulerResolver;
 use Illuminate\Contracts\Container\Container;
 use InvalidArgumentException;
 use RuntimeException;
@@ -54,25 +55,27 @@ class GraphRuntime
         protected MemoryStore $memory,
         protected TraceStore $traces,
         protected LockProvider $locks,
-        protected ?DelayScheduler $delayScheduler = null,
+        protected ?DelaySchedulerResolver $delaySchedulers = null,
         protected ?RunInspector $inspector = null,
         protected ?RunEventDispatcher $events = null,
         protected ?NodeExecutionStore $nodeExecutions = null,
     ) {}
 
-    public function run(GraphDefinition $graph, string $threadId, array $input = [], array $meta = []): RunResult
+    public function run(GraphDefinition $graph, string $threadId, array $input = [], array $meta = [], RuntimeOptions|array $options = []): RunResult
     {
+        $runtimeOptions = RuntimeOptions::from($options);
         $this->assertStatePatchMatchesSchema($graph, $input);
+        $meta = $runtimeOptions->applyToMeta($meta);
 
         $run = $this->runs->create($graph->key(), $graph->version(), $threadId, $input, $meta);
         $this->dispatchRunEvent('run.started', new GraphRunStarted($run['public_id'], $threadId, $graph->key(), payload: ['input' => $input]));
 
-        return $this->continue($graph, $run, $input, $graph->entryNodes());
+        return $this->continue($graph, $run, $input, $graph->entryNodes(), options: $runtimeOptions);
     }
 
-    public function runSession(GraphDefinition $graph, string $threadId, array $input = [], array $meta = []): RunResult
+    public function runSession(GraphDefinition $graph, string $threadId, array $input = [], array $meta = [], RuntimeOptions|array $options = []): RunResult
     {
-        return $this->locks->withLock('agent-graph:session:'.$graph->key().':'.$threadId, function () use ($graph, $threadId, $input, $meta): RunResult {
+        return $this->locks->withLock('agent-graph:session:'.$graph->key().':'.$threadId, function () use ($graph, $threadId, $input, $meta, $options): RunResult {
             $active = $this->latestForThreadGraph($threadId, $graph->key());
 
             if ($active !== null) {
@@ -83,17 +86,19 @@ class GraphRuntime
                 }
             }
 
-            return $this->run($graph, $threadId, $input, $meta);
+            return $this->run($graph, $threadId, $input, $meta, $options);
         });
     }
 
     /**
      * @param  array<string, GraphDefinition>  $graphs
      */
-    public function resume(string $runId, array $payload, array $graphs, bool $strictKeys = false): RunResult
+    public function resume(string $runId, array $payload, array $graphs, bool $strictKeys = false, RuntimeOptions|array $options = []): RunResult
     {
-        return $this->locks->withLock('agent-graph:run:'.$runId, function () use ($runId, $payload, $graphs, $strictKeys): RunResult {
+        return $this->locks->withLock('agent-graph:run:'.$runId, function () use ($runId, $payload, $graphs, $strictKeys, $options): RunResult {
             $run = $this->runs->find($runId) ?? throw new RuntimeException("Run [{$runId}] was not found.");
+            $incomingOptions = RuntimeOptions::from($options);
+            $runtimeOptions = $incomingOptions->isDefault() ? RuntimeOptions::fromRun($run) : $incomingOptions;
             $this->assertRunCanResume($run);
             $graph = $graphs[$run['graph_key']] ?? throw new RuntimeException("Graph [{$run['graph_key']}] is not defined.");
             $this->assertGraphVersionMatches($run, $graph, 'Run');
@@ -116,13 +121,19 @@ class GraphRuntime
 
             $state = array_merge($checkpoint['state'], $resumePayload);
             $next = $checkpoint['next_nodes'] ?: $graph->entryNodes();
-            $run = $this->runs->update($runId, ['status' => 'running']);
+            $updates = ['status' => 'running'];
+
+            if (! $incomingOptions->isDefault()) {
+                $updates['meta'] = $runtimeOptions->applyToMeta(is_array($run['meta'] ?? null) ? $run['meta'] : []);
+            }
+
+            $run = $this->runs->update($runId, $updates);
             $this->dispatchRunEvent('run.resumed', new GraphResumed($runId, $run['thread_id'], $graph->key(), payload: $resumePayload));
 
             return $this->continueLocked($graph, $run, $state, $next, [
                 'resume_payload' => $resumePayload,
                 'interrupt_id' => $resumeInterruptId,
-            ]);
+            ], $runtimeOptions);
         });
     }
 
@@ -438,6 +449,7 @@ class GraphRuntime
                 return null;
             }
 
+            $options = RuntimeOptions::fromRun($run);
             $latestCheckpoint = $this->checkpoints->latestForRun($runId);
 
             if (RunStatus::isTerminal($run['status'] ?? null)) {
@@ -550,19 +562,20 @@ class GraphRuntime
                 return new RunResult($run, $state);
             }
 
-            return $this->queueSuperstepLocked($graph, $run, $state, $nextSchedule, $step, $checkpoint['checkpoint_id']);
+            return $this->queueSuperstepLocked($graph, $run, $state, $nextSchedule, $step, $checkpoint['checkpoint_id'], options: $options);
         });
     }
 
-    protected function continue(GraphDefinition $graph, array $run, array $state, array $nextNodes, array $resumeContext = []): RunResult
+    protected function continue(GraphDefinition $graph, array $run, array $state, array $nextNodes, array $resumeContext = [], ?RuntimeOptions $options = null): RunResult
     {
-        return $this->locks->withLock('agent-graph:run:'.$run['public_id'], function () use ($graph, $run, $state, $nextNodes, $resumeContext): RunResult {
-            return $this->continueLocked($graph, $run, $state, $nextNodes, $resumeContext);
+        return $this->locks->withLock('agent-graph:run:'.$run['public_id'], function () use ($graph, $run, $state, $nextNodes, $resumeContext, $options): RunResult {
+            return $this->continueLocked($graph, $run, $state, $nextNodes, $resumeContext, $options);
         });
     }
 
-    protected function continueLocked(GraphDefinition $graph, array $run, array $state, array $nextNodes, array $resumeContext = []): RunResult
+    protected function continueLocked(GraphDefinition $graph, array $run, array $state, array $nextNodes, array $resumeContext = [], ?RuntimeOptions $options = null): RunResult
     {
+        $options ??= RuntimeOptions::fromRun($run);
         $freshRun = $this->runs->find($run['public_id']) ?? $run;
 
         if (RunStatus::isTerminal($freshRun['status'] ?? null)) {
@@ -572,7 +585,7 @@ class GraphRuntime
         }
 
         $run = $freshRun;
-        $maxSteps = (int) config('agent-graph.max_steps', 100);
+        $maxSteps = $options->maxSteps();
         $latestCheckpoint = $this->checkpoints->latestForRun($run['public_id']);
         $step = (int) ($resumeContext['step'] ?? ($latestCheckpoint['step'] ?? 0));
         $checkpointId = $resumeContext['source_checkpoint_id'] ?? ($latestCheckpoint['checkpoint_id'] ?? null);
@@ -599,6 +612,7 @@ class GraphRuntime
                 $checkpointId,
                 $applyResumeContext ? $resumePayload : null,
                 $applyResumeContext ? $resumeInterruptId : null,
+                $options,
             );
         }
 
@@ -809,8 +823,10 @@ class GraphRuntime
     /**
      * @param  array<int, Send>  $schedule
      */
-    protected function queueSuperstepLocked(GraphDefinition $graph, array $run, array $state, array $schedule, int $currentStep, ?string $checkpointId, ?array $resumePayload = null, ?string $interruptId = null): RunResult
+    protected function queueSuperstepLocked(GraphDefinition $graph, array $run, array $state, array $schedule, int $currentStep, ?string $checkpointId, ?array $resumePayload = null, ?string $interruptId = null, ?RuntimeOptions $options = null): RunResult
     {
+        $options ??= RuntimeOptions::fromRun($run);
+
         if ($schedule === []) {
             $run = $this->transaction(fn () => $this->runs->update($run['public_id'], [
                 'status' => 'completed',
@@ -821,7 +837,7 @@ class GraphRuntime
             return new RunResult($run, $state);
         }
 
-        if ($currentStep >= (int) config('agent-graph.max_steps', 100)) {
+        if ($currentStep >= $options->maxSteps()) {
             $run = $this->runs->update($run['public_id'], [
                 'status' => 'failed',
                 'error' => RuntimeError::fromMessage('Maximum graph steps exceeded.', code: 'max_steps_exceeded'),
@@ -1413,6 +1429,6 @@ class GraphRuntime
 
     protected function delayScheduler(): DelayScheduler
     {
-        return $this->delayScheduler ??= app(DelayScheduler::class);
+        return ($this->delaySchedulers ??= app(DelaySchedulerResolver::class))->resolve();
     }
 }

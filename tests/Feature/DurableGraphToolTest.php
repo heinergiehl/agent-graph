@@ -72,6 +72,36 @@ it('exposes durable graph sessions as Laravel AI compatible tools without changi
         ->and($completed['state']['answer'])->toBe('tool answer');
 });
 
+it('sanitizes durable graph tool names and rejects invalid custom names', function () {
+    $tool = AgentGraph::durableTool('durable-workflow.123/alpha');
+
+    expect($tool->name())->toBe('durable_durable_workflow_123_alpha');
+
+    expect(fn () => $tool->name('123 starts with digits'))
+        ->toThrow(InvalidArgumentException::class, 'Invalid AI tool name');
+});
+
+it('applies runtime options to durable graph session starts', function () {
+    config()->set('agent-graph.max_steps', 10);
+
+    AgentGraph::define(
+        StateGraph::make('durable_runtime_options_graph')
+            ->state(['count' => 'int|null'])
+            ->node('loop', DurableLoopNode::class)
+            ->edge(StateGraph::START, 'loop')
+            ->edge('loop', 'loop')
+            ->compile(),
+    );
+
+    $run = AgentGraph::session('durable_runtime_options_graph', 'durable-options-thread')
+        ->start(options: ['max_steps' => 1]);
+
+    expect($run->status())->toBe('failed')
+        ->and($run->error()['code'])->toBe('max_steps_exceeded')
+        ->and(app('agent-graph.checkpoints')->listForRun($run->runId()))->toHaveCount(1)
+        ->and(config('agent-graph.max_steps'))->toBe(10);
+});
+
 final class DurableAskNode implements Node
 {
     public function __invoke(NodeContext $context): NodeResult
@@ -89,5 +119,13 @@ final class DurableAnswerNode implements Node
     public function __invoke(NodeContext $context): NodeResult
     {
         return NodeResult::end(['answer' => (string) $context->state('answer')]);
+    }
+}
+
+final class DurableLoopNode implements Node
+{
+    public function __invoke(NodeContext $context): NodeResult
+    {
+        return NodeResult::write(['count' => ((int) $context->state('count')) + 1]);
     }
 }

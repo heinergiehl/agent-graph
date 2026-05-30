@@ -182,9 +182,11 @@ Stability: stable.
 
 Returned by `AgentGraph::graph($key)`.
 
-Methods: `thread()`, `input()`, `meta()`, `parent()`, `onEvent()`, `collectEvents()`, and `run()`.
+Methods: `thread()`, `input()`, `meta()`, `parent()`, `options()`, `maxSteps()`, `onEvent()`, `collectEvents()`, and `run()`.
 
 `parent(string $runId, ?string $checkpointId = null, ?string $nodeId = null, int $depth = 1, string $relationship = 'child')` stores generic parent lineage under `run.meta.parent`.
+
+`options(RuntimeOptions|array $options)` applies per-run runtime options. `maxSteps(int $maxSteps)` is a shortcut for `options(['max_steps' => $maxSteps])`. Explicit options are stored under `run.meta.runtime_options`, so queued and delayed continuations keep the same runtime limits without changing global config.
 
 `onEvent(callable $listener)` receives `RunEvent` objects synchronously for that run. `collectEvents(bool $collect = true)` stores the same normalized events on the returned `RunResult`.
 
@@ -278,7 +280,7 @@ Stability: stable.
 
 `AgentGraph::session(string $graphKey, string $threadId)` returns an active-thread workflow session.
 
-Methods: `start(array $input = [], array $meta = [])`, `run(array $input = [], array $meta = [])`, `resume(array $payload = [], bool $strict = false)`, `cancel(array $meta = [])`, `status()`, and `activeRun()`.
+Methods: `start(array $input = [], array $meta = [], RuntimeOptions|array $options = [])`, `run(array $input = [], array $meta = [], RuntimeOptions|array $options = [])`, `resume(array $payload = [], bool $strict = false, RuntimeOptions|array $options = [])`, `cancel(array $meta = [])`, `status()`, and `activeRun()`.
 
 `run()` returns the active interrupted/delayed/running run for the graph+thread when one exists; otherwise it starts a new run. The active-run lookup and start path are protected by an AgentGraph session lock. `start()` always creates a fresh run.
 
@@ -289,6 +291,8 @@ Stability: additive beta API.
 `AgentGraph::tool(string $graphKey)` exposes a graph as a Laravel AI tool.
 
 Configuration methods: `name()`, `description()`, `thread()`, `input()`, `output()`, and `meta()`.
+
+Default tool names are sanitized provider-compatible names derived from the graph key with a `run_` prefix. Custom names must be 1-64 characters, start with a letter, and contain only letters, numbers, `_`, or `-`.
 
 `input(Closure $mapper)` maps a Laravel AI tool `Request` into graph input for new runs and resume payloads. `meta(Closure|array $meta)` adds metadata to new runs only. `output(Closure $mapper)` maps the final `RunResult` and original `Request` into the tool response.
 
@@ -301,6 +305,8 @@ Stability: stable.
 `AgentGraph::durableTool(string $graphKey)` exposes `DurableGraphSession` as a Laravel AI `Tool`.
 
 Configuration methods: `name()`, `description()`, `thread()`, and `strictResume()`.
+
+Default durable tool names use the same provider-compatible validation with a `durable_` prefix. Custom names follow the same validation rules as `GraphTool`.
 
 The default response is JSON with `status`, `run_id`, `thread_id`, `state`, `interrupt`, `summary`, and `error`. The existing `GraphTool` response shape is unchanged.
 
@@ -339,7 +345,7 @@ The package database stores use `agent-graph.database.connection`, which maps to
 
 Production runs require a cache store that supports atomic locks. Keep `AGENT_GRAPH_LOCK_FAIL_WITHOUT_PROVIDER=true` outside local throwaway tests.
 
-The default `DelayScheduler` dispatches `ContinueDelayedGraphJob` on the configured AgentGraph execution queue connection and queue; Laravel applications can bind their own scheduler implementation.
+The default `DelayScheduler` dispatches `ContinueDelayedGraphJob` on the configured AgentGraph execution queue connection and queue; Laravel applications can bind their own scheduler implementation. `GraphRuntime` resolves the scheduler lazily through `DelaySchedulerResolver`, so container rebindings made after runtime construction are honored.
 
 Stability: stable, with v1 contract changes documented in `UPGRADE.md`.
 
@@ -360,4 +366,5 @@ Stability: stable, with v1 contract changes documented in `UPGRADE.md`.
 - Run-event observation is additive and does not change `GraphStreamDelta`, Laravel AI `StreamableAgentResponse`, `GraphTool` JSON shape, or provider behavior.
 - GraphTool mapping hooks are adapter conveniences; durable active-thread semantics belong in `DurableGraphSession` or `DurableGraphTool`.
 - Parent/child run metadata is stored under `run.meta.parent` for inspection and lineage. `SubgraphNode` uses this same lineage.
+- Per-run runtime options currently support `max_steps` and persist on the run so resumes, queued supersteps, and delayed continuations use the same bound.
 - The hardening migrations add interrupt expiry and queued node execution records. Existing published migrations remain valid; apps must run the additive migrations.

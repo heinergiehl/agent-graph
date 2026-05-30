@@ -30,7 +30,7 @@ class GraphTool implements Stringable, Tool
         protected AgentGraphManager $manager,
         protected string $graphKey,
     ) {
-        $this->name = 'run_'.$graphKey;
+        $this->name = ToolName::fromGraphKey('run', $graphKey);
         $this->description = "Run the {$graphKey} agent graph.";
     }
 
@@ -40,7 +40,7 @@ class GraphTool implements Stringable, Tool
             return $this->name;
         }
 
-        $this->name = $name;
+        $this->name = ToolName::assertValid($name);
 
         return $this;
     }

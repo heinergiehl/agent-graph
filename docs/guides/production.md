@@ -92,7 +92,7 @@ Use `AgentGraph::resumeStrict()` for public endpoints that should reject unknown
 
 Delayed continuation jobs are safe to retry. A delayed job no-ops when the run is already `completed`, `cancelled`, or `failed`, or when its interrupt is no longer the pending delay interrupt.
 
-Delay interrupts schedule through `DelayScheduler::class`. The default implementation dispatches `ContinueDelayedGraphJob` on the configured AgentGraph execution queue connection and queue; bind a custom scheduler only when your app needs a different delayed-execution backend.
+Delay interrupts schedule through `DelayScheduler::class`. The default implementation dispatches `ContinueDelayedGraphJob` on the configured AgentGraph execution queue connection and queue; bind a custom scheduler only when your app needs a different delayed-execution backend. The runtime resolves the scheduler lazily, so package or app service providers can rebind the contract after the runtime has already been constructed.
 
 Keep external side effects inside `$context->tasks()->once()` so queue retries do not repeat irreversible work.
 

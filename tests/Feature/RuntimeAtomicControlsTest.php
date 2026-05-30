@@ -2,7 +2,6 @@
 
 use Heiner\AgentGraph\AgentGraphManager;
 use Heiner\AgentGraph\Contracts\CheckpointStore;
-use Heiner\AgentGraph\Contracts\DelayScheduler;
 use Heiner\AgentGraph\Contracts\InterruptStore;
 use Heiner\AgentGraph\Contracts\LockProvider;
 use Heiner\AgentGraph\Contracts\MemoryStore;
@@ -18,6 +17,7 @@ use Heiner\AgentGraph\Runtime\GraphRuntime;
 use Heiner\AgentGraph\Runtime\NodeContext;
 use Heiner\AgentGraph\Runtime\NodeResult;
 use Heiner\AgentGraph\Runtime\RunEventDispatcher;
+use Heiner\AgentGraph\Support\DelaySchedulerResolver;
 
 it('resolves resume interrupts while holding the run lock', function () {
     $locks = new RuntimeAtomicRecordingLockProvider;
@@ -109,7 +109,7 @@ function runtimeAtomicManager(RuntimeAtomicRecordingLockProvider $locks, Interru
         memory: app(MemoryStore::class),
         traces: app(TraceStore::class),
         locks: $locks,
-        delayScheduler: app(DelayScheduler::class),
+        delaySchedulers: app(DelaySchedulerResolver::class),
         events: app(RunEventDispatcher::class),
         nodeExecutions: app(NodeExecutionStore::class),
     );

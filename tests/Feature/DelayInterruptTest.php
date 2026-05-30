@@ -77,6 +77,41 @@ it('delegates delay interrupt scheduling to the bound scheduler', function () {
         ->and($scheduler->scheduled[0]['resume_at'])->toBeInstanceOf(DateTimeInterface::class);
 });
 
+it('resolves the delay scheduler for each delay after container rebinding', function () {
+    $firstScheduler = new RecordingDelayScheduler;
+    app()->instance(DelayScheduler::class, $firstScheduler);
+
+    AgentGraph::define(
+        StateGraph::make('lazy_delay_scheduler_first')
+            ->state(['ready' => 'bool|null'])
+            ->node('wait', DelayNode::class)
+            ->edge(StateGraph::START, 'wait')
+            ->edge('wait', StateGraph::END)
+    );
+
+    $first = AgentGraph::graph('lazy_delay_scheduler_first')->thread('lazy-delay-first')->input([])->run();
+
+    $secondScheduler = new RecordingDelayScheduler;
+    app()->instance(DelayScheduler::class, $secondScheduler);
+
+    AgentGraph::define(
+        StateGraph::make('lazy_delay_scheduler_second')
+            ->state(['ready' => 'bool|null'])
+            ->node('wait', DelayNode::class)
+            ->edge(StateGraph::START, 'wait')
+            ->edge('wait', StateGraph::END)
+    );
+
+    $second = AgentGraph::graph('lazy_delay_scheduler_second')->thread('lazy-delay-second')->input([])->run();
+
+    expect($first->status())->toBe('delayed')
+        ->and($second->status())->toBe('delayed')
+        ->and($firstScheduler->scheduled)->toHaveCount(1)
+        ->and($firstScheduler->scheduled[0]['run_id'])->toBe($first->runId())
+        ->and($secondScheduler->scheduled)->toHaveCount(1)
+        ->and($secondScheduler->scheduled[0]['run_id'])->toBe($second->runId());
+});
+
 final class DelayNode implements Node
 {
     public function __invoke(NodeContext $context): NodeResult

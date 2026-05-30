@@ -1183,7 +1183,7 @@ Final verification: `QueuedSuperstepTest`, `NodeRetryPolicyTest`, and `Persisten
 - Test: `tests/Feature/DurableGraphToolTest.php`
 - Test: `tests/Feature/DelayInterruptTest.php`
 
-- [ ] **Step 1: Write tool name tests**
+- [x] **Step 1: Write tool name tests**
 
 Add:
 
@@ -1200,7 +1200,7 @@ it('rejects invalid custom tool names', function () {
 });
 ```
 
-- [ ] **Step 2: Implement `ToolName` helper**
+- [x] **Step 2: Implement `ToolName` helper**
 
 Create `src/LaravelAi/ToolName.php`:
 
@@ -1238,7 +1238,7 @@ final class ToolName
 }
 ```
 
-- [ ] **Step 3: Use helper in tools**
+- [x] **Step 3: Use helper in tools**
 
 In `GraphTool::__construct()`:
 
@@ -1258,7 +1258,7 @@ In `name()` setters:
 $this->name = ToolName::assertValid($name);
 ```
 
-- [ ] **Step 4: Add runtime options**
+- [x] **Step 4: Add runtime options**
 
 Create `src/Runtime/RuntimeOptions.php`:
 
@@ -1289,7 +1289,7 @@ final class RuntimeOptions
 
 Thread it through `PendingGraphRun`, `DurableGraphSession`, and `GraphRuntime::run()` / `resume()` / `continueLocked()` so plugins can set per-run `max_steps` without mutating global config.
 
-- [ ] **Step 5: Resolve delay scheduler lazily**
+- [x] **Step 5: Resolve delay scheduler lazily**
 
 Create `src/Support/DelaySchedulerResolver.php`:
 
@@ -1320,7 +1320,7 @@ protected function delayScheduler(): DelayScheduler
 
 This makes post-resolution container rebinding deterministic for plugin integrations.
 
-- [ ] **Step 6: Verify**
+- [x] **Step 6: Verify**
 
 Run:
 
@@ -1331,6 +1331,10 @@ composer test -- --filter=DelayInterruptTest
 ```
 
 Expected: adapter behavior remains compatible except safer default tool names.
+
+Observed before implementation: focused tests failed on unsanitized default tool names, invalid custom names not being rejected, missing per-run runtime options, and cached delay scheduler bindings.
+
+Observed after implementation: `LaravelAiIntegrationTest` (9 passed), `DurableGraphToolTest` (4 passed), `DelayInterruptTest` (4 passed), `RuntimeHardeningTest` (11 passed), and `RuntimeAtomicControlsTest` (3 passed) pass with sanitized tool names, persisted `max_steps` runtime options, and lazy scheduler resolution. Full verification also passes: `composer test` (201 passed, 1 skipped), `composer test:lint`, and `composer test:types`.
 
 ## Task 9: Doctor Command As Production Safety Gate
 

@@ -46,6 +46,7 @@ use Heiner\AgentGraph\Persistence\InMemoryWriteStore;
 use Heiner\AgentGraph\Runtime\GraphRuntime;
 use Heiner\AgentGraph\Runtime\RunEventDispatcher;
 use Heiner\AgentGraph\Support\CacheLockProvider;
+use Heiner\AgentGraph\Support\DelaySchedulerResolver;
 use Heiner\AgentGraph\Support\QueueDelayScheduler;
 use Heiner\AgentGraph\Support\SystemClock;
 use Illuminate\Support\ServiceProvider;
@@ -59,6 +60,7 @@ class AgentGraphServiceProvider extends ServiceProvider
         $this->app->singleton(Clock::class, SystemClock::class);
         $this->app->singleton(LockProvider::class, CacheLockProvider::class);
         $this->app->singleton(DelayScheduler::class, QueueDelayScheduler::class);
+        $this->app->singleton(DelaySchedulerResolver::class);
 
         $this->registerStores();
 

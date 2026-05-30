@@ -11,6 +11,8 @@ AgentGraph::tool('support_triage')
 
 The tool can start a new run or resume an existing run when `run_id` is present. Responses are structured JSON so chat UIs can detect `completed`, `interrupted`, `delayed`, and `failed` statuses.
 
+Default tool names are sanitized from the graph key for provider compatibility. Use `name()` only when an integration needs a specific stable tool name; custom names must start with a letter and contain only letters, numbers, `_`, or `-`.
+
 Use mapping hooks when the parent agent's tool request shape is different from graph state:
 
 ```php

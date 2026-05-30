@@ -15,6 +15,7 @@ use Heiner\AgentGraph\Runtime\RunEventDispatcher;
 use Heiner\AgentGraph\Runtime\RunResult;
 use Heiner\AgentGraph\Runtime\RunSnapshot;
 use Heiner\AgentGraph\Runtime\RunTimeline;
+use Heiner\AgentGraph\Runtime\RuntimeOptions;
 use InvalidArgumentException;
 
 class AgentGraphManager
@@ -45,32 +46,32 @@ class AgentGraphManager
         return $this->graphs[$key] ?? throw new InvalidArgumentException("Graph [{$key}] is not defined.");
     }
 
-    public function run(GraphDefinition $graph, string $threadId, array $input = [], array $meta = [], ?callable $onEvent = null, bool $collectEvents = false): RunResult
+    public function run(GraphDefinition $graph, string $threadId, array $input = [], array $meta = [], ?callable $onEvent = null, bool $collectEvents = false, RuntimeOptions|array $options = []): RunResult
     {
-        return $this->observe($onEvent, $collectEvents, fn (): RunResult => $this->runtime->run($graph, $threadId, $input, $meta));
+        return $this->observe($onEvent, $collectEvents, fn (): RunResult => $this->runtime->run($graph, $threadId, $input, $meta, $options));
     }
 
-    public function runSession(string $graphKey, string $threadId, array $input = [], array $meta = []): RunResult
+    public function runSession(string $graphKey, string $threadId, array $input = [], array $meta = [], RuntimeOptions|array $options = []): RunResult
     {
-        return $this->runtime->runSession($this->definition($graphKey), $threadId, $input, $meta);
+        return $this->runtime->runSession($this->definition($graphKey), $threadId, $input, $meta, $options);
     }
 
-    public function resume(string $runId, array $payload = [], ?callable $onEvent = null, bool $collectEvents = false): RunResult
+    public function resume(string $runId, array $payload = [], ?callable $onEvent = null, bool $collectEvents = false, RuntimeOptions|array $options = []): RunResult
     {
         return $this->observe(
             $onEvent,
             $collectEvents,
-            fn (): RunResult => $this->runtime->resume($runId, $payload, $this->graphs),
+            fn (): RunResult => $this->runtime->resume($runId, $payload, $this->graphs, options: $options),
             $runId,
         );
     }
 
-    public function resumeStrict(string $runId, array $payload = [], ?callable $onEvent = null, bool $collectEvents = false): RunResult
+    public function resumeStrict(string $runId, array $payload = [], ?callable $onEvent = null, bool $collectEvents = false, RuntimeOptions|array $options = []): RunResult
     {
         return $this->observe(
             $onEvent,
             $collectEvents,
-            fn (): RunResult => $this->runtime->resume($runId, $payload, $this->graphs, strictKeys: true),
+            fn (): RunResult => $this->runtime->resume($runId, $payload, $this->graphs, strictKeys: true, options: $options),
             $runId,
         );
     }
