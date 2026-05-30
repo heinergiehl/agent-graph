@@ -335,6 +335,8 @@ Adapters must preserve JSON-serializable arrays for stored payloads and return d
 
 The package database stores use `agent-graph.database.connection`, which maps to `AGENT_GRAPH_DB_CONNECTION`. The same configured connection is used by package migrations, runtime transactions, `agent-graph:doctor`, `agent-graph:prune`, and the optional `PgvectorMemoryStore`.
 
+Production runs require a cache store that supports atomic locks. Keep `AGENT_GRAPH_LOCK_FAIL_WITHOUT_PROVIDER=true` outside local throwaway tests.
+
 The default `DelayScheduler` dispatches `ContinueDelayedGraphJob` on the configured AgentGraph execution queue connection and queue; Laravel applications can bind their own scheduler implementation.
 
 Stability: stable, with v1 contract changes documented in `UPGRADE.md`.

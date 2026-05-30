@@ -92,33 +92,38 @@ class GraphRuntime
      */
     public function resume(string $runId, array $payload, array $graphs, bool $strictKeys = false): RunResult
     {
-        $run = $this->runs->find($runId) ?? throw new RuntimeException("Run [{$runId}] was not found.");
-        $this->assertRunCanResume($run);
-        $graph = $graphs[$run['graph_key']] ?? throw new RuntimeException("Graph [{$run['graph_key']}] is not defined.");
-        $this->assertGraphVersionMatches($run, $graph, 'Run');
-        $checkpoint = $this->checkpoints->latestForRun($runId) ?? throw new RuntimeException("Run [{$runId}] has no checkpoint.");
-        $interrupt = $this->interrupts->pendingForRun($runId);
+        return $this->locks->withLock('agent-graph:run:'.$runId, function () use ($runId, $payload, $graphs, $strictKeys): RunResult {
+            $run = $this->runs->find($runId) ?? throw new RuntimeException("Run [{$runId}] was not found.");
+            $this->assertRunCanResume($run);
+            $graph = $graphs[$run['graph_key']] ?? throw new RuntimeException("Graph [{$run['graph_key']}] is not defined.");
+            $this->assertGraphVersionMatches($run, $graph, 'Run');
+            $checkpoint = $this->checkpoints->latestForRun($runId) ?? throw new RuntimeException("Run [{$runId}] has no checkpoint.");
+            $interrupt = $this->interrupts->pendingForRun($runId);
 
-        $resumePayload = $payload;
-        unset($resumePayload['interrupt_id']);
-        $this->assertStatePatchMatchesSchema($graph, $resumePayload, strictKeys: $strictKeys);
+            $resumePayload = $payload;
+            unset($resumePayload['interrupt_id']);
+            $this->assertStatePatchMatchesSchema($graph, $resumePayload, strictKeys: $strictKeys);
 
-        if (isset($payload['interrupt_id'])) {
-            $this->assertMatchingPendingInterrupt($runId, (string) $payload['interrupt_id'], $interrupt);
-            $this->interrupts->resolve($payload['interrupt_id'], $payload);
-        } elseif ($interrupt !== null && in_array($run['status'], ['interrupted', 'delayed'], true)) {
-            throw new InvalidArgumentException("Run [{$runId}] requires interrupt_id to resume.");
-        }
+            $resumeInterruptId = null;
 
-        $state = array_merge($checkpoint['state'], $resumePayload);
-        $next = $checkpoint['next_nodes'] ?: [$graph->entryNode()];
-        $run = $this->runs->update($runId, ['status' => 'running']);
-        $this->dispatchRunEvent('run.resumed', new GraphResumed($runId, $run['thread_id'], $graph->key(), payload: $resumePayload));
+            if (isset($payload['interrupt_id'])) {
+                $resumeInterruptId = (string) $payload['interrupt_id'];
+                $this->assertMatchingPendingInterrupt($runId, $resumeInterruptId, $interrupt);
+                $this->interrupts->resolvePending($resumeInterruptId, $runId, $payload);
+            } elseif ($interrupt !== null && in_array($run['status'], ['interrupted', 'delayed'], true)) {
+                throw new InvalidArgumentException("Run [{$runId}] requires interrupt_id to resume.");
+            }
 
-        return $this->continue($graph, $run, $state, $next, [
-            'resume_payload' => $resumePayload,
-            'interrupt_id' => isset($payload['interrupt_id']) ? (string) $payload['interrupt_id'] : null,
-        ]);
+            $state = array_merge($checkpoint['state'], $resumePayload);
+            $next = $checkpoint['next_nodes'] ?: [$graph->entryNode()];
+            $run = $this->runs->update($runId, ['status' => 'running']);
+            $this->dispatchRunEvent('run.resumed', new GraphResumed($runId, $run['thread_id'], $graph->key(), payload: $resumePayload));
+
+            return $this->continueLocked($graph, $run, $state, $next, [
+                'resume_payload' => $resumePayload,
+                'interrupt_id' => $resumeInterruptId,
+            ]);
+        });
     }
 
     /**
@@ -126,56 +131,61 @@ class GraphRuntime
      */
     public function resumeWithStateEdit(string $runId, string $interruptId, array $statePatch, array $graphs, ?string $resolvedBy = null): RunResult
     {
-        $run = $this->runs->find($runId) ?? throw new RuntimeException("Run [{$runId}] was not found.");
-        $this->assertRunCanResume($run);
-        $graph = $graphs[$run['graph_key']] ?? throw new RuntimeException("Graph [{$run['graph_key']}] is not defined.");
-        $this->assertGraphVersionMatches($run, $graph, 'Run');
-        $checkpoint = $this->checkpoints->latestForRun($runId) ?? throw new RuntimeException("Run [{$runId}] has no checkpoint.");
-        $interrupt = $this->interrupts->pendingForRun($runId);
+        return $this->locks->withLock('agent-graph:run:'.$runId, function () use ($runId, $interruptId, $statePatch, $graphs, $resolvedBy): RunResult {
+            $run = $this->runs->find($runId) ?? throw new RuntimeException("Run [{$runId}] was not found.");
+            $this->assertRunCanResume($run);
+            $graph = $graphs[$run['graph_key']] ?? throw new RuntimeException("Graph [{$run['graph_key']}] is not defined.");
+            $this->assertGraphVersionMatches($run, $graph, 'Run');
+            $checkpoint = $this->checkpoints->latestForRun($runId) ?? throw new RuntimeException("Run [{$runId}] has no checkpoint.");
+            $interrupt = $this->interrupts->pendingForRun($runId);
 
-        $this->assertMatchingPendingInterrupt($runId, $interruptId, $interrupt);
+            $this->assertMatchingPendingInterrupt($runId, $interruptId, $interrupt);
 
-        if (($interrupt['type'] ?? null) !== 'state_edit') {
-            throw new InvalidArgumentException("Interrupt [{$interruptId}] is not a state_edit interrupt.");
-        }
+            if (($interrupt['type'] ?? null) !== 'state_edit') {
+                throw new InvalidArgumentException("Interrupt [{$interruptId}] is not a state_edit interrupt.");
+            }
 
-        $this->assertStatePatchMatchesSchema($graph, $statePatch);
+            $this->assertStatePatchMatchesSchema($graph, $statePatch);
 
-        $this->interrupts->resolve(
-            $interruptId,
-            ['interrupt_id' => $interruptId, 'state' => $statePatch],
-            $resolvedBy,
-        );
+            $this->interrupts->resolvePending(
+                $interruptId,
+                $runId,
+                ['interrupt_id' => $interruptId, 'state' => $statePatch],
+                $resolvedBy,
+            );
 
-        $state = array_merge($checkpoint['state'], $statePatch);
-        $next = $checkpoint['next_nodes'] ?: [$graph->entryNode()];
-        $run = $this->runs->update($runId, ['status' => 'running']);
-        $this->dispatchRunEvent('run.resumed', new GraphResumed($runId, $run['thread_id'], $graph->key(), payload: $statePatch));
+            $state = array_merge($checkpoint['state'], $statePatch);
+            $next = $checkpoint['next_nodes'] ?: [$graph->entryNode()];
+            $run = $this->runs->update($runId, ['status' => 'running']);
+            $this->dispatchRunEvent('run.resumed', new GraphResumed($runId, $run['thread_id'], $graph->key(), payload: $statePatch));
 
-        return $this->continue($graph, $run, $state, $next, [
-            'resume_payload' => $statePatch,
-            'interrupt_id' => $interruptId,
-        ]);
+            return $this->continueLocked($graph, $run, $state, $next, [
+                'resume_payload' => $statePatch,
+                'interrupt_id' => $interruptId,
+            ]);
+        });
     }
 
     public function cancel(string $runId, array $meta = []): RunResult
     {
-        $run = $this->runs->find($runId) ?? throw new RuntimeException("Run [{$runId}] was not found.");
+        return $this->locks->withLock('agent-graph:run:'.$runId, function () use ($runId, $meta): RunResult {
+            $run = $this->runs->find($runId) ?? throw new RuntimeException("Run [{$runId}] was not found.");
 
-        if (! RunStatus::isActive($run['status'] ?? null)) {
-            throw new RuntimeException("Run [{$runId}] is {$run['status']} and cannot be cancelled.");
-        }
+            if (! RunStatus::isActive($run['status'] ?? null)) {
+                throw new RuntimeException("Run [{$runId}] is {$run['status']} and cannot be cancelled.");
+            }
 
-        $run = $this->runs->update($runId, [
-            'status' => 'cancelled',
-            'cancelled_at' => now(),
-            'meta' => array_merge($run['meta'] ?? [], ['cancelled' => $meta]),
-        ]);
+            $run = $this->runs->update($runId, [
+                'status' => 'cancelled',
+                'cancelled_at' => now(),
+                'meta' => array_merge($run['meta'] ?? [], ['cancelled' => $meta]),
+            ]);
 
-        $checkpoint = $this->checkpoints->latestForRun($runId);
-        $this->dispatchRunEvent('run.cancelled', new GraphRunCancelled($runId, $run['thread_id'], $run['graph_key'], payload: $meta));
+            $checkpoint = $this->checkpoints->latestForRun($runId);
+            $this->dispatchRunEvent('run.cancelled', new GraphRunCancelled($runId, $run['thread_id'], $run['graph_key'], payload: $meta));
 
-        return new RunResult($run, $checkpoint['state'] ?? []);
+            return new RunResult($run, $checkpoint['state'] ?? []);
+        });
     }
 
     public function checkpoint(string $checkpointId, bool $withWrites = false): ?CheckpointSnapshot
@@ -545,239 +555,253 @@ class GraphRuntime
 
     protected function continue(GraphDefinition $graph, array $run, array $state, array $nextNodes, array $resumeContext = []): RunResult
     {
-        return $this->locks->withLock('agent-graph:run:'.$run['public_id'], function () use ($graph, $run, $state, $nextNodes, $resumeContext) {
-            $maxSteps = (int) config('agent-graph.max_steps', 100);
-            $latestCheckpoint = $this->checkpoints->latestForRun($run['public_id']);
-            $step = (int) ($resumeContext['step'] ?? ($latestCheckpoint['step'] ?? 0));
-            $checkpointId = $resumeContext['source_checkpoint_id'] ?? ($latestCheckpoint['checkpoint_id'] ?? null);
-            $reducers = $this->inferReducers($graph);
-            $reducer = new StateReducer($reducers);
-            $schedule = is_array($resumeContext['schedule'] ?? null)
-                ? $this->scheduler()->normalize($resumeContext['schedule'])
-                : $this->scheduler()->normalize($nextNodes);
-            $resumePayload = array_key_exists('resume_payload', $resumeContext) && is_array($resumeContext['resume_payload'])
-                ? $resumeContext['resume_payload']
-                : null;
-            $resumeInterruptId = is_string($resumeContext['interrupt_id'] ?? null)
-                ? $resumeContext['interrupt_id']
-                : null;
-            $applyResumeContext = array_key_exists('resume_payload', $resumeContext) || $resumeInterruptId !== null;
+        return $this->locks->withLock('agent-graph:run:'.$run['public_id'], function () use ($graph, $run, $state, $nextNodes, $resumeContext): RunResult {
+            return $this->continueLocked($graph, $run, $state, $nextNodes, $resumeContext);
+        });
+    }
 
-            if ($this->queuesSupersteps()) {
-                return $this->queueSuperstepLocked(
-                    $graph,
-                    $run,
-                    $state,
-                    $schedule,
-                    $step,
-                    $checkpointId,
-                    $applyResumeContext ? $resumePayload : null,
-                    $applyResumeContext ? $resumeInterruptId : null,
-                );
+    protected function continueLocked(GraphDefinition $graph, array $run, array $state, array $nextNodes, array $resumeContext = []): RunResult
+    {
+        $freshRun = $this->runs->find($run['public_id']) ?? $run;
+
+        if (RunStatus::isTerminal($freshRun['status'] ?? null)) {
+            $checkpoint = $this->checkpoints->latestForRun($freshRun['public_id']);
+
+            return new RunResult($freshRun, $checkpoint['state'] ?? $state);
+        }
+
+        $run = $freshRun;
+        $maxSteps = (int) config('agent-graph.max_steps', 100);
+        $latestCheckpoint = $this->checkpoints->latestForRun($run['public_id']);
+        $step = (int) ($resumeContext['step'] ?? ($latestCheckpoint['step'] ?? 0));
+        $checkpointId = $resumeContext['source_checkpoint_id'] ?? ($latestCheckpoint['checkpoint_id'] ?? null);
+        $reducers = $this->inferReducers($graph);
+        $reducer = new StateReducer($reducers);
+        $schedule = is_array($resumeContext['schedule'] ?? null)
+            ? $this->scheduler()->normalize($resumeContext['schedule'])
+            : $this->scheduler()->normalize($nextNodes);
+        $resumePayload = array_key_exists('resume_payload', $resumeContext) && is_array($resumeContext['resume_payload'])
+            ? $resumeContext['resume_payload']
+            : null;
+        $resumeInterruptId = is_string($resumeContext['interrupt_id'] ?? null)
+            ? $resumeContext['interrupt_id']
+            : null;
+        $applyResumeContext = array_key_exists('resume_payload', $resumeContext) || $resumeInterruptId !== null;
+
+        if ($this->queuesSupersteps()) {
+            return $this->queueSuperstepLocked(
+                $graph,
+                $run,
+                $state,
+                $schedule,
+                $step,
+                $checkpointId,
+                $applyResumeContext ? $resumePayload : null,
+                $applyResumeContext ? $resumeInterruptId : null,
+            );
+        }
+
+        while ($schedule !== []) {
+            if ($step >= $maxSteps) {
+                $run = $this->runs->update($run['public_id'], [
+                    'status' => 'failed',
+                    'error' => RuntimeError::fromMessage('Maximum graph steps exceeded.', code: 'max_steps_exceeded'),
+                ]);
+                $this->dispatchRunEvent('run.failed', new GraphRunFailed($run['public_id'], $run['thread_id'], $graph->key(), payload: $run['error']));
+
+                return new RunResult($run, $state);
             }
 
-            while ($schedule !== []) {
-                if ($step >= $maxSteps) {
-                    $run = $this->runs->update($run['public_id'], [
-                        'status' => 'failed',
-                        'error' => RuntimeError::fromMessage('Maximum graph steps exceeded.', code: 'max_steps_exceeded'),
-                    ]);
+            try {
+                $this->scheduler()->assertWithinLimit($schedule);
+            } catch (Throwable $exception) {
+                return $this->failRun($run, $graph, 'superstep', $state, $exception);
+            }
+
+            $baseState = $state;
+            $results = [];
+            $nextSchedule = [];
+            $interrupted = null;
+
+            foreach ($schedule as $scheduleIndex => $scheduledNode) {
+                $nodeId = $scheduledNode->node();
+                $nodeState = array_merge($baseState, $scheduledNode->input());
+                $this->dispatchRunEvent('node.started', new GraphNodeStarted($run['public_id'], $run['thread_id'], $graph->key(), $nodeId));
+
+                try {
+                    $result = $this->invokeNode(
+                        $graph,
+                        $nodeId,
+                        $nodeState,
+                        $run,
+                        $checkpointId,
+                        $applyResumeContext ? $resumePayload : null,
+                        $applyResumeContext ? $resumeInterruptId : null,
+                    );
+                } catch (Throwable $exception) {
+                    $error = RuntimeError::fromThrowable($exception);
+                    $run = $this->runs->update($run['public_id'], ['status' => 'failed', 'error' => $error]);
+                    $this->traces->record($run['public_id'], 'node.failed', array_merge(['node' => $nodeId], $error));
+                    $this->dispatchRunEvent('node.failed', new GraphNodeFailed($run['public_id'], $run['thread_id'], $graph->key(), $nodeId, $error));
+                    $this->dispatchRunEvent('run.failed', new GraphRunFailed($run['public_id'], $run['thread_id'], $graph->key(), payload: $run['error']));
+
+                    return new RunResult($run, $state);
+                }
+
+                if ($result->status() === 'failed') {
+                    $error = RuntimeError::fromMessage((string) $result->failureMessage(), meta: $result->meta());
+                    $run = $this->runs->update($run['public_id'], ['status' => 'failed', 'error' => $error]);
+                    $this->traces->record($run['public_id'], 'node.failed', array_merge(['node' => $nodeId], $error));
+                    $this->dispatchRunEvent('node.failed', new GraphNodeFailed($run['public_id'], $run['thread_id'], $graph->key(), $nodeId, $run['error']));
                     $this->dispatchRunEvent('run.failed', new GraphRunFailed($run['public_id'], $run['thread_id'], $graph->key(), payload: $run['error']));
 
                     return new RunResult($run, $state);
                 }
 
                 try {
-                    $this->scheduler()->assertWithinLimit($schedule);
+                    $this->assertStatePatchMatchesSchema($graph, $result->writes());
                 } catch (Throwable $exception) {
-                    return $this->failRun($run, $graph, 'superstep', $state, $exception);
+                    return $this->failRun($run, $graph, $nodeId, $state, $exception);
                 }
 
-                $baseState = $state;
-                $results = [];
-                $nextSchedule = [];
-                $interrupted = null;
-
-                foreach ($schedule as $scheduleIndex => $scheduledNode) {
-                    $nodeId = $scheduledNode->node();
-                    $nodeState = array_merge($baseState, $scheduledNode->input());
-                    $this->dispatchRunEvent('node.started', new GraphNodeStarted($run['public_id'], $run['thread_id'], $graph->key(), $nodeId));
-
-                    try {
-                        $result = $this->invokeNode(
-                            $graph,
-                            $nodeId,
-                            $nodeState,
-                            $run,
-                            $checkpointId,
-                            $applyResumeContext ? $resumePayload : null,
-                            $applyResumeContext ? $resumeInterruptId : null,
-                        );
-                    } catch (Throwable $exception) {
-                        $error = RuntimeError::fromThrowable($exception);
-                        $run = $this->runs->update($run['public_id'], ['status' => 'failed', 'error' => $error]);
-                        $this->traces->record($run['public_id'], 'node.failed', array_merge(['node' => $nodeId], $error));
-                        $this->dispatchRunEvent('node.failed', new GraphNodeFailed($run['public_id'], $run['thread_id'], $graph->key(), $nodeId, $error));
-                        $this->dispatchRunEvent('run.failed', new GraphRunFailed($run['public_id'], $run['thread_id'], $graph->key(), payload: $run['error']));
-
-                        return new RunResult($run, $state);
-                    }
-
-                    if ($result->status() === 'failed') {
-                        $error = RuntimeError::fromMessage((string) $result->failureMessage(), meta: $result->meta());
-                        $run = $this->runs->update($run['public_id'], ['status' => 'failed', 'error' => $error]);
-                        $this->traces->record($run['public_id'], 'node.failed', array_merge(['node' => $nodeId], $error));
-                        $this->dispatchRunEvent('node.failed', new GraphNodeFailed($run['public_id'], $run['thread_id'], $graph->key(), $nodeId, $run['error']));
-                        $this->dispatchRunEvent('run.failed', new GraphRunFailed($run['public_id'], $run['thread_id'], $graph->key(), payload: $run['error']));
-
-                        return new RunResult($run, $state);
-                    }
-
-                    try {
-                        $this->assertStatePatchMatchesSchema($graph, $result->writes());
-                    } catch (Throwable $exception) {
-                        return $this->failRun($run, $graph, $nodeId, $state, $exception);
-                    }
-
-                    if ($result->status() === 'interrupted') {
-                        $interrupted = ['node_id' => $nodeId, 'result' => $result];
-                    }
-
-                    $this->recordNodeExecutionIfEnabled($run['public_id'], $step + 1, $scheduleIndex, $nodeId, $result);
-
-                    $branchState = $reducer->apply($nodeState, $result->writes());
-                    $results[] = ['node_id' => $nodeId, 'result' => $result];
-                    array_push($nextSchedule, ...$this->nextScheduleFor($graph, $nodeId, $result, $branchState));
+                if ($result->status() === 'interrupted') {
+                    $interrupted = ['node_id' => $nodeId, 'result' => $result];
                 }
 
-                if ($interrupted !== null && count($schedule) > 1) {
-                    return $this->failRun(
-                        $run,
-                        $graph,
-                        (string) $interrupted['node_id'],
-                        $state,
-                        new RuntimeException('Parallel interrupts are not supported in the same superstep. Route human review after fan-in.'),
-                    );
-                }
+                $this->recordNodeExecutionIfEnabled($run['public_id'], $step + 1, $scheduleIndex, $nodeId, $result);
 
-                try {
-                    $state = $this->applySuperstepWrites($state, $results, $reducers);
-                } catch (Throwable $exception) {
-                    return $this->failRun($run, $graph, 'superstep', $state, $exception);
-                }
-
-                $nextSchedule = $this->scheduler()->normalize($nextSchedule);
-                $nextNodes = $this->scheduler()->nodeIds($nextSchedule);
-                $step++;
-
-                try {
-                    $checkpointMeta = $this->checkpointMetaForResults($results, $nextSchedule);
-                    $checkpoint = $this->transaction(fn () => tap($this->checkpoints->create([
-                        'run_id' => $run['public_id'],
-                        'thread_id' => $run['thread_id'],
-                        'graph_key' => $graph->key(),
-                        'graph_version' => $graph->version(),
-                        'parent_checkpoint_id' => $checkpointId,
-                        'step' => $step,
-                        'state' => $state,
-                        'next_nodes' => $interrupted !== null ? [(string) $interrupted['node_id']] : $nextNodes,
-                        'completed_nodes' => array_map(fn (array $record): string => $record['node_id'], $results),
-                        'interrupts' => [],
-                        'meta' => $checkpointMeta,
-                    ]), function (array $checkpoint) use ($run, $results): void {
-                        foreach ($results as $record) {
-                            /** @var NodeResult $result */
-                            $result = $record['result'];
-                            $this->writes->createMany($run['public_id'], $checkpoint['checkpoint_id'], $record['node_id'], $result->writes(), $result->meta());
-                        }
-
-                        $this->traces->record($run['public_id'], 'checkpoint.created', [
-                            'checkpoint_id' => $checkpoint['checkpoint_id'],
-                            'nodes' => array_map(fn (array $record): string => $record['node_id'], $results),
-                        ]);
-                    }));
-                } catch (Throwable $exception) {
-                    return $this->failRun($run, $graph, 'superstep', $state, $exception);
-                }
-
-                $checkpointId = $checkpoint['checkpoint_id'];
-                foreach ($results as $record) {
-                    /** @var NodeResult $result */
-                    $result = $record['result'];
-                    $this->dispatchRunEvent('node.completed', new GraphNodeCompleted($run['public_id'], $run['thread_id'], $graph->key(), $record['node_id'], ['writes' => $result->writes()]));
-                    $this->dispatchRunEvent('checkpoint.created', new GraphCheckpointCreated($run['public_id'], $run['thread_id'], $graph->key(), $record['node_id'], ['checkpoint_id' => $checkpointId]));
-                }
-
-                if ($interrupted !== null) {
-                    /** @var NodeResult $result */
-                    $result = $interrupted['result'];
-                    $nodeId = (string) $interrupted['node_id'];
-
-                    try {
-                        [$interrupt, $run, $resumeAt] = $this->transaction(function () use ($run, $checkpointId, $nodeId, $result): array {
-                            $payload = $result->interruptPayload();
-                            $status = $result->interruptType() === 'delay' ? 'delayed' : 'interrupted';
-                            $resumeAt = null;
-
-                            if ($status === 'delayed') {
-                                $resumeAt = $this->normaliseResumeAt($payload['resume_at'] ?? null);
-                                $payload['resume_at'] = $resumeAt->toJSON();
-                            }
-
-                            $interrupt = $this->interrupts->create([
-                                'run_id' => $run['public_id'],
-                                'checkpoint_id' => $checkpointId,
-                                'node_id' => $nodeId,
-                                'type' => $result->interruptType(),
-                                'payload' => $payload,
-                                'expires_at' => $result->interruptPolicy()?->expiresAtValue(),
-                            ]);
-
-                            $updates = [
-                                'status' => $status,
-                                'current_checkpoint_id' => $checkpointId,
-                            ];
-
-                            if ($resumeAt instanceof CarbonImmutable) {
-                                $updates['resume_at'] = $resumeAt;
-                            }
-
-                            return [$interrupt, $this->runs->update($run['public_id'], $updates), $resumeAt];
-                        });
-                    } catch (Throwable $exception) {
-                        return $this->failRun($run, $graph, $nodeId, $state, $exception);
-                    }
-
-                    if ($resumeAt instanceof DateTimeInterface) {
-                        $this->delayScheduler()->schedule($run['public_id'], [
-                            'interrupt_id' => $interrupt['interrupt_id'],
-                        ], $resumeAt);
-                    }
-
-                    $this->dispatchRunEvent('interrupt.created', new GraphInterrupted($run['public_id'], $run['thread_id'], $graph->key(), $nodeId, $interrupt));
-
-                    return new RunResult($run, $state, $interrupt);
-                }
-
-                if ($nextSchedule === []) {
-                    $run = $this->transaction(fn () => $this->runs->update($run['public_id'], [
-                        'status' => 'completed',
-                        'current_checkpoint_id' => $checkpointId,
-                    ]));
-                    $this->dispatchRunEvent('run.completed', new GraphRunCompleted($run['public_id'], $run['thread_id'], $graph->key(), payload: ['state' => $state]));
-
-                    return new RunResult($run, $state);
-                }
-
-                $schedule = $nextSchedule;
-                $applyResumeContext = false;
+                $branchState = $reducer->apply($nodeState, $result->writes());
+                $results[] = ['node_id' => $nodeId, 'result' => $result];
+                array_push($nextSchedule, ...$this->nextScheduleFor($graph, $nodeId, $result, $branchState));
             }
 
-            $run = $this->transaction(fn () => $this->runs->update($run['public_id'], ['status' => 'completed', 'current_checkpoint_id' => $checkpointId]));
-            $this->dispatchRunEvent('run.completed', new GraphRunCompleted($run['public_id'], $run['thread_id'], $graph->key(), payload: ['state' => $state]));
+            if ($interrupted !== null && count($schedule) > 1) {
+                return $this->failRun(
+                    $run,
+                    $graph,
+                    (string) $interrupted['node_id'],
+                    $state,
+                    new RuntimeException('Parallel interrupts are not supported in the same superstep. Route human review after fan-in.'),
+                );
+            }
 
-            return new RunResult($run, $state);
-        });
+            try {
+                $state = $this->applySuperstepWrites($state, $results, $reducers);
+            } catch (Throwable $exception) {
+                return $this->failRun($run, $graph, 'superstep', $state, $exception);
+            }
+
+            $nextSchedule = $this->scheduler()->normalize($nextSchedule);
+            $nextNodes = $this->scheduler()->nodeIds($nextSchedule);
+            $step++;
+
+            try {
+                $checkpointMeta = $this->checkpointMetaForResults($results, $nextSchedule);
+                $checkpoint = $this->transaction(fn () => tap($this->checkpoints->create([
+                    'run_id' => $run['public_id'],
+                    'thread_id' => $run['thread_id'],
+                    'graph_key' => $graph->key(),
+                    'graph_version' => $graph->version(),
+                    'parent_checkpoint_id' => $checkpointId,
+                    'step' => $step,
+                    'state' => $state,
+                    'next_nodes' => $interrupted !== null ? [(string) $interrupted['node_id']] : $nextNodes,
+                    'completed_nodes' => array_map(fn (array $record): string => $record['node_id'], $results),
+                    'interrupts' => [],
+                    'meta' => $checkpointMeta,
+                ]), function (array $checkpoint) use ($run, $results): void {
+                    foreach ($results as $record) {
+                        /** @var NodeResult $result */
+                        $result = $record['result'];
+                        $this->writes->createMany($run['public_id'], $checkpoint['checkpoint_id'], $record['node_id'], $result->writes(), $result->meta());
+                    }
+
+                    $this->traces->record($run['public_id'], 'checkpoint.created', [
+                        'checkpoint_id' => $checkpoint['checkpoint_id'],
+                        'nodes' => array_map(fn (array $record): string => $record['node_id'], $results),
+                    ]);
+                }));
+            } catch (Throwable $exception) {
+                return $this->failRun($run, $graph, 'superstep', $state, $exception);
+            }
+
+            $checkpointId = $checkpoint['checkpoint_id'];
+            foreach ($results as $record) {
+                /** @var NodeResult $result */
+                $result = $record['result'];
+                $this->dispatchRunEvent('node.completed', new GraphNodeCompleted($run['public_id'], $run['thread_id'], $graph->key(), $record['node_id'], ['writes' => $result->writes()]));
+                $this->dispatchRunEvent('checkpoint.created', new GraphCheckpointCreated($run['public_id'], $run['thread_id'], $graph->key(), $record['node_id'], ['checkpoint_id' => $checkpointId]));
+            }
+
+            if ($interrupted !== null) {
+                /** @var NodeResult $result */
+                $result = $interrupted['result'];
+                $nodeId = (string) $interrupted['node_id'];
+
+                try {
+                    [$interrupt, $run, $resumeAt] = $this->transaction(function () use ($run, $checkpointId, $nodeId, $result): array {
+                        $payload = $result->interruptPayload();
+                        $status = $result->interruptType() === 'delay' ? 'delayed' : 'interrupted';
+                        $resumeAt = null;
+
+                        if ($status === 'delayed') {
+                            $resumeAt = $this->normaliseResumeAt($payload['resume_at'] ?? null);
+                            $payload['resume_at'] = $resumeAt->toJSON();
+                        }
+
+                        $interrupt = $this->interrupts->create([
+                            'run_id' => $run['public_id'],
+                            'checkpoint_id' => $checkpointId,
+                            'node_id' => $nodeId,
+                            'type' => $result->interruptType(),
+                            'payload' => $payload,
+                            'expires_at' => $result->interruptPolicy()?->expiresAtValue(),
+                        ]);
+
+                        $updates = [
+                            'status' => $status,
+                            'current_checkpoint_id' => $checkpointId,
+                        ];
+
+                        if ($resumeAt instanceof CarbonImmutable) {
+                            $updates['resume_at'] = $resumeAt;
+                        }
+
+                        return [$interrupt, $this->runs->update($run['public_id'], $updates), $resumeAt];
+                    });
+                } catch (Throwable $exception) {
+                    return $this->failRun($run, $graph, $nodeId, $state, $exception);
+                }
+
+                if ($resumeAt instanceof DateTimeInterface) {
+                    $this->delayScheduler()->schedule($run['public_id'], [
+                        'interrupt_id' => $interrupt['interrupt_id'],
+                    ], $resumeAt);
+                }
+
+                $this->dispatchRunEvent('interrupt.created', new GraphInterrupted($run['public_id'], $run['thread_id'], $graph->key(), $nodeId, $interrupt));
+
+                return new RunResult($run, $state, $interrupt);
+            }
+
+            if ($nextSchedule === []) {
+                $run = $this->transaction(fn () => $this->runs->update($run['public_id'], [
+                    'status' => 'completed',
+                    'current_checkpoint_id' => $checkpointId,
+                ]));
+                $this->dispatchRunEvent('run.completed', new GraphRunCompleted($run['public_id'], $run['thread_id'], $graph->key(), payload: ['state' => $state]));
+
+                return new RunResult($run, $state);
+            }
+
+            $schedule = $nextSchedule;
+            $applyResumeContext = false;
+        }
+
+        $run = $this->transaction(fn () => $this->runs->update($run['public_id'], ['status' => 'completed', 'current_checkpoint_id' => $checkpointId]));
+        $this->dispatchRunEvent('run.completed', new GraphRunCompleted($run['public_id'], $run['thread_id'], $graph->key(), payload: ['state' => $state]));
+
+        return new RunResult($run, $state);
     }
 
     /**

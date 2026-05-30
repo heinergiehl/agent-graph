@@ -46,11 +46,14 @@ AGENT_GRAPH_EXECUTION_QUEUE=agent-graph
 AGENT_GRAPH_TASK_LEASE_SECONDS=300
 AGENT_GRAPH_EXECUTION_NODE_LEASE_SECONDS=300
 AGENT_GRAPH_LOCK_TTL_SECONDS=300
+AGENT_GRAPH_LOCK_FAIL_WITHOUT_PROVIDER=true
 ```
 
 Use `AGENT_GRAPH_STORE=memory` only for tests and local throwaway runs. Use `AGENT_GRAPH_EXECUTION_MODE=queued_supersteps` only when workers boot the same graph definitions and process the configured queue.
 
 Set `AGENT_GRAPH_LOCK_TTL_SECONDS` longer than the longest expected node execution or active session start path. The default is 300 seconds.
+
+Production runs require a cache store that supports atomic locks. Keep `AGENT_GRAPH_LOCK_FAIL_WITHOUT_PROVIDER=true` outside local throwaway tests.
 
 ## First Graph
 

@@ -3,6 +3,7 @@
 namespace Heiner\AgentGraph\Persistence;
 
 use Heiner\AgentGraph\Contracts\InterruptStore;
+use RuntimeException;
 
 class InMemoryInterruptStore implements InterruptStore
 {
@@ -57,6 +58,17 @@ class InMemoryInterruptStore implements InterruptStore
         $this->interrupts[$interruptId]['updated_at'] = now();
 
         return $this->interrupts[$interruptId];
+    }
+
+    public function resolvePending(string $interruptId, string $runId, array $response, ?string $resolvedBy = null): array
+    {
+        $interrupt = $this->interrupts[$interruptId] ?? null;
+
+        if ($interrupt === null || $interrupt['run_id'] !== $runId || $interrupt['status'] !== 'pending') {
+            throw new RuntimeException("Interrupt is no longer pending for run [{$runId}] and interrupt [{$interruptId}].");
+        }
+
+        return $this->resolve($interruptId, $response, $resolvedBy);
     }
 
     public function expirePending(mixed $now = null): int

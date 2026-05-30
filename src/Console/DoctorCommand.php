@@ -23,7 +23,19 @@ class DoctorCommand extends Command
         $this->line('Database connection: '.AgentGraphDatabase::displayConnectionName());
         $this->line('Queue connection: '.config('queue.default'));
         $this->line('Cache driver: '.config('cache.default'));
-        $this->line('Cache locks: '.($this->supportsCacheLocks() ? 'available' : 'unavailable'));
+        $this->line('Lock fail-closed: '.((bool) config('agent-graph.locks.fail_without_provider', true) ? 'enabled' : 'disabled'));
+
+        $supportsLocks = $this->supportsCacheLocks();
+        $failClosed = (bool) config('agent-graph.locks.fail_without_provider', true);
+
+        if (! $supportsLocks && $failClosed) {
+            $failed = true;
+            $this->error('FAIL cache locks: unavailable while fail_without_provider=true');
+        } elseif (! $supportsLocks) {
+            $this->warn('WARN cache locks: unavailable and fail_without_provider=false');
+        } else {
+            $this->info('PASS cache locks: available');
+        }
 
         $schema = $this->schema();
 

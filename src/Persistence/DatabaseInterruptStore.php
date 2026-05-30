@@ -6,6 +6,7 @@ use Heiner\AgentGraph\Contracts\InterruptStore;
 use Heiner\AgentGraph\Persistence\Concerns\SerializesDatabaseValues;
 use Heiner\AgentGraph\Persistence\Concerns\UsesAgentGraphDatabaseConnection;
 use Illuminate\Database\DatabaseManager;
+use RuntimeException;
 
 class DatabaseInterruptStore implements InterruptStore
 {
@@ -74,6 +75,28 @@ class DatabaseInterruptStore implements InterruptStore
         ]);
 
         return $this->find($interruptId);
+    }
+
+    public function resolvePending(string $interruptId, string $runId, array $response, ?string $resolvedBy = null): array
+    {
+        $updated = $this->query()
+            ->where('interrupt_id', $interruptId)
+            ->where('run_id', $runId)
+            ->where('status', 'pending')
+            ->update([
+                'status' => 'resolved',
+                'response' => $this->encode($response),
+                'resolved_by' => $resolvedBy,
+                'resolved_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+        if ($updated < 1) {
+            throw new RuntimeException("Interrupt is no longer pending for run [{$runId}] and interrupt [{$interruptId}].");
+        }
+
+        return $this->find($interruptId)
+            ?? throw new RuntimeException("Interrupt [{$interruptId}] was not found after resolving.");
     }
 
     public function expirePending(mixed $now = null): int

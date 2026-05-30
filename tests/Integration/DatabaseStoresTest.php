@@ -83,3 +83,25 @@ it('persists runs checkpoints writes tasks and memory in the database', function
         ->and($tasks->list(['run_id' => $run['public_id'], 'status' => 'running']))->toHaveCount(0)
         ->and($memory->read([MemoryScope::actor('tenant-db', 'user-db')], 'preferences', 'language')['value'])->toBe('de');
 });
+
+it('resolves pending interrupts only once for the expected run', function () {
+    $runs = new DatabaseRunStore(app('db'));
+    $interrupts = new DatabaseInterruptStore(app('db'));
+
+    $run = $runs->create('resolve-pending', '1', 'thread-resolve', []);
+    $interrupt = $interrupts->create([
+        'run_id' => $run['public_id'],
+        'checkpoint_id' => 'chk_1',
+        'node_id' => 'ask',
+        'type' => 'input',
+        'payload' => ['prompt' => 'Answer'],
+    ]);
+
+    $resolved = $interrupts->resolvePending($interrupt['interrupt_id'], $run['public_id'], ['answer' => 'one']);
+
+    expect($resolved['status'])->toBe('resolved')
+        ->and($resolved['response'])->toBe(['answer' => 'one']);
+
+    expect(fn () => $interrupts->resolvePending($interrupt['interrupt_id'], $run['public_id'], ['answer' => 'two']))
+        ->toThrow(RuntimeException::class, 'Interrupt is no longer pending');
+});

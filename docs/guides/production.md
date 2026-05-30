@@ -12,6 +12,7 @@ Recommended production settings:
 - wrap every external side effect in `$context->tasks()->once()`
 - configure `agent-graph.tasks.lease_seconds` longer than expected external side effects
 - configure `agent-graph.locks.ttl_seconds` longer than the longest expected node execution
+- keep `agent-graph.locks.fail_without_provider` enabled outside local throwaway tests
 - define reducers for channels written by multiple fan-out branches
 - configure per-node retries only for transient thrown exceptions
 - avoid storing raw secrets in state, memory, traces, task input, or interrupt payloads
@@ -110,6 +111,8 @@ AGENT_GRAPH_LOCK_TTL_SECONDS=300
 Keep `AGENT_GRAPH_EXECUTION_MODE=sync` unless graph definitions are registered during app boot and workers are guaranteed to process `NodeExecutionJob` and `ContinueSuperstepJob`.
 
 Set `AGENT_GRAPH_LOCK_TTL_SECONDS` longer than the longest expected node execution or active session start path. A lock expiring too early can allow duplicate protected work while the first PHP process is still running.
+
+Production runs require a cache store that supports atomic locks. Keep `AGENT_GRAPH_LOCK_FAIL_WITHOUT_PROVIDER=true` outside local throwaway tests so missing lock support fails clearly instead of allowing duplicate runs, resumes, or side effects.
 
 ## Pruning
 

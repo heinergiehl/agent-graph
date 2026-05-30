@@ -14,5 +14,7 @@ interface InterruptStore
 
     public function resolve(string $interruptId, array $response, ?string $resolvedBy = null): array;
 
+    public function resolvePending(string $interruptId, string $runId, array $response, ?string $resolvedBy = null): array;
+
     public function expirePending(mixed $now = null): int;
 }

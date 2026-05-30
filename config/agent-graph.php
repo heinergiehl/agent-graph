@@ -14,6 +14,7 @@ return [
     'locks' => [
         'ttl_seconds' => env('AGENT_GRAPH_LOCK_TTL_SECONDS', 300),
         'block_seconds' => env('AGENT_GRAPH_LOCK_BLOCK_SECONDS', 5),
+        'fail_without_provider' => env('AGENT_GRAPH_LOCK_FAIL_WITHOUT_PROVIDER', true),
     ],
 
     'tasks' => [
