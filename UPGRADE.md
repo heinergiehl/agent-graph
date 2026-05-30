@@ -39,7 +39,13 @@ New optional contracts are available for package/default adapters and custom ext
 
 Applications that expose memory inspection should resolve `EnumerableMemoryStore::class` for namespace listing. Custom memory stores can implement it with `listNamespace(array $scopes, string $namespace): array`.
 
-Run the new additive package migrations when using the package stores. They add interrupt expiry and queued node execution records. Existing published migrations remain valid.
+Run the new additive package migrations when using the package stores. They add interrupt expiry, queued node execution records, and runtime invariants for checkpoints and queued node executions. Existing published migrations remain valid.
+
+Before deploying the runtime invariant migration against an application with historical AgentGraph data:
+
+- Clean duplicate checkpoint rows for the same `run_id` and `step` before adding the unique index.
+- Clean duplicate queued node execution rows for the same `run_id`, `step`, and `schedule_index` before adding the unique index.
+- Resolve or expire duplicate pending interrupts for a run before deploying the invariant change.
 
 `NodeExecutionStore` now owns the queued node lifecycle for `queued_supersteps`: schedule, find, claim, complete, interrupt, fail, and list by run/step. Custom adapters must persist execution IDs, node state, base state, resume payloads, leases, and final result payloads.
 
@@ -95,11 +101,19 @@ Unknown reducer strings now throw instead of silently falling back to last-write
 
 `StateGraph::concurrency()` currently supports exclusive locks only. Calls with `limit > 1` now throw because semaphore concurrency is not implemented.
 
+Multiple edges from `StateGraph::START` now execute as the first superstep. All entry nodes read the same initial state, and concurrent writes to the same channel still require an explicit reducer.
+
+Cache locks fail closed by default through `agent-graph.locks.fail_without_provider=true`. Outside local throwaway tests, keep that setting enabled so missing atomic lock support fails clearly.
+
+Resume, state-edit resume, cancel, queued continuation, and delayed continuation paths are protected by run locks. This closes race windows around interrupt resolution, terminal run guards, and checkpoint continuation.
+
 Task leases use `agent-graph.tasks.lease_seconds`. Choose a lease duration longer than the expected external side-effect call.
 
 Interrupt expiry is opt-in through `NodeResult::withInterruptPolicy(InterruptPolicy::expiresAfter(...))`. Call `AgentGraph::expireInterrupts()` from scheduled maintenance if your app uses expiring review flows.
 
 `queued_supersteps` is opt-in through `agent-graph.execution.mode`. In that mode, `run()` and `resume()` usually return `running` after scheduling queue jobs. Workers must boot the same graph definitions and process `NodeExecutionJob` and `ContinueSuperstepJob` on the configured queue.
+
+Queue jobs now use package-level defaults for tries, timeout, and backoff, and include AgentGraph tags for queue dashboards and worker telemetry.
 
 ## Laravel AI compatibility
 
@@ -136,4 +150,4 @@ Before upgrading to v1:
 5. Re-run any chatbot integration tests that consume `GraphTool` JSON.
 6. Update custom store adapters for the v1 contract additions.
 7. Review state schemas for value types that were previously accepted loosely.
-8. Run the additive hardening migrations for interrupt expiry and queued node execution records.
+8. Run the additive hardening migrations for interrupt expiry, queued node execution records, and runtime invariants.

@@ -218,7 +218,7 @@ Parent metadata is stored under `run.meta.parent`. Manual child runs and native 
 
 ## Supersteps and Send
 
-Multiple static or conditional next nodes run as one deterministic superstep. Each node in the same frontier sees the same base state; writes are merged after the whole superstep completes.
+Multiple `StateGraph::START` edges execute as the first superstep. Multiple static or conditional next nodes run as one deterministic superstep. Each node in the same frontier sees the same base state; writes are merged after the whole superstep completes.
 
 ```php
 use Heiner\AgentGraph\Runtime\Send;
@@ -285,7 +285,7 @@ Normal `resume()` remains permissive for unknown payload keys while still valida
 
 State schemas are strict about schema definitions. Unknown primitive types such as `strng`, unknown union members, and unknown structured types throw during validation. Structured arrays declared with `StateSchema::array('ids', 'string')` require a PHP list, and every item is validated against the item schema.
 
-`cancel()` applies only to active runs: `running`, `interrupted`, or `delayed`. Terminal runs remain unchanged.
+`cancel()` applies only to active runs: `running`, `interrupted`, or `delayed`. Terminal runs remain unchanged. Resume, state-edit resume, cancel, queued continuation, and delayed continuation paths are protected by run locks.
 
 Interrupts can carry expiry policy metadata:
 
@@ -500,6 +500,8 @@ The 0.13 beta exposes the intended v1-stable API surface documented in [`docs/ap
 - Set `AGENT_GRAPH_DB_CONNECTION` before migrating when AgentGraph should use a dedicated connection.
 - Configure queue workers for background and delayed graph continuation.
 - Keep `execution.mode=sync` unless a graph is registered during app boot and workers can process `NodeExecutionJob` / `ContinueSuperstepJob`.
+- Keep cache locks fail-closed outside local throwaway tests.
+- Queue jobs use package-level tries, timeout, backoff, and AgentGraph tags for worker telemetry.
 - Run `php artisan agent-graph:prune --dry-run --traces --tasks --memories` before enabling retention deletes.
 - Keep trace redaction keys current for your domain.
 - Scope memory by tenant or actor before using it in multi-tenant apps.

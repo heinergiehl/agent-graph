@@ -27,17 +27,17 @@ LangGraph was inspected from official docs and source:
 - Local analysis clone: `C:\Users\Heiner\AppData\Local\Temp\agentgraph-sdk-analysis\langgraph`
 - Inspected commit: `1fcb768`
 
-The audit is directionally correct. The most important findings are real in this checkout:
+The audit was directionally correct. At plan start, the most important findings were real in this checkout:
 
-- `CacheLockProvider` still falls through without a lock provider.
-- `resume()`, `resumeWithStateEdit()`, and `cancel()` read and mutate run state before taking the run lock.
-- `InterruptStore::resolve()` is not pending-only and not run-scoped.
-- `concurrency(limit > 1)` is accepted but only `limit === 1` is enforced.
-- Multiple `START` edges are accepted but `entryNode()` only returns the first one.
-- Unknown reducer strings silently become `lastWriteWins`.
-- Queue jobs have no package-level tries, timeout, backoff, or tags.
-- Database invariants are incomplete for checkpoints, node executions, and pending interrupts.
-- `GraphTool` and `DurableGraphTool` derive provider-facing tool names directly from graph keys.
+- `CacheLockProvider` fell through without a lock provider.
+- `resume()`, `resumeWithStateEdit()`, and `cancel()` read and mutated run state before taking the run lock.
+- `InterruptStore::resolve()` was not pending-only and not run-scoped.
+- `concurrency(limit > 1)` was accepted but only `limit === 1` was enforced.
+- Multiple `START` edges were accepted but `entryNode()` only returned the first one.
+- Unknown reducer strings silently became `lastWriteWins`.
+- Queue jobs had no package-level tries, timeout, backoff, or tags.
+- Database invariants were incomplete for checkpoints, node executions, and pending interrupts.
+- `GraphTool` and `DurableGraphTool` derived provider-facing tool names directly from graph keys.
 
 Some audit items reference `filament-agentic-chatbot`, which is not part of this checkout. This plan covers core AgentGraph changes first and adds extension points that the Filament plugin can consume in a second repo-specific branch.
 
@@ -1425,7 +1425,7 @@ Observed after implementation: `ConsoleCommandsTest` passes with 4 tests and 34 
 - Modify: `docs/concepts/checkpoints.md`
 - Modify: `docs/reference-sources.md`
 
-- [ ] **Step 1: Update reference sources**
+- [x] **Step 1: Update reference sources**
 
 Update LangGraph entry in `docs/reference-sources.md` with the current inspection:
 
@@ -1435,7 +1435,7 @@ Date inspected: 2026-05-30
 Purpose: StateGraph validation, multiple START edges, pending writes, Command/Send, interrupt resume, checkpoint saver contracts.
 ```
 
-- [ ] **Step 2: Update public semantics**
+- [x] **Step 2: Update public semantics**
 
 Document:
 
@@ -1448,7 +1448,7 @@ Resume, state-edit resume, cancel, queued continuation, and delayed continuation
 Queue jobs have package defaults and tags.
 ```
 
-- [ ] **Step 3: Add migration notes**
+- [x] **Step 3: Add migration notes**
 
 In `UPGRADE.md`, include:
 
@@ -1458,7 +1458,7 @@ Clean duplicate checkpoint rows per run+step before adding the unique index if a
 Resolve or expire duplicate pending interrupts before deploying the invariant change.
 ```
 
-- [ ] **Step 4: Verify docs contain no stale claims**
+- [x] **Step 4: Verify docs contain no stale claims**
 
 Run:
 
@@ -1467,6 +1467,8 @@ rg -n "limit: 5|semaphore|silently|first entry|unknown reducer|fail_without_prov
 ```
 
 Expected: search output points to intentional docs, not stale behavior.
+
+Observed: reference sources, public semantics, upgrade notes, changelog, and roadmap now describe the hardened contract. The stale-doc search output is limited to intentional current contract statements and historical plan context.
 
 ## Task 11: Package-Wide Verification
 

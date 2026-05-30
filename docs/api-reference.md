@@ -27,6 +27,8 @@ Compiled definitions expose `key()`, `version()`, `schema()`, `reducers()`, `nod
 
 Multiple edges from `StateGraph::START` are valid. `entryNodes()` returns every start target in declaration order; `entryNode()` remains as a compatibility helper for the first start target.
 
+At runtime, multiple START targets execute together as the first superstep and read the same initial state. Concurrent writes to the same state channel require an explicit reducer.
+
 Errors: unknown nodes, endpoints, or invalid graph structure throw `InvalidArgumentException`.
 
 Stability: stable for read-only metadata and endpoint helpers.
@@ -345,6 +347,8 @@ The package database stores use `agent-graph.database.connection`, which maps to
 
 Production runs require a cache store that supports atomic locks. Keep `AGENT_GRAPH_LOCK_FAIL_WITHOUT_PROVIDER=true` outside local throwaway tests.
 
+Queue jobs use package-level defaults for tries, timeout, and backoff, and include `agent-graph` tags plus operation-specific identifiers for queue dashboards and worker telemetry.
+
 The default `DelayScheduler` dispatches `ContinueDelayedGraphJob` on the configured AgentGraph execution queue connection and queue; Laravel applications can bind their own scheduler implementation. `GraphRuntime` resolves the scheduler lazily through `DelaySchedulerResolver`, so container rebindings made after runtime construction are honored.
 
 Stability: stable, with v1 contract changes documented in `UPGRADE.md`.
@@ -361,6 +365,7 @@ Stability: stable, with v1 contract changes documented in `UPGRADE.md`.
 - Replay and fork require persisted `graph_version` to match the currently registered graph definition.
 - Supersteps store one checkpoint per frontier and preserve dynamic `Send` schedules in checkpoint metadata.
 - `queued_supersteps` is opt-in and uses Laravel Queue jobs for worker-backed node execution. Sync execution remains the default.
+- Resume, state-edit resume, cancel, queued continuation, and delayed continuation paths are run-lock protected.
 - Parallel interrupts inside a multi-node frontier fail the run with a clear error; single-node interrupts keep existing resume behavior.
 - Per-node retry policies are synchronous inside the current runtime. They retry thrown node exceptions only and may repeat side effects unless nodes use `tasks()->once()`.
 - Run-event observation is additive and does not change `GraphStreamDelta`, Laravel AI `StreamableAgentResponse`, `GraphTool` JSON shape, or provider behavior.

@@ -119,6 +119,8 @@ AGENT_GRAPH_LOCK_TTL_SECONDS=300
 
 AgentGraph queue jobs apply `AGENT_GRAPH_JOB_TRIES`, `AGENT_GRAPH_JOB_TIMEOUT`, and comma-separated `AGENT_GRAPH_JOB_BACKOFF` values uniformly across run, resume, delayed resume, node execution, and continuation jobs. Jobs also include `agent-graph` tags plus operation-specific run, graph, thread, execution, or step identifiers for queue dashboards and worker telemetry.
 
+Resume, state-edit resume, cancel, queued continuation, and delayed continuation paths all acquire the run lock before mutating runtime state. Keep lock TTLs longer than the longest expected node execution so those guards remain effective.
+
 Keep `AGENT_GRAPH_EXECUTION_MODE=sync` unless graph definitions are registered during app boot and workers are guaranteed to process `NodeExecutionJob` and `ContinueSuperstepJob`.
 
 Set `AGENT_GRAPH_LOCK_TTL_SECONDS` longer than the longest expected node execution or active session start path. A lock expiring too early can allow duplicate protected work while the first PHP process is still running.

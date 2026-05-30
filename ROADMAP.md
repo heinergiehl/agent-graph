@@ -108,6 +108,11 @@ Implemented v1 hardening:
 - Interrupt expiry and queued-superstep node execution persistence through additive hardening migrations.
 - Worker-backed queued supersteps for opt-in multi-worker fan-out.
 - Compatibility CI matrix for PHP 8.3/8.4, Laravel 12/13, and `laravel/ai ^0.7`.
+- Cache locks fail closed by default outside local throwaway tests.
+- Resume, state-edit resume, cancel, queued continuation, and delayed continuation paths are run-lock protected.
+- Queue jobs have package-level tries, timeout, backoff, and AgentGraph tags.
+- Provider-facing graph tool names are sanitized, and per-run runtime options support `max_steps`.
+- `agent-graph:doctor` reports production safety gates with `PASS`, `WARN`, and `FAIL` status lines.
 
 ## Post-v1 Features
 

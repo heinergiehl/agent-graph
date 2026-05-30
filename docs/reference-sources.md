@@ -24,19 +24,15 @@ Reference repositories are local, read-only inputs. They are not package depende
 - Repository: <https://github.com/langchain-ai/langgraph>
 - Local path: `references/langgraph`
 - Branch: `main`
-- Inspected commit: `d1e2ff0561a8b0b09212d0795c9d7b390a5de23a`
-- Date inspected: 2026-05-25
+- Inspected commit: `1fcb768`
+- Date inspected: 2026-05-30
 - Purpose:
-  - StateGraph concepts
-  - Thread and checkpoint semantics
-  - Checkpoint writes
-  - Reducers
-  - Interrupts
-  - Commands
-  - Subgraphs
-  - Durable execution
-  - Time travel
-  - Memory store concepts
+  - StateGraph validation
+  - Multiple START edges
+  - Pending writes
+  - Command/Send
+  - Interrupt resume
+  - Checkpoint saver contracts
 
 ## Usage Rules
 

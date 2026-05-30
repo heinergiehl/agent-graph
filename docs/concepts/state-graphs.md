@@ -18,7 +18,7 @@ Reducers define how writes merge into state. Static multi-edges, conditional fan
 
 Multiple edges from `StateGraph::START` are valid. They schedule all entry nodes in the first superstep. Each entry node reads the same initial input state, and concurrent writes to the same channel require an explicit reducer.
 
-If two nodes in one superstep write the same channel, that channel must define an explicit reducer such as `append`, `merge`, `messages`/`add_messages`, `max`/`max_confidence`, or a custom reducer. `Send` input is local to the target node and is not persisted unless the node writes it.
+If two nodes in one superstep write the same channel, that channel must define an explicit reducer such as `append`, `merge`, `messages`/`add_messages`, `max`/`max_confidence`, or a custom reducer. Unknown reducer strings throw during graph compilation instead of falling back to last-write-wins. `Send` input is local to the target node and is not persisted unless the node writes it.
 
 Per-node retry policies handle transient thrown exceptions without changing graph topology:
 

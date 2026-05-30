@@ -2,6 +2,34 @@
 
 All notable changes to AgentGraph are documented here.
 
+## 0.13.0-beta.5 - 2026-05-30
+
+Target: LangGraph-inspired runtime hardening for public SDK beta usage in Laravel products.
+
+### Added
+
+- Added stricter graph and state validation, including unknown reducer rejection, structured schema validation, and dynamic `goto` / `Send` target checks.
+- Added multiple `StateGraph::START` entry node execution as the first deterministic superstep.
+- Added per-run runtime options with persisted `max_steps` support for runs, resumes, queued supersteps, and delayed continuations.
+- Added provider-compatible tool-name sanitization and validation for `GraphTool` and `DurableGraphTool`.
+- Added lazy `DelayScheduler` resolution so Laravel container rebindings are honored after runtime construction.
+- Added `agent-graph:doctor` production safety gates with `PASS`, `WARN`, and `FAIL` output for store, database, locks, queues, leases, max steps, and tables.
+
+### Hardened
+
+- Cache locks now fail closed by default when the cache store does not support atomic locks.
+- Resume, state-edit resume, cancel, queued continuation, and delayed continuation paths are protected by run locks.
+- Interrupt resolution is pending-only and run-scoped across database and in-memory stores.
+- Terminal runs reject resume, state-edit resume, and cancel attempts without mutating historical state.
+- Replay and fork require persisted graph versions to match the registered graph definition.
+- Queue jobs now apply package-level tries, timeout, backoff, and AgentGraph tags.
+- Queued supersteps now preserve completed sibling node execution results across worker retry boundaries.
+- Runtime invariant migrations add checkpoint and queued node execution uniqueness constraints.
+
+### Documentation
+
+- Updated public API, production, upgrade, roadmap, and reference-source documentation for the hardened v1 contract.
+
 ## 0.13.0-beta.4 - 2026-05-27
 
 Target: shell-portable Packagist install documentation for the public 0.13 beta line.
