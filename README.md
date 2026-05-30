@@ -4,23 +4,23 @@ AgentGraph is a Laravel package and runtime SDK for durable AI agent graphs. It 
 
 AgentGraph does not replace Laravel AI providers, agents, tools, streaming, or structured output. It uses Laravel AI through public contracts such as `Laravel\Ai\Contracts\Agent` and `Laravel\Ai\Contracts\Tool`.
 
-## Beta Status
+## Release Status
 
-`0.13.x` is a public beta intended for sandbox and real chatbot integration testing. Breaking changes are allowed before v1, but they will be documented in `CHANGELOG.md` and `UPGRADE.md`.
+`0.13.x` is the hardened pre-v1 release line intended for real Laravel app integration testing. Breaking changes are still possible before v1, but they will be documented in `CHANGELOG.md` and `UPGRADE.md`.
 
 The v1 target is a hardened MVP: stable graph execution, checkpoints, interrupts/resume, idempotent tasks, scoped memory, traces, queues, run-event observation, Laravel AI agent nodes, graphs as tools, native subgraph nodes, and durable app workflow sessions. Experimental checkpoint inspection, replay, forking, worker-backed queued supersteps, and vector memory contracts are available for post-v1-style workflows. OpenTelemetry export and visual workflow editing remain outside the stable v1 core.
 
-CI currently validates the 0.13 beta line against PHP 8.3/8.4, Laravel 12/13, and `laravel/ai ^0.7`. `laravel/ai ^1.0` stays declared for forward compatibility but should remain non-blocking until upstream tags a 1.x release.
+CI currently validates the 0.13 release line against PHP 8.3/8.4, Laravel 12/13, and `laravel/ai ^0.7`. `laravel/ai ^1.0` stays declared for forward compatibility but should remain non-blocking until upstream tags a 1.x release.
 
 ## Installation
 
 ```bash
-composer require heiner/agent-graph:~0.13.0@beta
+composer require heiner/agent-graph:^0.13
 php artisan agent-graph:install
 php artisan migrate
 ```
 
-The explicit `@beta` stability flag is required for the 0.13 beta line in Laravel apps that keep Composer's default stable minimum stability. The `~0.13.0` constraint tracks 0.13 beta tags while staying below the next minor beta line. After a stable v1 release, the install command will no longer need the beta flag.
+The `^0.13` constraint tracks the stable 0.13 line while staying below the next minor pre-v1 line. Historical `0.13.0-beta.*` tags remain available for apps that explicitly test prereleases, but normal installs should use the stable tag.
 
 `agent-graph:install` publishes the package config and migrations. The database store uses these tables by default:
 
@@ -472,7 +472,7 @@ Vector memory is contract-based and optional. Laravel AI can provide embeddings;
 
 ## Stable v1 Public APIs
 
-The 0.13 beta exposes the intended v1-stable API surface documented in [`docs/api-reference.md`](docs/api-reference.md). In short:
+The 0.13 release exposes the intended v1-stable API surface documented in [`docs/api-reference.md`](docs/api-reference.md). In short:
 
 - `StateGraph` for fluent graph definitions.
 - `Node` and `NodeContext` for runtime node implementation.

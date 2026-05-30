@@ -2,7 +2,7 @@
 
 Date: 2026-05-27
 
-This note records the manual Laravel app validation used before the public beta release. It is intentionally excluded from Composer distribution archives through `.gitattributes`.
+This note records the manual Laravel app validation used before the public 0.13 release line. It is intentionally excluded from Composer distribution archives through `.gitattributes`.
 
 ## Pre-release Path Repository Validation
 
@@ -46,13 +46,13 @@ Before Packagist registration, validate the public GitHub tag through Composer's
 
 ```bash
 composer config repositories.agent-graph vcs https://github.com/heinergiehl/agent-graph.git
-composer require heiner/agent-graph:~0.13.0@beta --no-interaction --no-progress
+composer require heiner/agent-graph:^0.13 --no-interaction --no-progress
 ```
 
 After Packagist registration, remove the custom repository entry and use the normal beta install command from `README.md`:
 
 ```bash
-composer require heiner/agent-graph:~0.13.0@beta
+composer require heiner/agent-graph:^0.13
 ```
 
 ## Results

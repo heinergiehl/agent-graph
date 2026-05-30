@@ -1,8 +1,8 @@
 # Upgrade Guide
 
-## 0.13 Beta To v1
+## 0.13 To v1
 
-AgentGraph 0.13 is the active public beta. v1 freezes the durable runtime core, documents the public API, and tightens validation around state, resume, queues, and time travel.
+AgentGraph 0.13 is the hardened pre-v1 release line. v1 freezes the durable runtime core, documents the public API, and tightens validation around state, resume, queues, and time travel.
 
 ## Public API stability
 

@@ -2,6 +2,15 @@
 
 All notable changes to AgentGraph are documented here.
 
+## 0.13.0 - 2026-05-31
+
+Target: stable 0.13 release channel for Laravel app consumption without requiring Composer prerelease flags.
+
+### Changed
+
+- Promoted the hardened 0.13 runtime contract from `0.13.0-beta.5` to stable `0.13.0`.
+- Updated install and release-channel documentation to use `composer require heiner/agent-graph:^0.13`.
+
 ## 0.13.0-beta.5 - 2026-05-30
 
 Target: LangGraph-inspired runtime hardening for public SDK beta usage in Laravel products.

@@ -1,6 +1,6 @@
 # AgentGraph Roadmap
 
-AgentGraph `0.13.x` is the active public beta for real Laravel app testing. The goal for v1 is a hardened MVP for durable agent workflows in Laravel, not a complete LangGraph platform clone.
+AgentGraph `0.13.x` is the hardened pre-v1 release line for real Laravel app testing. The goal for v1 is a durable agent workflow SDK for Laravel, not a complete LangGraph platform clone.
 
 ## 0.9 Beta Scope
 
