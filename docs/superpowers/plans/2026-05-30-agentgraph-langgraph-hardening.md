@@ -1475,7 +1475,7 @@ Observed: reference sources, public semantics, upgrade notes, changelog, and roa
 **Files:**
 - No source edits required.
 
-- [ ] **Step 1: Run full test suite**
+- [x] **Step 1: Run full test suite**
 
 Run:
 
@@ -1485,7 +1485,7 @@ composer test
 
 Expected: all Pest tests pass.
 
-- [ ] **Step 2: Run static analysis**
+- [x] **Step 2: Run static analysis**
 
 Run:
 
@@ -1495,7 +1495,7 @@ composer test:types
 
 Expected: PHPStan passes.
 
-- [ ] **Step 3: Run style check**
+- [x] **Step 3: Run style check**
 
 Run:
 
@@ -1503,9 +1503,11 @@ Run:
 composer test:lint
 ```
 
+Observed: final package verification passes with `composer test` (202 passed, 1 skipped, 1570 assertions), `composer test:types` (PHPStan no errors), and `composer test:lint` (Pint passed).
+
 Expected: Pint reports no style changes needed.
 
-- [ ] **Step 4: Run full package check**
+- [x] **Step 4: Run full package check**
 
 Run:
 
@@ -1514,6 +1516,8 @@ composer check
 ```
 
 Expected: lint, tests, and static analysis all pass.
+
+Observed: `composer check` passes, running Pint, Pest (202 passed, 1 skipped, 1570 assertions), and PHPStan with no errors.
 
 ## Deferred Plugin Work
 
