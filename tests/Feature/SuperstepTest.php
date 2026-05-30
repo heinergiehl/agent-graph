@@ -49,6 +49,30 @@ it('runs static fan out nodes from the same base state in one superstep', functi
         ->and($writes)->toHaveCount(5);
 });
 
+it('runs multiple start edges in the first superstep', function () {
+    AgentGraph::define(
+        StateGraph::make('superstep_multiple_start_edges')
+            ->state([
+                'input' => 'string',
+                'seen' => 'array',
+            ])
+            ->reducer('seen', 'append')
+            ->node('left_start', MultipleStartLeftNode::class)
+            ->node('right_start', MultipleStartRightNode::class)
+            ->edge(StateGraph::START, 'left_start')
+            ->edge(StateGraph::START, 'right_start')
+            ->compile(),
+    );
+
+    $run = AgentGraph::graph('superstep_multiple_start_edges')
+        ->thread('multiple-start')
+        ->input(['input' => 'root', 'seen' => []])
+        ->run();
+
+    expect($run->completed())->toBeTrue()
+        ->and($run->state('seen'))->toBe(['left:root', 'right:root']);
+});
+
 it('runs conditional fan out nodes in one superstep', function () {
     AgentGraph::define(
         StateGraph::make('superstep_conditional_fanout')
@@ -246,6 +270,22 @@ final class SuperstepJoinNode implements Node
         return NodeResult::write([
             'combined' => $context->state('left_value').'+'.$context->state('right_value'),
         ]);
+    }
+}
+
+final class MultipleStartLeftNode implements Node
+{
+    public function __invoke(NodeContext $context): NodeResult
+    {
+        return NodeResult::end(['seen' => ['left:'.$context->state('input')]]);
+    }
+}
+
+final class MultipleStartRightNode implements Node
+{
+    public function __invoke(NodeContext $context): NodeResult
+    {
+        return NodeResult::end(['seen' => ['right:'.$context->state('input')]]);
     }
 }
 

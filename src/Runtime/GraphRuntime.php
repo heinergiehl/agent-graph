@@ -67,7 +67,7 @@ class GraphRuntime
         $run = $this->runs->create($graph->key(), $graph->version(), $threadId, $input, $meta);
         $this->dispatchRunEvent('run.started', new GraphRunStarted($run['public_id'], $threadId, $graph->key(), payload: ['input' => $input]));
 
-        return $this->continue($graph, $run, $input, [$graph->entryNode()]);
+        return $this->continue($graph, $run, $input, $graph->entryNodes());
     }
 
     public function runSession(GraphDefinition $graph, string $threadId, array $input = [], array $meta = []): RunResult
@@ -115,7 +115,7 @@ class GraphRuntime
             }
 
             $state = array_merge($checkpoint['state'], $resumePayload);
-            $next = $checkpoint['next_nodes'] ?: [$graph->entryNode()];
+            $next = $checkpoint['next_nodes'] ?: $graph->entryNodes();
             $run = $this->runs->update($runId, ['status' => 'running']);
             $this->dispatchRunEvent('run.resumed', new GraphResumed($runId, $run['thread_id'], $graph->key(), payload: $resumePayload));
 
@@ -155,7 +155,7 @@ class GraphRuntime
             );
 
             $state = array_merge($checkpoint['state'], $statePatch);
-            $next = $checkpoint['next_nodes'] ?: [$graph->entryNode()];
+            $next = $checkpoint['next_nodes'] ?: $graph->entryNodes();
             $run = $this->runs->update($runId, ['status' => 'running']);
             $this->dispatchRunEvent('run.resumed', new GraphResumed($runId, $run['thread_id'], $graph->key(), payload: $statePatch));
 

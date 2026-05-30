@@ -29,8 +29,22 @@ it('compiles a fluent graph definition', function () {
         ->and($graph->schema())->toHaveKey('messages')
         ->and($graph->node('classify'))->toBe(NoopNode::class)
         ->and($graph->entryNode())->toBe('classify')
+        ->and($graph->entryNodes())->toBe(['classify'])
         ->and($graph->resolveNext('answer', ['answer' => 'ok']))->toBe([StateGraph::END])
         ->and($graph->resolveNext('classify', ['category' => 'default']))->toBe(['answer']);
+});
+
+it('exposes multiple entry nodes and start successors in edge order', function () {
+    $graph = StateGraph::make('multiple_entries')
+        ->node('left', NoopNode::class)
+        ->node('right', NoopNode::class)
+        ->edge(StateGraph::START, 'left')
+        ->edge(StateGraph::START, 'right')
+        ->compile();
+
+    expect($graph->entryNode())->toBe('left')
+        ->and($graph->entryNodes())->toBe(['left', 'right'])
+        ->and($graph->successorsOf(StateGraph::START, []))->toBe(['left', 'right']);
 });
 
 it('rejects duplicate nodes and unknown edges', function () {

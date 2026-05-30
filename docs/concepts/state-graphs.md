@@ -14,6 +14,8 @@ Nodes implement `Heiner\AgentGraph\Contracts\Node` and return `NodeResult`. A re
 
 Reducers define how writes merge into state. Static multi-edges, conditional fan-out, and dynamic `Send` results run as deterministic supersteps: every node in the same frontier reads the same base state and writes are merged after the frontier finishes.
 
+Multiple edges from `StateGraph::START` are valid. They schedule all entry nodes in the first superstep. Each entry node reads the same initial input state, and concurrent writes to the same channel require an explicit reducer.
+
 If two nodes in one superstep write the same channel, that channel must define an explicit reducer such as `append`, `merge`, `messages`/`add_messages`, `max`/`max_confidence`, or a custom reducer. `Send` input is local to the target node and is not persisted unless the node writes it.
 
 Per-node retry policies handle transient thrown exceptions without changing graph topology:

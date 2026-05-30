@@ -23,7 +23,9 @@ Stability: stable.
 
 ### `GraphDefinition`
 
-Compiled definitions expose `key()`, `version()`, `schema()`, `reducers()`, `node()`, `nodes()`, `nodePolicy()`, `nodePolicies()`, `hasNode()`, `hasEndpoint()`, `entryNode()`, `resolveNext()`, and `successorsOf()`.
+Compiled definitions expose `key()`, `version()`, `schema()`, `reducers()`, `node()`, `nodes()`, `nodePolicy()`, `nodePolicies()`, `hasNode()`, `hasEndpoint()`, `entryNode()`, `entryNodes()`, `resolveNext()`, and `successorsOf()`.
+
+Multiple edges from `StateGraph::START` are valid. `entryNodes()` returns every start target in declaration order; `entryNode()` remains as a compatibility helper for the first start target.
 
 Errors: unknown nodes, endpoints, or invalid graph structure throw `InvalidArgumentException`.
 

@@ -73,13 +73,18 @@ class GraphDefinition
 
     public function entryNode(): string
     {
-        return $this->edges[StateGraph::START][0] ?? throw new InvalidArgumentException('Graph has no entry node.');
+        return $this->entryNodes()[0];
+    }
+
+    public function entryNodes(): array
+    {
+        return $this->edges[StateGraph::START] ?? throw new InvalidArgumentException('Graph has no entry node.');
     }
 
     public function successorsOf(string $id, array $state): array
     {
         if ($id === StateGraph::START) {
-            return [$this->entryNode()];
+            return $this->entryNodes();
         }
 
         if ($id === StateGraph::END) {

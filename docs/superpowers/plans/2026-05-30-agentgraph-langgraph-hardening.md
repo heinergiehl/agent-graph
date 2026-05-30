@@ -671,7 +671,7 @@ Final verification: `composer test` passes with 178 passed, 1 skipped optional p
 - Test: `tests/Unit/StateGraphTest.php`
 - Test: `tests/Feature/SuperstepTest.php`
 
-- [ ] **Step 1: Write failing multiple entry test**
+- [x] **Step 1: Write failing multiple entry test**
 
 Add to `tests/Feature/SuperstepTest.php`:
 
@@ -723,7 +723,7 @@ final class MultipleStartRightNode
 
 Expected before implementation: only the first entry node runs.
 
-- [ ] **Step 2: Add `entryNodes()`**
+- [x] **Step 2: Add `entryNodes()`**
 
 In `src/Graph/GraphDefinition.php`:
 
@@ -743,7 +743,7 @@ public function entryNode(): string
 }
 ```
 
-- [ ] **Step 3: Use all entry nodes in runtime**
+- [x] **Step 3: Use all entry nodes in runtime**
 
 Change:
 
@@ -761,7 +761,7 @@ Change resume fallbacks from `[$graph->entryNode()]` to `$graph->entryNodes()`.
 
 Change `successorsOf(StateGraph::START, ...)` to return `$this->entryNodes()`.
 
-- [ ] **Step 4: Document multiple start behavior**
+- [x] **Step 4: Document multiple start behavior**
 
 Add:
 
@@ -769,7 +769,7 @@ Add:
 Multiple edges from `StateGraph::START` are valid. They schedule all entry nodes in the first superstep. Each entry node reads the same initial input state, and concurrent writes to the same channel require an explicit reducer.
 ```
 
-- [ ] **Step 5: Verify**
+- [x] **Step 5: Verify**
 
 Run:
 
@@ -779,6 +779,10 @@ composer test -- --filter=StateGraphTest
 ```
 
 Expected: existing fan-out tests and new multiple-start test pass.
+
+Observed: `SuperstepTest` and `StateGraphTest` pass after implementation.
+
+Final verification: `composer test` passes with 180 passed, 1 skipped optional pgvector integration test; `composer test:lint` passes; `composer test:types` passes.
 
 ## Task 5: Validate Dynamic Goto And Send Targets Before Persistence
 
