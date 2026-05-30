@@ -1,12 +1,21 @@
 <?php
 
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 
 it('doctor reports missing tables and infrastructure settings', function () {
     $this->artisan('agent-graph:doctor')
         ->expectsOutputToContain('Store driver:')
+        ->expectsOutputToContain('Database connection:')
+        ->expectsOutputToContain('Cache locks:')
+        ->expectsOutputToContain('Lock fail-closed:')
+        ->expectsOutputToContain('Execution mode:')
         ->expectsOutputToContain('Queue connection:')
+        ->expectsOutputToContain('Queue name:')
         ->expectsOutputToContain('Cache driver:')
+        ->expectsOutputToContain('Task lease seconds:')
+        ->expectsOutputToContain('Node lease seconds:')
+        ->expectsOutputToContain('Max steps:')
         ->expectsOutputToContain('runs table')
         ->assertFailed();
 });
@@ -16,9 +25,38 @@ it('doctor passes when package tables exist', function () {
     $this->artisan('migrate')->run();
 
     $this->artisan('agent-graph:doctor')
+        ->expectsOutputToContain('PASS Store driver: database')
+        ->expectsOutputToContain('PASS Cache locks: available')
         ->expectsOutputToContain('runs table')
         ->expectsOutputToContain('present')
         ->assertSuccessful();
+});
+
+it('doctor fails unsafe production settings', function () {
+    $this->loadMigrationsFrom(__DIR__.'/../../database/migrations');
+    Artisan::call('migrate', ['--force' => true]);
+
+    $this->app->detectEnvironment(fn () => 'production');
+    config()->set('agent-graph.store', 'memory');
+    config()->set('agent-graph.locks.fail_without_provider', false);
+    config()->set('agent-graph.locks.ttl_seconds', 10);
+    config()->set('agent-graph.execution.node_lease_seconds', 20);
+    config()->set('agent-graph.tasks.lease_seconds', 0);
+    config()->set('agent-graph.max_steps', 0);
+
+    try {
+        $exitCode = Artisan::call('agent-graph:doctor');
+        $output = Artisan::output();
+
+        expect($exitCode)->toBe(1)
+            ->and($output)->toContain('FAIL Store driver: memory')
+            ->and($output)->toContain('FAIL Lock fail-closed: disabled outside local/testing')
+            ->and($output)->toContain('FAIL Task lease seconds: 0')
+            ->and($output)->toContain('FAIL Max steps: 0')
+            ->and($output)->toContain('FAIL Lock TTL seconds: 10 is lower than node lease seconds 20');
+    } finally {
+        $this->app->detectEnvironment(fn () => 'testing');
+    }
 });
 
 it('prunes only selected old data and expired memories', function () {

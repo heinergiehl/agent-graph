@@ -1344,7 +1344,7 @@ Observed after implementation: `LaravelAiIntegrationTest` (9 passed), `DurableGr
 - Modify: `README.md`
 - Modify: `docs/guides/production.md`
 
-- [ ] **Step 1: Add doctor output expectations**
+- [x] **Step 1: Add doctor output expectations**
 
 Extend `tests/Feature/ConsoleCommandsTest.php` to assert output includes:
 
@@ -1361,7 +1361,7 @@ Node lease seconds
 Max steps
 ```
 
-- [ ] **Step 2: Add status helpers**
+- [x] **Step 2: Add status helpers**
 
 In `DoctorCommand`, implement:
 
@@ -1382,7 +1382,7 @@ protected function failStatus(string $message): void
 }
 ```
 
-- [ ] **Step 3: Add production checks**
+- [x] **Step 3: Add production checks**
 
 Checks:
 
@@ -1398,7 +1398,7 @@ task lease seconds > 0
 max_steps > 0
 ```
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 Run:
 
@@ -1407,6 +1407,10 @@ composer test -- --filter=ConsoleCommandsTest
 ```
 
 Expected: doctor tests pass and output is actionable.
+
+Observed before implementation: focused ConsoleCommands coverage failed because the doctor command did not emit the new production-safety labels, PASS/WARN/FAIL store/cache output, or unsafe production failures.
+
+Observed after implementation: `ConsoleCommandsTest` passes with 4 tests and 34 assertions. The command now reports actionable status lines for store, database, cache locks, fail-closed locks, execution mode, queue settings, lease/TTL/max-step bounds, and package table presence. Full verification also passes: `composer test` (202 passed, 1 skipped), `composer test:lint`, and `composer test:types`.
 
 ## Task 10: Documentation, Upgrade Notes, And Public Contract Review
 

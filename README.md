@@ -519,7 +519,7 @@ The 0.13 beta exposes the intended v1-stable API surface documented in [`docs/ap
 - Use explicit reducers for any state channel that can be written by more than one node in the same superstep.
 - Keep graph definitions generic; product-specific UI belongs in consuming apps.
 - For multi-tenant memory, always include tenant or actor scope in reads and writes.
-- Run `php artisan agent-graph:doctor` after deploys and before release validation.
+- Run `php artisan agent-graph:doctor` after deploys and before release validation. Treat `FAIL` lines as release blockers; the command checks database tables, cache locks, store driver, queue settings, lease/lock timing, and max-step bounds.
 
 ## Status
 

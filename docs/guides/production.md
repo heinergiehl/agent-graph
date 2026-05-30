@@ -53,6 +53,8 @@ Use `AGENT_GRAPH_STORE=memory` only for tests or throwaway local experiments. In
 
 `PgvectorMemoryStore` is optional and experimental. Use it only for semantic memory features such as long-term memory search, similar-case lookup, example selection, or semantic routing. Do not use pgvector for AgentGraph run state, checkpoints, interrupts, queues, task audit, or trace persistence; those remain relational store responsibilities.
 
+Run `php artisan agent-graph:doctor` after deploys and before release validation. The command emits `PASS`, `WARN`, and `FAIL` lines for the store driver, database connection, cache locks, fail-closed lock behavior, execution mode, queue connection/name, task and node lease durations, lock TTL, max steps, and all package tables. In production-like environments, `FAIL` means the release should stop until the configuration or migrations are corrected.
+
 ## Memory tenancy
 
 In multi-tenant apps, include `tenant` scope on every customer-specific memory write and read. Add `actor` scope for user-specific memory inside a tenant. Reserve `application` or `global` scope for product defaults that contain no customer or user data.
