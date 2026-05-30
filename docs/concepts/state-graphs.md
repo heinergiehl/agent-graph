@@ -12,6 +12,8 @@ StateGraph::make('support_triage')
 
 Nodes implement `Heiner\AgentGraph\Contracts\Node` and return `NodeResult`. A result can write state, route to another node, dynamically `Send` work to one or more nodes, interrupt, complete, or fail.
 
+Dynamic `goto` targets must reference known graph endpoints. Dynamic `Send` targets must reference executable graph nodes; use `NodeResult::end()` to complete rather than sending work to `StateGraph::END`.
+
 Reducers define how writes merge into state. Static multi-edges, conditional fan-out, and dynamic `Send` results run as deterministic supersteps: every node in the same frontier reads the same base state and writes are merged after the frontier finishes.
 
 Multiple edges from `StateGraph::START` are valid. They schedule all entry nodes in the first superstep. Each entry node reads the same initial input state, and concurrent writes to the same channel require an explicit reducer.

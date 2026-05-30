@@ -393,6 +393,7 @@ class GraphRuntime
                 return $store->find($executionId);
             }
 
+            $this->assertNodeResultTargetsAreKnown($graph, $nodeId, $result);
             $this->assertStatePatchMatchesSchema($graph, $result->writes());
             $branchState = (new StateReducer($this->inferReducers($graph)))->apply($nodeState, $result->writes());
             $nextSchedule = $this->nextScheduleFor($graph, $nodeId, $result, $branchState);
@@ -659,6 +660,7 @@ class GraphRuntime
                 }
 
                 try {
+                    $this->assertNodeResultTargetsAreKnown($graph, $nodeId, $result);
                     $this->assertStatePatchMatchesSchema($graph, $result->writes());
                 } catch (Throwable $exception) {
                     return $this->failRun($run, $graph, $nodeId, $state, $exception);
@@ -1135,6 +1137,19 @@ class GraphRuntime
         }
 
         return $graph->resolveNext($nodeId, $state);
+    }
+
+    protected function assertNodeResultTargetsAreKnown(GraphDefinition $graph, string $sourceNode, NodeResult $result): void
+    {
+        if ($result->nextNode() !== null && ! $graph->hasEndpoint($result->nextNode())) {
+            throw new InvalidArgumentException("Node [{$sourceNode}] returned unknown goto target [{$result->nextNode()}].");
+        }
+
+        foreach ($result->sends() as $send) {
+            if (! $graph->hasEndpoint($send->node()) || in_array($send->node(), [StateGraph::START, StateGraph::END], true)) {
+                throw new InvalidArgumentException("Node [{$sourceNode}] returned unknown send target [{$send->node()}].");
+            }
+        }
     }
 
     /**

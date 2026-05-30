@@ -795,7 +795,7 @@ Final verification: `composer test` passes with 180 passed, 1 skipped optional p
 - Test: `tests/Feature/SuperstepTest.php`
 - Test: `tests/Unit/NodeResultTest.php`
 
-- [ ] **Step 1: Write failing target validation tests**
+- [x] **Step 1: Write failing target validation tests**
 
 Add to `tests/Feature/SuperstepTest.php`:
 
@@ -849,7 +849,7 @@ final class InvalidSendNode
 }
 ```
 
-- [ ] **Step 2: Implement graph-aware schedule validation**
+- [x] **Step 2: Implement graph-aware schedule validation**
 
 Add a `GraphRuntime` method:
 
@@ -870,11 +870,11 @@ protected function assertNodeResultTargetsAreKnown(GraphDefinition $graph, strin
 
 Call it immediately after each successful `invokeNode()` and before `recordNodeExecutionIfEnabled()` or checkpoint persistence.
 
-- [ ] **Step 3: Keep `END` semantics clear**
+- [x] **Step 3: Keep `END` semantics clear**
 
 `RuntimeScheduler::normalize()` currently drops `Send` to `END`. Keep that for static next nodes. Reject explicit `Send::to(StateGraph::END)` in result validation because `Send` means task execution and `END` is not executable.
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 Run:
 
@@ -884,6 +884,10 @@ composer test -- --filter=NodeResultTest
 ```
 
 Expected: invalid targets fail the run before a successful checkpoint is created for bad schedules.
+
+Observed: `SuperstepTest` and `NodeResultTest` pass after implementation. Invalid dynamic targets fail the run before checkpoint persistence.
+
+Final verification: `composer test` passes with 183 passed, 1 skipped optional pgvector integration test; `composer test:lint` passes; `composer test:types` passes.
 
 ## Task 6: Queue Job Defaults, Tags, And Database Invariants
 

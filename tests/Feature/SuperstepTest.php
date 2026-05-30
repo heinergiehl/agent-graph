@@ -233,6 +233,51 @@ it('preserves scheduled send metadata for replay and fork from parallel checkpoi
         ->and(app('agent-graph.checkpoints')->listForRun($forked->runId())[1]['completed_nodes'])->toBe(['worker', 'worker']);
 });
 
+it('fails immediately when a node returns goto for an unknown target', function () {
+    AgentGraph::define(
+        StateGraph::make('invalid_goto_target')
+            ->node('route', InvalidGotoNode::class)
+            ->edge(StateGraph::START, 'route')
+            ->compile(),
+    );
+
+    $run = AgentGraph::graph('invalid_goto_target')->thread('invalid-goto')->run();
+
+    expect($run->status())->toBe('failed')
+        ->and($run->error()['message'])->toContain('Node [route] returned unknown goto target [missing]')
+        ->and(app('agent-graph.checkpoints')->listForRun($run->runId()))->toHaveCount(0);
+});
+
+it('fails immediately when a node sends to an unknown target', function () {
+    AgentGraph::define(
+        StateGraph::make('invalid_send_target')
+            ->node('dispatch', InvalidSendNode::class)
+            ->edge(StateGraph::START, 'dispatch')
+            ->compile(),
+    );
+
+    $run = AgentGraph::graph('invalid_send_target')->thread('invalid-send')->run();
+
+    expect($run->status())->toBe('failed')
+        ->and($run->error()['message'])->toContain('Node [dispatch] returned unknown send target [missing]')
+        ->and(app('agent-graph.checkpoints')->listForRun($run->runId()))->toHaveCount(0);
+});
+
+it('fails immediately when a node sends to the end endpoint', function () {
+    AgentGraph::define(
+        StateGraph::make('invalid_end_send_target')
+            ->node('dispatch', InvalidEndSendNode::class)
+            ->edge(StateGraph::START, 'dispatch')
+            ->compile(),
+    );
+
+    $run = AgentGraph::graph('invalid_end_send_target')->thread('invalid-end-send')->run();
+
+    expect($run->status())->toBe('failed')
+        ->and($run->error()['message'])->toContain('Node [dispatch] returned unknown send target [__end__]')
+        ->and(app('agent-graph.checkpoints')->listForRun($run->runId()))->toHaveCount(0);
+});
+
 final class SuperstepSplitNode implements Node
 {
     public function __invoke(NodeContext $context): NodeResult
@@ -353,5 +398,29 @@ final class SuperstepWriteAnswerNode implements Node
     public function __invoke(NodeContext $context): NodeResult
     {
         return NodeResult::write(['answer' => 'ok']);
+    }
+}
+
+final class InvalidGotoNode implements Node
+{
+    public function __invoke(NodeContext $context): NodeResult
+    {
+        return NodeResult::goto('missing');
+    }
+}
+
+final class InvalidSendNode implements Node
+{
+    public function __invoke(NodeContext $context): NodeResult
+    {
+        return NodeResult::send('missing');
+    }
+}
+
+final class InvalidEndSendNode implements Node
+{
+    public function __invoke(NodeContext $context): NodeResult
+    {
+        return NodeResult::send(StateGraph::END);
     }
 }
