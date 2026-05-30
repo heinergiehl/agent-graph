@@ -1,5 +1,6 @@
 <?php
 
+use Heiner\AgentGraph\AgentGraphManager;
 use Heiner\AgentGraph\Contracts\Node;
 use Heiner\AgentGraph\Facades\AgentGraph;
 use Heiner\AgentGraph\Graph\StateGraph;
@@ -99,6 +100,57 @@ it('does not duplicate node execution or checkpoints when jobs are retried', fun
     expect($completed->status())->toBe('completed')
         ->and($completed->checkpoints())->toHaveCount(2)
         ->and($completed->state('items'))->toBe(['a', 'b']);
+});
+
+it('does not rerun completed sibling node executions when a queued superstep is retried', function () {
+    QueuedPendingWritesCounter::$stableCalls = 0;
+    QueuedPendingWritesCounter::$flakyCalls = 0;
+
+    AgentGraph::define(
+        StateGraph::make('queued_pending_writes_recovery')
+            ->state(['items' => 'array'])
+            ->reducer('items', 'append')
+            ->node('split', QueuedPendingWritesSplitNode::class)
+            ->node('stable', QueuedPendingWritesStableNode::class)
+            ->node('flaky', QueuedPendingWritesFlakyNode::class)
+            ->edge(StateGraph::START, 'split')
+            ->edge('split', 'stable')
+            ->edge('split', 'flaky')
+            ->compile(),
+    );
+
+    $manager = app(AgentGraphManager::class);
+    $run = AgentGraph::graph('queued_pending_writes_recovery')
+        ->thread('queued-pending')
+        ->input(['items' => []])
+        ->run();
+    $split = AgentGraph::nodeExecutions($run->runId())[0];
+
+    $manager->executeQueuedNode($split['execution_id']);
+    $manager->continueQueuedSuperstep($run->runId(), 1);
+
+    $frontier = collect(AgentGraph::nodeExecutions($run->runId()))
+        ->where('step', 2)
+        ->keyBy('node_id');
+    $stable = $frontier->get('stable');
+    $flaky = $frontier->get('flaky');
+
+    $manager->executeQueuedNode($stable['execution_id']);
+    $manager->executeQueuedNode($stable['execution_id']);
+    $manager->continueQueuedSuperstep($run->runId(), 2);
+    $manager->executeQueuedNode($flaky['execution_id']);
+    $manager->continueQueuedSuperstep($run->runId(), 2);
+    $manager->continueQueuedSuperstep($run->runId(), 2);
+
+    $snapshot = AgentGraph::inspect($run->runId(), withHistory: true);
+    $writes = app('agent-graph.writes')->listForRun($run->runId());
+
+    expect(QueuedPendingWritesCounter::$stableCalls)->toBe(1)
+        ->and(QueuedPendingWritesCounter::$flakyCalls)->toBe(1)
+        ->and($snapshot->status())->toBe('completed')
+        ->and($snapshot->state('items'))->toBe(['stable', 'flaky'])
+        ->and($snapshot->checkpoints())->toHaveCount(2)
+        ->and(collect($writes)->where('node_id', 'stable'))->toHaveCount(1);
 });
 
 it('matches sync reducer conflict failure semantics in queued mode', function () {
@@ -252,6 +304,41 @@ final class QueuedBranchBNode implements Node
     public function __invoke(NodeContext $context): NodeResult
     {
         return NodeResult::end(['items' => ['b']]);
+    }
+}
+
+final class QueuedPendingWritesCounter
+{
+    public static int $stableCalls = 0;
+
+    public static int $flakyCalls = 0;
+}
+
+final class QueuedPendingWritesSplitNode implements Node
+{
+    public function __invoke(NodeContext $context): NodeResult
+    {
+        return NodeResult::write([]);
+    }
+}
+
+final class QueuedPendingWritesStableNode implements Node
+{
+    public function __invoke(NodeContext $context): NodeResult
+    {
+        QueuedPendingWritesCounter::$stableCalls++;
+
+        return NodeResult::write(['items' => ['stable']]);
+    }
+}
+
+final class QueuedPendingWritesFlakyNode implements Node
+{
+    public function __invoke(NodeContext $context): NodeResult
+    {
+        QueuedPendingWritesCounter::$flakyCalls++;
+
+        return NodeResult::write(['items' => ['flaky']]);
     }
 }
 

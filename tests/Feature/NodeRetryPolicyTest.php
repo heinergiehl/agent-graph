@@ -16,6 +16,7 @@ beforeEach(function () {
     RetryWhenGuardNode::$attempts = 0;
     RetryInvalidWriteNode::$attempts = 0;
     RetrySuperstepFlakyNode::$attempts = 0;
+    RetrySuperstepStableNode::$attempts = 0;
 });
 
 it('retries thrown node exceptions before completing with one checkpoint', function () {
@@ -188,6 +189,7 @@ it('retries inside a superstep and merges successful writes once', function () {
     expect($run->completed())->toBeTrue()
         ->and($run->state('results'))->toBe(['flaky', 'stable'])
         ->and(RetrySuperstepFlakyNode::$attempts)->toBe(2)
+        ->and(RetrySuperstepStableNode::$attempts)->toBe(1)
         ->and($checkpoints)->toHaveCount(2)
         ->and($checkpoints[1]['completed_nodes'])->toBe(['flaky', 'stable'])
         ->and($writes)->toHaveCount(2)
@@ -285,8 +287,12 @@ final class RetrySuperstepFlakyNode implements Node
 
 final class RetrySuperstepStableNode implements Node
 {
+    public static int $attempts = 0;
+
     public function __invoke(NodeContext $context): NodeResult
     {
+        self::$attempts++;
+
         return NodeResult::write(['results' => ['stable']]);
     }
 }

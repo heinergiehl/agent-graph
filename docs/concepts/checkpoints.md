@@ -4,6 +4,10 @@ AgentGraph persists a checkpoint after every successful node step. A checkpoint 
 
 Writes are stored separately from snapshots. This allows debugging, state diffs, replay foundations, and time-travel/forking support.
 
+In `queued_supersteps` mode, AgentGraph treats node execution rows as task-level pending writes. If one node in a frontier succeeds and another fails or is retried, the completed node execution is not rerun. The continuation job aggregates durable node execution results into one checkpoint once the frontier is complete.
+
+Sync mode persists only completed superstep checkpoints. A PHP process failure inside a sync superstep can require rerunning the current frontier. Use queued supersteps for task-level recovery across workers.
+
 Normal resume continues from the latest checkpoint for a run. Time-travel APIs work from any specific checkpoint:
 
 - `AgentGraph::checkpoint($checkpointId, withWrites: true)` returns a read-only snapshot of one checkpoint and optionally its writes.

@@ -2,6 +2,7 @@
 
 use Heiner\AgentGraph\Contracts\LockProvider;
 use Heiner\AgentGraph\Contracts\Node;
+use Heiner\AgentGraph\Contracts\NodeExecutionStore;
 use Heiner\AgentGraph\Contracts\WriteStore;
 use Heiner\AgentGraph\Exceptions\SerializationException;
 use Heiner\AgentGraph\Graph\StateGraph;
@@ -13,6 +14,7 @@ use Heiner\AgentGraph\Persistence\DatabaseRunStore;
 use Heiner\AgentGraph\Persistence\DatabaseTaskStore;
 use Heiner\AgentGraph\Persistence\DatabaseTraceStore;
 use Heiner\AgentGraph\Persistence\InMemoryInterruptStore;
+use Heiner\AgentGraph\Persistence\InMemoryNodeExecutionStore;
 use Heiner\AgentGraph\Runtime\GraphRuntime;
 use Heiner\AgentGraph\Runtime\NodeContext;
 use Heiner\AgentGraph\Runtime\NodeResult;
@@ -159,6 +161,36 @@ it('rejects a second pending in-memory interrupt for the same run', function () 
     ])['status'])->toBe('pending');
 });
 
+it('returns terminal database node executions from claim without relocking', function (string $status) {
+    $store = new DatabaseNodeExecutionStore(app('db'));
+
+    $terminal = makeTerminalNodeExecution($store, $status);
+    $claimed = $store->claim($terminal['execution_id'], now()->addMinute());
+
+    expect($claimed['status'])->toBe($status)
+        ->and($claimed['locked_until'])->toBeNull()
+        ->and($claimed['finished_at'])->not->toBeNull()
+        ->and($claimed['writes'])->toBe($terminal['writes'])
+        ->and($claimed['next_schedule'])->toBe($terminal['next_schedule'])
+        ->and($claimed['interrupt'])->toBe($terminal['interrupt'])
+        ->and($claimed['error'])->toBe($terminal['error']);
+})->with(['completed', 'interrupted', 'failed']);
+
+it('returns terminal in-memory node executions from claim without relocking', function (string $status) {
+    $store = new InMemoryNodeExecutionStore;
+
+    $terminal = makeTerminalNodeExecution($store, $status);
+    $claimed = $store->claim($terminal['execution_id'], now()->addMinute());
+
+    expect($claimed['status'])->toBe($status)
+        ->and($claimed['locked_until'])->toBeNull()
+        ->and($claimed['finished_at'])->not->toBeNull()
+        ->and($claimed['writes'])->toBe($terminal['writes'])
+        ->and($claimed['next_schedule'])->toBe($terminal['next_schedule'])
+        ->and($claimed['interrupt'])->toBe($terminal['interrupt'])
+        ->and($claimed['error'])->toBe($terminal['error']);
+})->with(['completed', 'interrupted', 'failed']);
+
 final class FailingWriteStore implements WriteStore
 {
     public function createMany(string $runId, string $checkpointId, string $nodeId, array $writes, array $meta = []): void
@@ -191,4 +223,32 @@ final class MissingAfterInsertNodeExecutionStore extends DatabaseNodeExecutionSt
     {
         return null;
     }
+}
+
+function makeTerminalNodeExecution(NodeExecutionStore $store, string $status): array
+{
+    $execution = $store->schedule([
+        'run_id' => 'run_claim_'.$status,
+        'checkpoint_id' => 'chk_claim_'.$status,
+        'step' => 1,
+        'schedule_index' => 0,
+        'node_id' => 'worker',
+        'base_state' => ['items' => []],
+        'node_state' => ['items' => []],
+    ]);
+
+    return match ($status) {
+        'completed' => $store->complete($execution['execution_id'], [
+            'writes' => ['items' => ['done']],
+            'next_schedule' => [['node' => 'next', 'input' => [], 'meta' => []]],
+            'meta' => ['attempt' => 1],
+        ]),
+        'interrupted' => $store->interrupt($execution['execution_id'], [
+            'writes' => ['items' => ['wait']],
+            'interrupt' => ['type' => 'input', 'payload' => ['prompt' => 'Continue?']],
+            'meta' => ['attempt' => 1],
+        ]),
+        'failed' => $store->fail($execution['execution_id'], ['message' => 'boom']),
+        default => throw new InvalidArgumentException("Unsupported status [{$status}]."),
+    };
 }

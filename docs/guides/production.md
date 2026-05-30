@@ -98,6 +98,8 @@ Keep external side effects inside `$context->tasks()->once()` so queue retries d
 
 Task leases prevent duplicate active execution for the same idempotency key. Completed tasks continue to return their stored result, and reusing a key with different input still fails.
 
+Queued node executions are the durable task-level pending writes boundary for `queued_supersteps`. A completed node execution row is returned as-is when a worker retry claims it again, so a completed sibling in the same frontier is not rerun while the continuation job waits for the remaining siblings. The continuation job creates one checkpoint for the frontier after all node execution rows are terminal.
+
 `queued_supersteps` is opt-in. Configure `agent-graph.execution.mode=queued_supersteps`, optionally set `agent-graph.execution.queue_connection` and `agent-graph.execution.queue`, and run Laravel workers for that queue. Queued workers must boot the same graph definitions as the process that started or resumed the run.
 
 Equivalent env settings:
@@ -152,6 +154,8 @@ Static multi-edges, conditional fan-out, and dynamic `Send` run deterministicall
 In queued mode, `run()` and `resume()` usually return a `running` result after scheduling work. Use `AgentGraph::inspect($runId)` or application notifications to observe the final `completed`, `failed`, `interrupted`, or `delayed` status.
 
 Every node in the same superstep reads the same base state. Writes are merged only after the frontier finishes. Configure an explicit reducer for any channel that can be written by more than one branch.
+
+Sync mode persists only completed superstep checkpoints. If a PHP process dies inside a sync superstep, the current frontier can need to run again. Use `queued_supersteps` when worker-backed recovery needs to preserve completed sibling node work across process failures or queue retries.
 
 `Send` input is local to a target node and is preserved in checkpoint metadata for replay/fork. It is not persisted into graph state unless the node writes it. Parallel interrupts inside one frontier are rejected; put approval, review, or state-edit interrupts after fan-in.
 

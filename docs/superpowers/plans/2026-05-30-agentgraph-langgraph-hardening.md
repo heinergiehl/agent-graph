@@ -1085,7 +1085,7 @@ Final verification: `composer test` passes with 188 passed, 1 skipped optional p
 - Test: `tests/Feature/QueuedSuperstepTest.php`
 - Test: `tests/Feature/NodeRetryPolicyTest.php`
 
-- [ ] **Step 1: Define AgentGraph's PHP-specific guarantee**
+- [x] **Step 1: Define AgentGraph's PHP-specific guarantee**
 
 Document this guarantee in `docs/concepts/checkpoints.md`:
 
@@ -1099,7 +1099,7 @@ For sync mode, document:
 Sync mode persists only completed superstep checkpoints. A PHP process failure inside a sync superstep can require rerunning the current frontier. Use queued supersteps for task-level recovery across workers.
 ```
 
-- [ ] **Step 2: Add regression test for completed sibling not rerun**
+- [x] **Step 2: Add regression test for completed sibling not rerun**
 
 Add to `tests/Feature/QueuedSuperstepTest.php` a graph with two queued nodes:
 
@@ -1136,11 +1136,11 @@ it('does not rerun completed sibling node executions when a queued superstep is 
 
 Use the existing node execution claim behavior to satisfy the test. If the test already passes, keep it as coverage.
 
-- [ ] **Step 3: Ensure completed executions are immutable**
+- [x] **Step 3: Ensure completed executions are immutable**
 
 In `DatabaseNodeExecutionStore::claim()`, completed, interrupted, and failed executions already return their record. Add tests for this exact contract and keep it stable.
 
-- [ ] **Step 4: Add checkpoint aggregation guard**
+- [x] **Step 4: Add checkpoint aggregation guard**
 
 In `GraphRuntime::continueQueuedSuperstep()`, before creating a checkpoint, recheck:
 
@@ -1152,7 +1152,7 @@ if ($this->checkpoints->latestForRun($runId) !== null && (int) $latestCheckpoint
 
 This exists today. Keep it and add regression coverage for duplicate continue jobs.
 
-- [ ] **Step 5: Verify**
+- [x] **Step 5: Verify**
 
 Run:
 
@@ -1162,6 +1162,10 @@ composer test -- --filter=NodeRetryPolicyTest
 ```
 
 Expected: queued mode preserves completed sibling work and sync retry docs are explicit.
+
+Observed: `GraphRuntime::continueQueuedSuperstep()` already rechecks the latest checkpoint before aggregation, and node execution stores already return terminal records from `claim()`. Added regression coverage for completed sibling node executions, duplicate continuation aggregation, terminal claim immutability in database and in-memory stores, and sync superstep retry sibling calls.
+
+Final verification: `QueuedSuperstepTest`, `NodeRetryPolicyTest`, and `PersistenceHardeningTest` pass. `composer test` passes with 195 passed, 1 skipped optional pgvector integration test; `composer test:lint` passes after formatting import order; `composer test:types` passes.
 
 ## Task 8: Tool Names, Runtime Options, And Delay Scheduler Resolution
 
