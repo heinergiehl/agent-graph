@@ -130,6 +130,7 @@ class AgentGraphServiceProvider extends ServiceProvider
             '2026_05_25_000000_create_agent_graph_tables.php' => 'create_agent_graph_tables',
             '2026_05_26_000000_add_agent_graph_hardening_tables.php' => 'add_agent_graph_hardening_tables',
             '2026_05_26_010000_add_worker_fields_to_agent_graph_node_executions.php' => 'add_worker_fields_to_agent_graph_node_executions',
+            '2026_05_30_000000_add_agent_graph_runtime_invariants.php' => 'add_agent_graph_runtime_invariants',
         ];
 
         $paths = [];

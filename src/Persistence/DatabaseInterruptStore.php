@@ -20,20 +20,39 @@ class DatabaseInterruptStore implements InterruptStore
         $interruptId = 'int_'.str()->ulid();
         $now = now();
 
-        $this->query()->insert([
-            'interrupt_id' => $interruptId,
-            'run_id' => $interrupt['run_id'],
-            'checkpoint_id' => $interrupt['checkpoint_id'],
-            'node_id' => $interrupt['node_id'],
-            'type' => $interrupt['type'],
-            'status' => 'pending',
-            'payload' => $this->encode($interrupt['payload'] ?? []),
-            'expires_at' => $interrupt['expires_at'] ?? null,
-            'created_at' => $now,
-            'updated_at' => $now,
-        ]);
+        return $this->connection()->transaction(function () use ($interrupt, $interruptId, $now): array {
+            $this->connection()
+                ->table(config('agent-graph.tables.runs', 'agent_graph_runs'))
+                ->where('public_id', $interrupt['run_id'])
+                ->lockForUpdate()
+                ->first();
 
-        return $this->find($interruptId);
+            $existing = $this->query()
+                ->where('run_id', $interrupt['run_id'])
+                ->where('status', 'pending')
+                ->lockForUpdate()
+                ->first();
+
+            if ($existing !== null) {
+                throw new RuntimeException("Run [{$interrupt['run_id']}] already has a pending interrupt.");
+            }
+
+            $this->query()->insert([
+                'interrupt_id' => $interruptId,
+                'run_id' => $interrupt['run_id'],
+                'checkpoint_id' => $interrupt['checkpoint_id'],
+                'node_id' => $interrupt['node_id'],
+                'type' => $interrupt['type'],
+                'status' => 'pending',
+                'payload' => $this->encode($interrupt['payload'] ?? []),
+                'expires_at' => $interrupt['expires_at'] ?? null,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+
+            return $this->find($interruptId)
+                ?? throw new RuntimeException("Interrupt [{$interruptId}] was not found after creation.");
+        });
     }
 
     public function find(string $interruptId): ?array

@@ -49,7 +49,11 @@ class DatabaseCheckpointStore implements CheckpointStore
 
     public function latestForRun(string $runId): ?array
     {
-        $record = $this->query()->where('run_id', $runId)->orderByDesc('step')->first();
+        $record = $this->query()
+            ->where('run_id', $runId)
+            ->orderByDesc('step')
+            ->orderByDesc('id')
+            ->first();
 
         return $record ? $this->decodeRecord($record, ['state', 'next_nodes', 'completed_nodes', 'interrupts', 'meta']) : null;
     }

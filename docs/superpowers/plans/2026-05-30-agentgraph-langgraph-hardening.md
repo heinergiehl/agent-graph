@@ -906,7 +906,7 @@ Final verification: `composer test` passes with 183 passed, 1 skipped optional p
 - Test: `tests/Feature/QueueHardeningTest.php`
 - Test: `tests/Integration/PersistenceHardeningTest.php`
 
-- [ ] **Step 1: Add queue config tests**
+- [x] **Step 1: Add queue config tests**
 
 Add to `tests/Feature/QueueHardeningTest.php`:
 
@@ -925,7 +925,7 @@ it('applies configured queue job defaults and tags', function () {
 });
 ```
 
-- [ ] **Step 2: Add execution config**
+- [x] **Step 2: Add execution config**
 
 In `config/agent-graph.php`:
 
@@ -941,7 +941,7 @@ In `config/agent-graph.php`:
 ],
 ```
 
-- [ ] **Step 3: Add job defaults**
+- [x] **Step 3: Add job defaults**
 
 In each job constructor, set:
 
@@ -973,7 +973,7 @@ public function tags(): array
 
 Use equivalent tags for run, resume, delayed resume, and continue-superstep jobs.
 
-- [ ] **Step 4: Add database invariant migration**
+- [x] **Step 4: Add database invariant migration**
 
 Create `database/migrations/2026_05_30_000000_add_agent_graph_runtime_invariants.php`:
 
@@ -1020,7 +1020,7 @@ return new class extends AgentGraphMigration
 
 Do not add a portable partial unique index for pending interrupts in the Laravel migration because SQLite and MySQL differ. Enforce one pending interrupt per run in `DatabaseInterruptStore::create()` inside a transaction with a `lockForUpdate()` check.
 
-- [ ] **Step 5: Make `latestForRun()` deterministic**
+- [x] **Step 5: Make `latestForRun()` deterministic**
 
 Change `DatabaseCheckpointStore::latestForRun()`:
 
@@ -1032,7 +1032,7 @@ $record = $this->query()
     ->first();
 ```
 
-- [ ] **Step 6: Enforce pending interrupt invariant in stores**
+- [x] **Step 6: Enforce pending interrupt invariant in stores**
 
 Before insert in `DatabaseInterruptStore::create()`:
 
@@ -1050,7 +1050,7 @@ if ($existing !== null) {
 
 Mirror the check in `InMemoryInterruptStore::create()`.
 
-- [ ] **Step 7: Verify duplicate queue job idempotency**
+- [x] **Step 7: Verify duplicate queue job idempotency**
 
 Add tests that manually run the same `NodeExecutionJob` twice and the same `ContinueSuperstepJob` twice. Expected result:
 
@@ -1058,7 +1058,7 @@ Add tests that manually run the same `NodeExecutionJob` twice and the same `Cont
 The node execution is completed once, the second job returns without changing the completed result, and the run has one checkpoint for the step.
 ```
 
-- [ ] **Step 8: Verify**
+- [x] **Step 8: Verify**
 
 Run:
 
@@ -1069,6 +1069,10 @@ composer test -- --filter=MigrationConfigurationTest
 ```
 
 Expected: queue defaults, duplicate job guards, and migration checks pass.
+
+Observed: red tests failed first on missing queue job properties/tags, missing pending interrupt invariant, and missing runtime migration indexes. After implementation, `QueueHardeningTest`, `PersistenceHardeningTest`, and `MigrationConfigurationTest` pass.
+
+Final verification: `composer test` passes with 188 passed, 1 skipped optional pgvector integration test; `composer test:lint` passes; `composer test:types` passes.
 
 ## Task 7: LangGraph-Style Pending Writes Recovery
 

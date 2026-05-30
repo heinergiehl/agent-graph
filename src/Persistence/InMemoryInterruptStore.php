@@ -23,6 +23,10 @@ class InMemoryInterruptStore implements InterruptStore
             'updated_at' => now(),
         ], $interrupt);
 
+        if ($interrupt['status'] === 'pending' && $this->pendingForRun($interrupt['run_id']) !== null) {
+            throw new RuntimeException("Run [{$interrupt['run_id']}] already has a pending interrupt.");
+        }
+
         $this->interrupts[$interrupt['interrupt_id']] = $interrupt;
 
         return $interrupt;

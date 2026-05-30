@@ -34,6 +34,13 @@ it('migrates and rolls back custom named tables on the configured database conne
     expect(Schema::connection($connection)->hasTable($tables['runs']))->toBeTrue()
         ->and(Schema::connection(config('database.default'))->hasTable($tables['runs']))->toBeFalse();
 
+    expect(sqliteIndexNames($connection, $tables['checkpoints']))
+        ->toContain('agent_graph_checkpoints_run_step_unique')
+        ->and(sqliteIndexNames($connection, $tables['node_executions']))
+        ->toContain('agent_graph_node_executions_schedule_unique')
+        ->and(sqliteIndexNames($connection, $tables['interrupts']))
+        ->toContain('agent_graph_interrupts_run_status_index');
+
     $this->artisan('migrate:rollback', [
         '--path' => realpath(__DIR__.'/../../database/migrations'),
         '--realpath' => true,
@@ -53,3 +60,13 @@ it('uses the configured AgentGraph database connection in the pgvector migration
         ->and($stub)->toContain('$table = DB::connection(AgentGraphDatabase::connectionName())->getQueryGrammar()->wrapTable')
         ->and($stub)->toContain('DB::connection(AgentGraphDatabase::connectionName())->statement("alter table {$table} add column embedding vector")');
 });
+
+function sqliteIndexNames(string $connection, string $table): array
+{
+    $table = str_replace("'", "''", $table);
+
+    return array_map(
+        fn (object $index): string => $index->name,
+        DB::connection($connection)->select("PRAGMA index_list('{$table}')"),
+    );
+}

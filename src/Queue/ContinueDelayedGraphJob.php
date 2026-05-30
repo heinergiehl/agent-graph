@@ -30,4 +30,13 @@ class ContinueDelayedGraphJob extends ResumeGraphJob
 
         return parent::handle($manager);
     }
+
+    public function tags(): array
+    {
+        return [
+            'agent-graph',
+            'agent-graph:delayed-resume',
+            'agent-graph:run:'.$this->runId,
+        ];
+    }
 }

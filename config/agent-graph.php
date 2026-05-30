@@ -26,6 +26,9 @@ return [
         'queue_connection' => env('AGENT_GRAPH_EXECUTION_QUEUE_CONNECTION'),
         'queue' => env('AGENT_GRAPH_EXECUTION_QUEUE'),
         'node_lease_seconds' => env('AGENT_GRAPH_EXECUTION_NODE_LEASE_SECONDS', 300),
+        'job_tries' => env('AGENT_GRAPH_JOB_TRIES', 3),
+        'job_timeout' => env('AGENT_GRAPH_JOB_TIMEOUT', 300),
+        'job_backoff' => array_map('intval', explode(',', (string) env('AGENT_GRAPH_JOB_BACKOFF', '5'))),
     ],
 
     'tables' => [

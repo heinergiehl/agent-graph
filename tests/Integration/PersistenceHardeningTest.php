@@ -12,6 +12,7 @@ use Heiner\AgentGraph\Persistence\DatabaseNodeExecutionStore;
 use Heiner\AgentGraph\Persistence\DatabaseRunStore;
 use Heiner\AgentGraph\Persistence\DatabaseTaskStore;
 use Heiner\AgentGraph\Persistence\DatabaseTraceStore;
+use Heiner\AgentGraph\Persistence\InMemoryInterruptStore;
 use Heiner\AgentGraph\Runtime\GraphRuntime;
 use Heiner\AgentGraph\Runtime\NodeContext;
 use Heiner\AgentGraph\Runtime\NodeResult;
@@ -94,6 +95,68 @@ it('raises when a recorded database node execution cannot be read back by execut
         'node_id' => 'answer',
         'status' => 'pending',
     ]))->toThrow(RuntimeException::class, 'Node execution [nex_missing_readback] could not be read after it was recorded.');
+});
+
+it('rejects a second pending database interrupt for the same run', function () {
+    $runs = new DatabaseRunStore(app('db'));
+    $interrupts = new DatabaseInterruptStore(app('db'));
+    $run = $runs->create('pending_interrupt_invariant', '1', 'thread-pending-interrupt');
+
+    $first = $interrupts->create([
+        'run_id' => $run['public_id'],
+        'checkpoint_id' => 'chk_pending_one',
+        'node_id' => 'review',
+        'type' => 'input',
+        'payload' => ['prompt' => 'First'],
+    ]);
+
+    expect(fn () => $interrupts->create([
+        'run_id' => $run['public_id'],
+        'checkpoint_id' => 'chk_pending_two',
+        'node_id' => 'review',
+        'type' => 'input',
+        'payload' => ['prompt' => 'Second'],
+    ]))->toThrow(RuntimeException::class, "Run [{$run['public_id']}] already has a pending interrupt.");
+
+    $interrupts->resolvePending($first['interrupt_id'], $run['public_id'], ['answer' => 'done']);
+
+    expect($interrupts->create([
+        'run_id' => $run['public_id'],
+        'checkpoint_id' => 'chk_pending_three',
+        'node_id' => 'review',
+        'type' => 'input',
+        'payload' => ['prompt' => 'Third'],
+    ])['status'])->toBe('pending');
+});
+
+it('rejects a second pending in-memory interrupt for the same run', function () {
+    $interrupts = new InMemoryInterruptStore;
+
+    $first = $interrupts->create([
+        'run_id' => 'run_memory_pending',
+        'checkpoint_id' => 'chk_pending_one',
+        'node_id' => 'review',
+        'type' => 'input',
+        'payload' => ['prompt' => 'First'],
+    ]);
+
+    expect(fn () => $interrupts->create([
+        'run_id' => 'run_memory_pending',
+        'checkpoint_id' => 'chk_pending_two',
+        'node_id' => 'review',
+        'type' => 'input',
+        'payload' => ['prompt' => 'Second'],
+    ]))->toThrow(RuntimeException::class, 'Run [run_memory_pending] already has a pending interrupt.');
+
+    $interrupts->resolvePending($first['interrupt_id'], 'run_memory_pending', ['answer' => 'done']);
+
+    expect($interrupts->create([
+        'run_id' => 'run_memory_pending',
+        'checkpoint_id' => 'chk_pending_three',
+        'node_id' => 'review',
+        'type' => 'input',
+        'payload' => ['prompt' => 'Third'],
+    ])['status'])->toBe('pending');
 });
 
 final class FailingWriteStore implements WriteStore

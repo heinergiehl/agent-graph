@@ -47,6 +47,8 @@ Published migrations create and maintain these package tables:
 
 Applications can override table names in `config/agent-graph.php`, but do that before migrating. Do not read these tables directly from application UI code; prefer `AgentGraph::inspect()`, `AgentGraph::runs()`, `AgentGraph::tasks()`, and the memory manager APIs.
 
+Run all package migrations after upgrading. The runtime invariant migration adds database constraints for one checkpoint per run step and one node execution per run step schedule slot, plus a run/status interrupt index. AgentGraph enforces the "one pending interrupt per run" rule in the database and in-memory stores instead of relying on a partial unique index, so the same behavior works across SQLite, MySQL, and PostgreSQL.
+
 Use `AGENT_GRAPH_STORE=memory` only for tests or throwaway local experiments. In-memory stores are process-local and lose all runtime state between requests and workers.
 
 `PgvectorMemoryStore` is optional and experimental. Use it only for semantic memory features such as long-term memory search, similar-case lookup, example selection, or semantic routing. Do not use pgvector for AgentGraph run state, checkpoints, interrupts, queues, task audit, or trace persistence; those remain relational store responsibilities.
@@ -105,8 +107,13 @@ AGENT_GRAPH_EXECUTION_MODE=queued_supersteps
 AGENT_GRAPH_EXECUTION_QUEUE_CONNECTION=database
 AGENT_GRAPH_EXECUTION_QUEUE=agent-graph
 AGENT_GRAPH_EXECUTION_NODE_LEASE_SECONDS=300
+AGENT_GRAPH_JOB_TRIES=3
+AGENT_GRAPH_JOB_TIMEOUT=300
+AGENT_GRAPH_JOB_BACKOFF=5
 AGENT_GRAPH_LOCK_TTL_SECONDS=300
 ```
+
+AgentGraph queue jobs apply `AGENT_GRAPH_JOB_TRIES`, `AGENT_GRAPH_JOB_TIMEOUT`, and comma-separated `AGENT_GRAPH_JOB_BACKOFF` values uniformly across run, resume, delayed resume, node execution, and continuation jobs. Jobs also include `agent-graph` tags plus operation-specific run, graph, thread, execution, or step identifiers for queue dashboards and worker telemetry.
 
 Keep `AGENT_GRAPH_EXECUTION_MODE=sync` unless graph definitions are registered during app boot and workers are guaranteed to process `NodeExecutionJob` and `ContinueSuperstepJob`.
 
