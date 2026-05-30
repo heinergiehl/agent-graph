@@ -582,7 +582,7 @@ Final verification: `composer test` passes with 176 passed, 1 skipped optional p
 - Test: `tests/Unit/StateGraphTest.php`
 - Test: `tests/Feature/RuntimeHardeningTest.php`
 
-- [ ] **Step 1: Write failing reducer test**
+- [x] **Step 1: Write failing reducer test**
 
 Add to `tests/Unit/StateGraphTest.php`:
 
@@ -595,7 +595,7 @@ it('rejects unknown reducer strings', function () {
 });
 ```
 
-- [ ] **Step 2: Make reducer strings strict**
+- [x] **Step 2: Make reducer strings strict**
 
 Change `src/State/StateReducer.php`:
 
@@ -611,7 +611,7 @@ return match ($reducer) {
 
 Add `use InvalidArgumentException;`.
 
-- [ ] **Step 3: Write failing concurrency test**
+- [x] **Step 3: Write failing concurrency test**
 
 Add to `tests/Unit/StateGraphTest.php`:
 
@@ -625,7 +625,7 @@ it('rejects semaphore concurrency limits until they are implemented', function (
 })->throws(InvalidArgumentException::class, 'only exclusive node concurrency with limit=1');
 ```
 
-- [ ] **Step 4: Enforce exclusive-only concurrency**
+- [x] **Step 4: Enforce exclusive-only concurrency**
 
 In `src/Graph/ConcurrencyPolicy.php` constructor:
 
@@ -637,7 +637,7 @@ if ($limit !== 1) {
 
 Add `use InvalidArgumentException;`.
 
-- [ ] **Step 5: Document behavior changes**
+- [x] **Step 5: Document behavior changes**
 
 Add to `UPGRADE.md`:
 
@@ -646,7 +646,7 @@ Unknown reducer strings now throw instead of silently falling back to last-write
 `StateGraph::concurrency()` currently supports exclusive locks only. Calls with `limit > 1` now throw because semaphore concurrency is not implemented.
 ```
 
-- [ ] **Step 6: Verify**
+- [x] **Step 6: Verify**
 
 Run:
 
@@ -656,6 +656,10 @@ composer test -- --filter=RuntimeHardeningTest
 ```
 
 Expected: strict reducer and concurrency tests pass.
+
+Observed: `StateGraphTest` and `RuntimeHardeningTest` pass after implementation.
+
+Final verification: `composer test` passes with 178 passed, 1 skipped optional pgvector integration test; `composer test:lint` passes; `composer test:types` passes.
 
 ## Task 4: Multiple START Edges And Entry Node Semantics
 

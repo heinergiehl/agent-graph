@@ -237,6 +237,8 @@ StateGraph::make('summaries')
     ->reducer('summaries', 'append');
 ```
 
+Reducer names are strict. Unknown strings throw during reducer normalization instead of silently falling back to last-write-wins.
+
 `Send` input is node-local and is not persisted into graph state unless the target node writes it. Parallel interrupts are intentionally rejected in the same superstep; route approval or review after fan-in.
 
 ## Node Retry Policies
@@ -266,7 +268,7 @@ StateGraph::make('support')
     ->concurrency('call_api', limit: 1, key: 'support-api');
 ```
 
-Timeouts are portable wall-clock checks after node execution returns. Concurrency uses AgentGraph's lock provider and does not change Laravel AI provider, queue, or streaming behavior.
+Timeouts are portable wall-clock checks after node execution returns. Concurrency uses AgentGraph's lock provider and does not change Laravel AI provider, queue, or streaming behavior. The built-in runtime currently supports exclusive node concurrency only: `limit` must be `1`.
 
 Idempotent tasks now use leases. A running task key cannot be executed again until its lease expires; completed task keys still return their stored result and key reuse with different input is rejected.
 

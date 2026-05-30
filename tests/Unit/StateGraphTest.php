@@ -79,6 +79,11 @@ it('applies built in reducers deterministically', function () {
     ]);
 });
 
+it('rejects unknown reducer strings', function () {
+    expect(fn () => new StateReducer(['items' => 'apend']))
+        ->toThrow(InvalidArgumentException::class, 'Unknown reducer [apend]');
+});
+
 it('validates retry policies and calculates backoff delays', function () {
     $policy = new RetryPolicy(maxAttempts: 4, delayMs: 100, backoff: 2.0, maxDelayMs: 250);
 
@@ -122,6 +127,14 @@ it('rejects retry policies for unknown nodes when compiling', function () {
         ->retry('missing', maxAttempts: 2)
         ->compile();
 })->throws(InvalidArgumentException::class, 'Unknown policy node');
+
+it('rejects semaphore concurrency limits until they are implemented', function () {
+    StateGraph::make('invalid_concurrency')
+        ->node('call_api', NoopNode::class)
+        ->edge(StateGraph::START, 'call_api')
+        ->concurrency('call_api', limit: 2)
+        ->compile();
+})->throws(InvalidArgumentException::class, 'only exclusive node concurrency with limit=1');
 
 final class NoopNode implements Node
 {

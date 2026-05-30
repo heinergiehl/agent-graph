@@ -3,6 +3,7 @@
 namespace Heiner\AgentGraph\State;
 
 use Closure;
+use InvalidArgumentException;
 
 class StateReducer
 {
@@ -47,7 +48,7 @@ class StateReducer
             'merge' => Reducer::merge(),
             'messages', 'add_messages' => Reducer::addMessages(),
             'max', 'max_confidence' => Reducer::maxConfidence(),
-            default => Reducer::lastWriteWins(),
+            default => throw new InvalidArgumentException("Unknown reducer [{$reducer}]."),
         };
     }
 }

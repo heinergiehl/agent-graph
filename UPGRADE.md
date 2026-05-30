@@ -91,6 +91,10 @@ Per-node timeout and concurrency policies are additive:
 
 Timeouts are wall-clock checks after node execution returns. Concurrency uses the configured AgentGraph lock provider and does not alter Laravel AI providers, queues, or streaming.
 
+Unknown reducer strings now throw instead of silently falling back to last-write-wins. Fix typos such as `apend` to `append`.
+
+`StateGraph::concurrency()` currently supports exclusive locks only. Calls with `limit > 1` now throw because semaphore concurrency is not implemented.
+
 Task leases use `agent-graph.tasks.lease_seconds`. Choose a lease duration longer than the expected external side-effect call.
 
 Interrupt expiry is opt-in through `NodeResult::withInterruptPolicy(InterruptPolicy::expiresAfter(...))`. Call `AgentGraph::expireInterrupts()` from scheduled maintenance if your app uses expiring review flows.

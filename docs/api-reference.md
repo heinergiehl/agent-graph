@@ -8,13 +8,13 @@ This document describes the public API surface exposed by the 0.13 beta and inte
 
 - `StateGraph::make(string $key, string $version = '1'): StateGraph` creates a graph builder. The key identifies the graph; the version is persisted on runs and checkpoints.
 - `state(array|StateSchema $schema): self` defines state channels and schema types such as `string`, `string|null`, `int`, `bool`, `array`, `messages`, `mixed`, or structured `StateSchema` definitions. Unknown schema types throw instead of being treated as permissive `mixed`.
-- `reducer(string $channel, mixed $reducer): self` configures channel reducers. Built-ins include `append`, `merge`, `messages`/`add_messages`, and `max`/`max_confidence`.
+- `reducer(string $channel, mixed $reducer): self` configures channel reducers. Built-ins include `append`, `merge`, `messages`/`add_messages`, and `max`/`max_confidence`; unknown reducer strings throw.
 - `node(string $id, callable|string $node): self` registers an invokable node class, callable, or `Node` implementation.
 - `edge(string $from, string $to): self` registers a static edge.
 - `conditional(string $from, Closure $resolver, array $routes): self` registers conditional routing.
 - `retry(string $nodeId, int $maxAttempts = 3, int $delayMs = 0, float $backoff = 1.0, ?int $maxDelayMs = null, ?callable $when = null): self` configures retry for thrown exceptions from one node.
 - `timeout(string $nodeId, float $seconds): self` configures portable wall-clock timeout detection for one node.
-- `concurrency(string $nodeId, int $limit = 1, ?string $key = null): self` configures lock-backed node concurrency.
+- `concurrency(string $nodeId, int $limit = 1, ?string $key = null): self` configures lock-backed exclusive node concurrency. `limit` must be `1` until semaphore limits are implemented.
 - `compile(): GraphDefinition` validates and returns an immutable graph definition.
 
 Errors: invalid graph structure throws `InvalidArgumentException`.
@@ -47,7 +47,7 @@ Stability: additive beta API.
 
 `TimeoutPolicy` exposes `seconds()`. Timeout checks are portable wall-clock checks around node execution and do not terminate PHP execution mid-call.
 
-`ConcurrencyPolicy` exposes `limit()` and `key()`. The default runtime enforces `limit: 1` with AgentGraph's `LockProvider`; higher limits are reserved for custom limiters/adapters.
+`ConcurrencyPolicy` exposes `limit()` and `key()`. The default runtime enforces `limit: 1` with AgentGraph's `LockProvider`; higher limits throw because semaphore concurrency is not implemented.
 
 `maxAttempts` is the total attempt count including the first attempt. `delayMs` is the first retry delay, `backoff` multiplies later delays, and `maxDelayMs` caps retry delays when set. The optional `when(Throwable $exception, int $attempt, NodeContext $context): bool` predicate can stop retrying before attempts are exhausted.
 
