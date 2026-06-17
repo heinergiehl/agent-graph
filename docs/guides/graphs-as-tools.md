@@ -19,6 +19,9 @@ Use mapping hooks when the parent agent's tool request shape is different from g
 AgentGraph::tool('support_triage')
     ->thread(fn ($request) => $request['conversation_id'])
     ->input(fn ($request) => ['input' => $request['message']])
+    ->schemaInput(fn ($schema) => $schema->object([
+        'message' => $schema->string()->required(),
+    ]))
     ->meta(fn ($request) => ['source' => 'parent-agent'])
     ->output(fn ($run) => [
         'status' => $run->status(),
@@ -26,5 +29,7 @@ AgentGraph::tool('support_triage')
         'interrupt' => $run->interrupt(),
     ]);
 ```
+
+When a graph is registered before Laravel AI reads the tool schema, `GraphTool` can derive optional `input` properties from the graph state schema. Use `schemaInput()` for public tool contracts so private graph state channels do not become parent-agent input fields.
 
 Keep durable lifecycle observation in `RunEvent` callbacks. GraphTool hooks are for request/response mapping, not app-specific persistence.

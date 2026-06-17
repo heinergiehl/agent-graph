@@ -8,9 +8,9 @@ use Heiner\AgentGraph\Runtime\RunResult;
 use Heiner\AgentGraph\Runtime\RuntimeError;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
+use InvalidArgumentException;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
-use InvalidArgumentException;
 use Stringable;
 use Throwable;
 
@@ -27,6 +27,8 @@ class GraphTool implements Stringable, Tool
     protected ?Closure $outputMapper = null;
 
     protected Closure|array|null $metaResolver = null;
+
+    protected ?Closure $schemaInputResolver = null;
 
     public function __construct(
         protected AgentGraphManager $manager,
@@ -84,6 +86,13 @@ class GraphTool implements Stringable, Tool
     public function meta(Closure|array $meta): self
     {
         $this->metaResolver = $meta;
+
+        return $this;
+    }
+
+    public function schemaInput(Closure $resolver): self
+    {
+        $this->schemaInputResolver = $resolver;
 
         return $this;
     }
@@ -182,7 +191,7 @@ class GraphTool implements Stringable, Tool
             : $this->metaResolver;
 
         if (! is_array($meta)) {
-            throw new \InvalidArgumentException('GraphTool meta hook must return an array.');
+            throw new InvalidArgumentException('GraphTool meta hook must return an array.');
         }
 
         return $meta;
@@ -215,6 +224,16 @@ class GraphTool implements Stringable, Tool
 
     protected function inputSchema(JsonSchema $schema): Type
     {
+        if ($this->schemaInputResolver !== null) {
+            $resolved = ($this->schemaInputResolver)($schema);
+
+            if (! $resolved instanceof Type) {
+                throw new InvalidArgumentException('GraphTool schemaInput hook must return an Illuminate JsonSchema type.');
+            }
+
+            return $resolved;
+        }
+
         try {
             $definition = $this->manager->definition($this->graphKey);
         } catch (InvalidArgumentException) {
@@ -224,13 +243,7 @@ class GraphTool implements Stringable, Tool
         $properties = [];
 
         foreach ($definition->manifest()->toArray()['state'] as $channel => $state) {
-            $type = $this->jsonSchemaType($schema, $state);
-
-            if (! ($state['nullable'] ?? false)) {
-                $type->required();
-            }
-
-            $properties[$channel] = $type;
+            $properties[$channel] = $this->jsonSchemaType($schema, $state);
         }
 
         return $schema->object($properties);
@@ -239,7 +252,13 @@ class GraphTool implements Stringable, Tool
     protected function jsonSchemaType(JsonSchema $schema, array $state): Type
     {
         $nullable = (bool) ($state['nullable'] ?? false);
-        $type = match ($state['type'] ?? 'mixed') {
+        $stateType = $state['type'] ?? 'mixed';
+
+        if (is_array($stateType)) {
+            return $this->unionSchemaType($schema, $stateType, $nullable);
+        }
+
+        $type = match ($stateType) {
             'string' => $schema->string(),
             'int', 'integer' => $schema->integer(),
             'float', 'double', 'number' => $schema->number(),
@@ -249,6 +268,61 @@ class GraphTool implements Stringable, Tool
             'enum' => $schema->string()->enum((array) ($state['values'] ?? [])),
             default => $schema->object(),
         };
+
+        return $nullable ? $type->nullable() : $type;
+    }
+
+    protected function unionSchemaType(JsonSchema $schema, array $stateTypes, bool $nullable): Type
+    {
+        $types = array_values(array_unique(array_map(
+            fn (mixed $type): string => (string) $type,
+            $stateTypes,
+        )));
+
+        if (count($types) === 1) {
+            return $this->jsonSchemaType($schema, [
+                'type' => $types[0],
+                'nullable' => $nullable,
+            ]);
+        }
+
+        $displayTypes = $types;
+
+        if ($nullable) {
+            $displayTypes[] = 'null';
+        }
+
+        $description = 'Accepts one of: '.implode(', ', $displayTypes).'. Use schemaInput() for a tighter public tool contract.';
+
+        return $this->unionFallbackSchemaType($schema, $types, $nullable)
+            ->description($description);
+    }
+
+    protected function unionFallbackSchemaType(JsonSchema $schema, array $types, bool $nullable): Type
+    {
+        $normalized = array_map(fn (string $type): string => match ($type) {
+            'int' => 'integer',
+            'bool' => 'boolean',
+            'float', 'double' => 'number',
+            default => $type,
+        }, $types);
+
+        $allScalars = collect($normalized)
+            ->every(fn (string $type): bool => in_array($type, ['string', 'integer', 'number', 'boolean'], true));
+
+        if ($allScalars) {
+            $type = $schema->string();
+
+            return $nullable ? $type->nullable() : $type;
+        }
+
+        if (in_array('array', $normalized, true) && ! in_array('object', $normalized, true)) {
+            $type = $schema->array();
+
+            return $nullable ? $type->nullable() : $type;
+        }
+
+        $type = $schema->object();
 
         return $nullable ? $type->nullable() : $type;
     }

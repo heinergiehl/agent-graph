@@ -13,9 +13,14 @@ Target: runtime contracts and release-readiness features for Laravel apps and wo
 - Added `GraphManifest` and `GraphDefinition::manifest()` for read-only graph metadata, including state schema, reducers, nodes, edges, conditional routes, and node policies.
 - Added `GraphValidator` and `GraphValidationReport` for release-time graph checks such as unknown state schema types, unknown reducers, and unreachable nodes.
 - Added `AgentGraphManager::definitions()`, `manifest()`, and `validate()` read APIs.
-- Added `agent-graph:validate {graph?}` to validate registered graph definitions from CLI release gates.
-- `GraphTool::schema()` now derives the `input` object properties from a registered graph's state schema, falling back to the previous generic object schema when the graph is not registered.
+- Added `agent-graph:validate {graph?}` to validate registered graph definitions from CLI release gates. Empty graph registries now fail unless `--allow-empty` is passed.
+- Added `GraphTool::schemaInput()` for explicit public tool input schemas.
+- `GraphTool::schema()` now derives optional `input` object properties from a registered graph's state schema, falling back to the previous generic object schema when the graph is not registered.
 - Added `composer audit --no-dev` to the package `check` script through `test:security`.
+
+### Changed
+
+- Composer branch alias now targets `0.14-dev`.
 
 ## 0.13.0 - 2026-05-31
 

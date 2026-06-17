@@ -6,11 +6,11 @@ AgentGraph does not replace Laravel AI providers, agents, tools, streaming, or s
 
 ## Release Status
 
-`0.13.x` is the hardened pre-v1 release line intended for real Laravel app integration testing. Breaking changes are still possible before v1, but they will be documented in `CHANGELOG.md` and `UPGRADE.md`.
+`0.14.x` is the current pre-v1 development line for runtime contracts and release-readiness APIs. `0.13.x` remains the latest stable pre-v1 release line until `0.14.0` is tagged. Breaking changes are still possible before v1, but they will be documented in `CHANGELOG.md` and `UPGRADE.md`.
 
 The v1 target is a hardened MVP: stable graph execution, checkpoints, interrupts/resume, idempotent tasks, scoped memory, traces, queues, run-event observation, Laravel AI agent nodes, graphs as tools, native subgraph nodes, and durable app workflow sessions. Experimental checkpoint inspection, replay, forking, worker-backed queued supersteps, and vector memory contracts are available for post-v1-style workflows. OpenTelemetry export and visual workflow editing remain outside the stable v1 core.
 
-CI currently validates the 0.13 release line against PHP 8.3/8.4, Laravel 12/13, and `laravel/ai ^0.7`. `laravel/ai ^1.0` stays declared for forward compatibility but should remain non-blocking until upstream tags a 1.x release.
+CI validates the pre-v1 release line against PHP 8.3/8.4, Laravel 12/13, and `laravel/ai ^0.7`. `laravel/ai ^1.0` stays declared for forward compatibility but should remain non-blocking until upstream tags a 1.x release.
 
 ## Installation
 
@@ -250,9 +250,10 @@ Validate registered graph definitions before release:
 ```bash
 php artisan agent-graph:validate
 php artisan agent-graph:validate support_triage
+php artisan agent-graph:validate --allow-empty
 ```
 
-Validation reports unknown state schema types, unknown reducers, and unreachable nodes without mutating runtime state.
+Validation reports unknown state schema types, unknown reducers, and unreachable nodes without mutating runtime state. The command fails when no graph definitions are registered, so CI does not pass accidentally because the host app skipped graph bootstrapping. Use `--allow-empty` only for packages or environments where an empty registry is intentional.
 
 ## Supersteps and Send
 
@@ -450,12 +451,17 @@ public function tools(): iterable
             ->description('Run or resume the durable support workflow.')
             ->thread(fn ($request) => $request['thread_id'])
             ->input(fn ($request) => $request['input'] ?? [])
+            ->schemaInput(fn ($schema) => $schema->object([
+                'message' => $schema->string()->required(),
+            ]))
             ->meta(fn ($request) => ['source' => 'laravel-ai-tool']),
     ];
 }
 ```
 
 The tool returns JSON with `status`, `run_id`, `thread_id`, `state`, `interrupt`, and `error`.
+
+When the graph is registered before Laravel AI asks for the tool schema, `GraphTool` derives optional `input` properties from graph state. Prefer `schemaInput()` for public tool contracts so internal state channels do not become the parent agent's input surface. Laravel's current JSON schema factory does not express arbitrary union schemas, so union state channels are described conservatively in the tool schema while the exact state contract remains available through `GraphManifest`.
 
 Tool responses always include:
 
@@ -510,7 +516,7 @@ Vector memory is contract-based and optional. Laravel AI can provide embeddings;
 
 ## Stable v1 Public APIs
 
-The 0.13 release exposes the intended v1-stable API surface documented in [`docs/api-reference.md`](docs/api-reference.md). In short:
+The 0.14 development line exposes the intended v1-stable API surface documented in [`docs/api-reference.md`](docs/api-reference.md). In short:
 
 - `StateGraph` for fluent graph definitions.
 - `Node` and `NodeContext` for runtime node implementation.
@@ -557,7 +563,7 @@ The 0.13 release exposes the intended v1-stable API surface documented in [`docs
 - Configure `agent-graph.locks.ttl_seconds` longer than the longest expected node execution.
 - Use `resumeStrict()` for public endpoints that should reject unknown resume payload keys.
 - Treat terminal runs as immutable for resume/state-edit/cancel flows; use replay or fork for follow-up work from historical state.
-- Keep `GraphTool` generic; use `DurableGraphTool` for active-run-per-thread application semantics.
+- Keep `GraphTool` generic; use `schemaInput()` for bounded public tool input and `DurableGraphTool` for active-run-per-thread application semantics.
 - Use explicit reducers for any state channel that can be written by more than one node in the same superstep.
 - Keep graph definitions generic; product-specific UI belongs in consuming apps.
 - For multi-tenant memory, always include tenant or actor scope in reads and writes.

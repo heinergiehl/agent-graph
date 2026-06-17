@@ -6,6 +6,7 @@ use Heiner\AgentGraph\Graph\InterruptContract;
 use Heiner\AgentGraph\Graph\StateGraph;
 use Heiner\AgentGraph\Runtime\NodeContext;
 use Heiner\AgentGraph\Runtime\NodeResult;
+use Heiner\AgentGraph\State\Reducer;
 use Heiner\AgentGraph\State\StateSchema;
 use Illuminate\JsonSchema\JsonSchemaTypeFactory;
 
@@ -53,9 +54,10 @@ it('exports graph manifests with state schema reducers routes and policies', fun
     $definition = StateGraph::make('manifest_graph', '2')
         ->state(StateSchema::make()
             ->string('message')
+            ->channel('flexible', 'string|int|null')
             ->enum('mode', ['short', 'long'])
             ->array('summaries', 'string'))
-        ->reducer('summaries', 'append')
+        ->reducer('summaries', Reducer::append())
         ->node('classify', ManifestClassifyNode::class)
         ->node('answer', ManifestAnswerNode::class)
         ->edge(StateGraph::START, 'classify')
@@ -74,6 +76,7 @@ it('exports graph manifests with state schema reducers routes and policies', fun
         'version' => '2',
         'state' => [
             'message' => ['type' => 'string', 'nullable' => false],
+            'flexible' => ['type' => ['string', 'int'], 'nullable' => true],
             'mode' => ['type' => 'enum', 'values' => ['short', 'long'], 'nullable' => false],
             'summaries' => ['type' => 'array', 'items' => ['type' => 'string', 'nullable' => false], 'nullable' => false],
         ],
@@ -129,6 +132,25 @@ it('validates graph definitions for release readiness without throwing immediate
         ->and(collect($report->warnings())->contains(fn (array $warning): bool => $warning['code'] === 'unreachable_node' && $warning['node'] === 'orphan'))->toBeTrue();
 });
 
+it('mirrors runtime conditional precedence when validating reachability', function () {
+    $definition = StateGraph::make('conditional_precedence_validation')
+        ->state(['message' => 'string|null'])
+        ->node('router', ManifestClassifyNode::class)
+        ->node('actual', ManifestAnswerNode::class)
+        ->node('ignored_static_target', ManifestAnswerNode::class)
+        ->edge(StateGraph::START, 'router')
+        ->edge('router', 'ignored_static_target')
+        ->conditional('router', fn (): string => 'actual', [
+            'actual' => 'actual',
+        ])
+        ->compile();
+
+    $report = GraphValidator::validate($definition);
+
+    expect(collect($report->warnings())->contains(fn (array $warning): bool => $warning['code'] === 'unreachable_node' && $warning['node'] === 'ignored_static_target'))->toBeTrue()
+        ->and(collect($report->warnings())->contains(fn (array $warning): bool => $warning['code'] === 'unreachable_node' && $warning['node'] === 'actual'))->toBeFalse();
+});
+
 it('derives graph tool input schema from registered graph state schema', function () {
     AgentGraph::define(
         StateGraph::make('schema_tool_graph')
@@ -136,6 +158,7 @@ it('derives graph tool input schema from registered graph state schema', functio
                 ->string('message')
                 ->integer('limit')
                 ->enum('mode', ['summary', 'detail'])
+                ->channel('flexible', 'string|int|null')
                 ->channel('optional_note', 'string|null'))
             ->node('answer', ManifestAnswerNode::class)
             ->edge(StateGraph::START, 'answer')
@@ -146,14 +169,38 @@ it('derives graph tool input schema from registered graph state schema', functio
     $input = $schema['input']->toArray();
 
     expect($input['type'])->toBe('object')
-        ->and($input['required'])->toContain('message')
-        ->and($input['required'])->toContain('limit')
-        ->and($input['required'])->toContain('mode')
-        ->and($input['required'])->not->toContain('optional_note')
+        ->and($input)->not->toHaveKey('required')
         ->and($input['properties']['message']['type'])->toBe('string')
         ->and($input['properties']['limit']['type'])->toBe('integer')
         ->and($input['properties']['mode']['enum'])->toBe(['summary', 'detail'])
+        ->and($input['properties']['flexible']['type'])->toBe(['string', 'null'])
+        ->and($input['properties']['flexible']['description'])->toContain('Accepts one of: string, int, null.')
         ->and($input['properties']['optional_note']['type'])->toBe(['string', 'null']);
+});
+
+it('allows explicit graph tool input schema overrides', function () {
+    AgentGraph::define(
+        StateGraph::make('schema_override_tool_graph')
+            ->state([
+                'internal_state' => 'string',
+                'answer' => 'string|null',
+            ])
+            ->node('answer', ManifestAnswerNode::class)
+            ->edge(StateGraph::START, 'answer')
+            ->compile(),
+    );
+
+    $schema = AgentGraph::tool('schema_override_tool_graph')
+        ->schemaInput(fn (JsonSchemaTypeFactory $schema) => $schema->object([
+            'message' => $schema->string()->required(),
+        ]))
+        ->schema(new JsonSchemaTypeFactory);
+
+    $input = $schema['input']->toArray();
+
+    expect($input['properties'])->toHaveKey('message')
+        ->and($input['properties'])->not->toHaveKey('internal_state')
+        ->and($input['required'])->toBe(['message']);
 });
 
 final class TypedInterruptAskNode

@@ -14,11 +14,11 @@ Compiled graph definitions expose a read-only manifest suitable for tools, valid
 
 ## Validation
 
-A `GraphValidator` performs release-time checks that are stricter than topology compile checks: known state schema types, known reducer names, unreachable nodes, and suspicious terminal-free nodes. It returns a report with errors and warnings instead of throwing immediately, so `agent-graph:doctor` and consuming apps can display actionable diagnostics.
+A `GraphValidator` performs release-time checks that are stricter than topology compile checks: known state schema types, known reducer names, and unreachable nodes. Reachability follows runtime routing precedence, so conditional routes replace static outgoing edges for the same node. The validator returns a report with errors and warnings instead of throwing immediately, so `agent-graph:validate` and consuming apps can display actionable diagnostics.
 
 ## Tool Schemas
 
-`GraphTool::schema()` derives the `input` object properties from the registered graph state schema when the graph is available. This makes graph-as-tool calls more reliable for Laravel AI agents. If the graph is not registered yet, the tool keeps the previous generic `input: object` fallback.
+`GraphTool::schema()` derives optional `input` object properties from the registered graph state schema when the graph is available. This makes graph-as-tool calls more reliable for Laravel AI agents without marking internal state channels as required public input. If the graph is not registered yet, the tool keeps the previous generic `input: object` fallback. `GraphTool::schemaInput()` lets apps expose a deliberately bounded public input contract.
 
 ## Production Readiness
 

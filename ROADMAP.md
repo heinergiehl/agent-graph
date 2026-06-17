@@ -1,6 +1,6 @@
 # AgentGraph Roadmap
 
-AgentGraph `0.13.x` is the hardened pre-v1 release line for real Laravel app testing. The goal for v1 is a durable agent workflow SDK for Laravel, not a complete LangGraph platform clone.
+AgentGraph `0.14.x` is the current pre-v1 development line for real Laravel app testing. The goal for v1 is a durable agent workflow SDK for Laravel, not a complete LangGraph platform clone.
 
 ## 0.14 Runtime Contracts Scope
 
@@ -10,8 +10,9 @@ Implemented on the 0.14 line:
 - `NodeResult::interruptContract()` as an additive API over the existing free-form interrupt support.
 - `GraphManifest` for read-only graph metadata covering state schema, reducers, nodes, edges, conditional routes, and policies.
 - `GraphValidator` / `GraphValidationReport` for release-readiness checks without throwing on the first issue.
-- `agent-graph:validate` for validating registered graph definitions from host-app release gates.
+- `agent-graph:validate` for validating registered graph definitions from host-app release gates, with explicit `--allow-empty` support.
 - `GraphTool::schema()` input properties derived from registered graph state schemas.
+- `GraphTool::schemaInput()` for bounded public tool input schemas.
 - `composer audit --no-dev` as part of the package check script.
 
 ## 0.9 Beta Scope
@@ -89,7 +90,7 @@ These items should be completed before tagging `v1.0.0`:
 - Add tenant/actor memory examples that make cross-tenant boundaries unambiguous.
 - Keep the compatibility CI matrix green for PHP 8.3/8.4, Laravel 12/13, and `laravel/ai ^0.7`.
   `laravel/ai ^1.0` is declared in `composer.json` for forward compatibility, but should only be enabled in blocking CI after a 1.x release exists upstream.
-- Test the Filament Agentic Chatbot refactor against the 0.13 package before locking v1.
+- Test consuming workflow/chatbot integrations against the 0.14 package before locking v1.
 - Review `CHANGELOG.md` and `UPGRADE.md` before tagging.
 
 Implemented v1 hardening:
@@ -97,7 +98,7 @@ Implemented v1 hardening:
 - Public API reference for `StateGraph`, `Node`, `NodeContext`, `NodeResult`, `AgentGraph`, `AgentNode`, `GraphTool`, runtime DTOs, and store contracts.
 - Typed interrupt contracts for stable app waitpoint projections.
 - Read-only graph manifests and CLI graph validation for release gates.
-- GraphTool state-schema-derived input schemas.
+- GraphTool state-schema-derived input schemas and explicit public input schema overrides.
 - Runtime inspection APIs for active, completed, interrupted, delayed, failed, and cancelled runs.
 - Generic run timeline inspector with state diffs, redaction, node metadata, and skipped-step status.
 - Safe state-edit resume with schema key/type validation.
@@ -114,7 +115,7 @@ Implemented v1 hardening:
 - Replaceable delay scheduling through `DelayScheduler`.
 - Enumerable memory listing through `EnumerableMemoryStore`.
 - Task inspection through `AgentGraph::tasks()`.
-- Bounded GraphTool input, output, and run metadata mapping hooks.
+- Bounded GraphTool input schema, request input, output, and run metadata mapping hooks.
 - Standard `meta.node` conventions for inspector and timeline UIs.
 - Parent/child run lineage metadata through `run.meta.parent` and `AgentGraph::childRuns()`.
 - Native `SubgraphNode` execution using the same lineage metadata.

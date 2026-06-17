@@ -1,6 +1,6 @@
 # AgentGraph API Reference
 
-This document describes the public API surface exposed by the 0.13 release line and intended for v1 stabilization. APIs marked experimental are public but may receive compatibility-preserving hardening before a later stable time-travel release.
+This document describes the public API surface exposed by the 0.14 development line and intended for v1 stabilization. APIs marked experimental are public but may receive compatibility-preserving hardening before a later stable time-travel release.
 
 ## Graph Definition
 
@@ -51,11 +51,11 @@ Stability: additive beta API.
 
 ### `GraphValidator` and `GraphValidationReport`
 
-`GraphValidator::validate(GraphDefinition $graph): GraphValidationReport` performs release-readiness checks without throwing on the first problem. The initial checks include unknown state schema types, unknown reducers, and nodes that are not reachable from `StateGraph::START`.
+`GraphValidator::validate(GraphDefinition $graph): GraphValidationReport` performs release-readiness checks without throwing on the first problem. The initial checks include unknown state schema types, unknown reducers, and nodes that are not reachable from `StateGraph::START`. Reachability follows runtime routing precedence: conditional routes on a node replace static outgoing edges for validation purposes.
 
 `GraphValidationReport` exposes `failed()`, `passed()`, `errors()`, `warnings()`, and `toArray()`.
 
-Use `php artisan agent-graph:validate` to validate graph definitions registered in the current Laravel process.
+Use `php artisan agent-graph:validate` to validate graph definitions registered in the current Laravel process. The command fails when no graphs are registered unless `--allow-empty` is passed.
 
 Stability: additive beta API.
 
@@ -337,7 +337,7 @@ Stability: additive beta API.
 
 `AgentGraph::tool(string $graphKey)` exposes a graph as a Laravel AI tool.
 
-Configuration methods: `name()`, `description()`, `thread()`, `input()`, `output()`, and `meta()`.
+Configuration methods: `name()`, `description()`, `thread()`, `input()`, `schemaInput()`, `output()`, and `meta()`.
 
 Default tool names are sanitized provider-compatible names derived from the graph key with a `run_` prefix. Custom names must be 1-64 characters, start with a letter, and contain only letters, numbers, `_`, or `-`.
 
@@ -345,7 +345,11 @@ Default tool names are sanitized provider-compatible names derived from the grap
 
 Default tool responses are JSON with `status`, `run_id`, `thread_id`, `state`, `interrupt`, and `error`. Tool exceptions are converted into a failed JSON response.
 
-When the graph is registered before `schema()` is called, `GraphTool` derives the `input` object properties from the graph state schema. Unknown or unregistered graphs keep the previous generic nullable `input` object schema.
+When the graph is registered before `schema()` is called, `GraphTool` derives optional `input` object properties from the graph state schema. Unknown or unregistered graphs keep the previous generic nullable `input` object schema.
+
+Use `schemaInput(Closure $resolver)` to expose a deliberately bounded public input schema instead of the full internal graph state. The resolver receives Laravel's JSON schema factory and must return an `Illuminate\JsonSchema\Types\Type`.
+
+Laravel's current JSON schema factory cannot represent every AgentGraph state schema exactly, especially multi-type unions such as `string|int|null`. For those channels, the derived tool schema uses a conservative provider-compatible fallback with a description. The exact normalized state contract is available through `GraphManifest`.
 
 Stability: stable.
 

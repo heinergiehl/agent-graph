@@ -1,9 +1,9 @@
 <?php
 
-use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\DB;
 use Heiner\AgentGraph\Facades\AgentGraph;
 use Heiner\AgentGraph\Graph\StateGraph;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 
 it('doctor reports missing tables and infrastructure settings', function () {
     $this->artisan('agent-graph:doctor')
@@ -88,6 +88,16 @@ it('validates registered graph definitions from the console', function () {
         ->expectsOutputToContain('unknown_state_schema_type')
         ->expectsOutputToContain('unreachable_node')
         ->assertFailed();
+});
+
+it('fails graph validation when no graphs are registered unless explicitly allowed', function () {
+    $this->artisan('agent-graph:validate')
+        ->expectsOutputToContain('FAIL No AgentGraph definitions are registered in this process.')
+        ->assertFailed();
+
+    $this->artisan('agent-graph:validate --allow-empty')
+        ->expectsOutputToContain('WARN No AgentGraph definitions are registered in this process.')
+        ->assertSuccessful();
 });
 
 final class ConsoleValidationAnswerNode

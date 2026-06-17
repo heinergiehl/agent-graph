@@ -27,9 +27,13 @@ Compiled graph definitions now expose `manifest()` for read-only metadata. `Agen
 
 `agent-graph:validate {graph?}` validates graph definitions registered in the current Laravel process. Host apps that register graphs during service-provider boot can add this command to release smoke tests.
 
+The command now fails when no graph definitions are registered. This is intentional for release gates: an empty registry usually means the host app did not boot the production graph definitions. Use `--allow-empty` only when an empty registry is explicitly expected.
+
 ### GraphTool input schemas
 
-`GraphTool::schema()` now derives `input` properties from the registered graph state schema. If code expected the tool schema to contain only a generic nullable object, update tests to allow concrete `properties` and `required` entries. Runtime tool handling remains compatible.
+`GraphTool::schema()` now derives optional `input` properties from the registered graph state schema. If code expected the tool schema to contain only a generic nullable object, update tests to allow concrete `properties`. Runtime tool handling remains compatible.
+
+Use `GraphTool::schemaInput()` to expose a narrower public tool input shape. This is recommended when the graph state contains internal channels that should not be shown as parent-agent input. Multi-type state unions are represented exactly in `GraphManifest`; the Laravel AI tool schema uses conservative fallbacks for unions because the current Laravel JSON schema factory cannot express arbitrary `anyOf`/union contracts through its `Type` objects.
 
 ### Security audit check
 
@@ -37,7 +41,7 @@ Compiled graph definitions now expose `manifest()` for read-only metadata. `Agen
 
 ## 0.13 To v1
 
-AgentGraph 0.13 is the hardened pre-v1 release line. v1 freezes the durable runtime core, documents the public API, and tightens validation around state, resume, queues, and time travel.
+AgentGraph 0.13 and 0.14 are the hardened pre-v1 release lines. v1 freezes the durable runtime core, documents the public API, and tightens validation around state, resume, queues, and time travel.
 
 ## Public API stability
 

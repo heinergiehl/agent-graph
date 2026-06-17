@@ -80,16 +80,18 @@ class GraphValidator
 
             $reachable[$node] = true;
 
-            foreach ($graph->edges()[$node] ?? [] as $target) {
-                $queue[] = $target;
-            }
-
             if (isset($graph->conditionals()[$node])) {
                 foreach ($graph->conditionals()[$node]->routes as $target) {
                     foreach ((array) $target as $routeTarget) {
                         $queue[] = $routeTarget;
                     }
                 }
+
+                continue;
+            }
+
+            foreach ($graph->edges()[$node] ?? [] as $target) {
+                $queue[] = $target;
             }
         }
 

@@ -67,7 +67,7 @@ class GraphManifest
         $types = array_values(array_filter(array_map('trim', explode('|', $definition)), fn (string $type): bool => $type !== ''));
         $nullable = in_array('null', $types, true);
         $nonNull = array_values(array_filter($types, fn (string $type): bool => $type !== 'null'));
-        $type = $nonNull[0] ?? 'mixed';
+        $type = count($nonNull) > 1 ? $nonNull : ($nonNull[0] ?? 'mixed');
 
         return [
             'type' => $type,
@@ -93,7 +93,7 @@ class GraphManifest
         }
 
         if ($reducer instanceof Reducer) {
-            return 'custom';
+            return $reducer->name();
         }
 
         if ($reducer instanceof Closure) {

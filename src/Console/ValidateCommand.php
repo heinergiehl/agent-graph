@@ -8,7 +8,9 @@ use InvalidArgumentException;
 
 class ValidateCommand extends Command
 {
-    protected $signature = 'agent-graph:validate {graph? : Registered graph key to validate}';
+    protected $signature = 'agent-graph:validate
+        {graph? : Registered graph key to validate}
+        {--allow-empty : Return success when no graph definitions are registered}';
 
     protected $description = 'Validate registered AgentGraph definitions for release readiness.';
 
@@ -28,9 +30,15 @@ class ValidateCommand extends Command
         }
 
         if ($definitions === []) {
-            $this->warn('WARN No AgentGraph definitions are registered in this process.');
+            if ($this->option('allow-empty')) {
+                $this->warn('WARN No AgentGraph definitions are registered in this process.');
 
-            return self::SUCCESS;
+                return self::SUCCESS;
+            }
+
+            $this->error('FAIL No AgentGraph definitions are registered in this process.');
+
+            return self::FAILURE;
         }
 
         $failed = false;
