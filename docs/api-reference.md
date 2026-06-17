@@ -1,6 +1,6 @@
 # AgentGraph API Reference
 
-This document describes the public API surface exposed by the 0.14 release line and intended for v1 stabilization. APIs marked experimental are public but may receive compatibility-preserving hardening before a later stable time-travel release.
+This document describes the public API surface exposed by the 0.15 release line and intended for v1 stabilization. APIs marked experimental are public but may receive compatibility-preserving hardening before a later stable time-travel release.
 
 ## Graph Definition
 
@@ -10,6 +10,10 @@ This document describes the public API surface exposed by the 0.14 release line 
 - `state(array|StateSchema $schema): self` defines state channels and schema types such as `string`, `string|null`, `int`, `bool`, `array`, `messages`, `mixed`, or structured `StateSchema` definitions. Unknown schema types throw instead of being treated as permissive `mixed`.
 - `reducer(string $channel, mixed $reducer): self` configures channel reducers. Built-ins include `append`, `merge`, `messages`/`add_messages`, and `max`/`max_confidence`; unknown reducer strings throw.
 - `node(string $id, callable|string $node): self` registers an invokable node class, callable, or `Node` implementation.
+- `nodeMeta(string $nodeId, array $metadata): self` registers SDK-neutral node metadata for manifests and workflow UIs.
+- `nodeChannels(string $nodeId, array $input = [], array $output = []): self` declares the state channels a node normally reads and writes.
+- `nodeCanInterrupt(string $nodeId, bool $canInterrupt = true): self` declares whether a node can produce human-in-the-loop interrupts.
+- `nodeSideEffects(string $nodeId, array|string $sideEffects): self` declares side-effect categories such as `read`, `write`, or application-defined labels.
 - `edge(string $from, string $to): self` registers a static edge.
 - `conditional(string $from, Closure $resolver, array $routes): self` registers conditional routing.
 - `retry(string $nodeId, int $maxAttempts = 3, int $delayMs = 0, float $backoff = 1.0, ?int $maxDelayMs = null, ?callable $when = null): self` configures retry for thrown exceptions from one node.
@@ -23,7 +27,7 @@ Stability: stable.
 
 ### `GraphDefinition`
 
-Compiled definitions expose `key()`, `version()`, `schema()`, `reducers()`, `node()`, `nodes()`, `edges()`, `conditionals()`, `nodePolicy()`, `nodePolicies()`, `hasNode()`, `hasEndpoint()`, `entryNode()`, `entryNodes()`, `resolveNext()`, `successorsOf()`, and `manifest()`.
+Compiled definitions expose `key()`, `version()`, `schema()`, `reducers()`, `node()`, `nodes()`, `edges()`, `conditionals()`, `nodePolicy()`, `nodePolicies()`, `nodeMetadata()`, `nodeInputChannels()`, `nodeOutputChannels()`, `nodeCanInterrupt()`, `nodeSideEffects()`, `hasNode()`, `hasEndpoint()`, `entryNode()`, `entryNodes()`, `resolveNext()`, `successorsOf()`, and `manifest()`.
 
 Multiple edges from `StateGraph::START` are valid. `entryNodes()` returns every start target in declaration order; `entryNode()` remains as a compatibility helper for the first start target.
 
@@ -35,29 +39,40 @@ Stability: stable for read-only metadata and endpoint helpers.
 
 ### `GraphManifest`
 
-`GraphDefinition::manifest()` returns a read-only `GraphManifest`. `GraphManifest::toArray()` contains:
+`GraphDefinition::manifest()` returns a read-only `GraphManifest`. `GraphManifest::toArray()` returns manifest v2 by default and contains:
 
+- `manifest_version`
 - `key` and `version`
-- normalized `state` channel definitions
+- exact normalized `state` channel definitions from `GraphSchemaExporter`
 - configured `reducers`
-- registered `nodes`
+- registered `nodes` with `id`, `metadata`, `input_channels`, `output_channels`, `can_interrupt`, and `side_effects`
 - static `edges`
 - conditional route metadata under `conditionals`
 - retry, timeout, and concurrency metadata under `policies`
 
-The manifest is intended for validators, tools, visual editors, inspectors, and release checks. It does not serialize closures or product-specific UI metadata.
+The manifest is intended for validators, tools, visual editors, inspectors, and release checks. It does not serialize closures or product-specific UI metadata. `GraphManifest::toArray(1)` remains available for the previous PHP-oriented node shape that included `class` and `callable`.
 
-Stability: additive beta API.
+Stability: production-ready pre-v1 API.
+
+### `GraphSchemaExporter`
+
+`GraphSchemaExporter::state(array $schema): array` exports every graph state channel into an exact JSON-schema-like AgentGraph contract. `GraphSchemaExporter::channel(string|array $definition): array` exports one channel definition.
+
+The exporter normalizes aliases such as `int` to `integer`, `float`/`double` to `number`, and `bool` to `boolean`. It represents unions as `type` arrays, nullable values with `nullable`, enums with `values`, arrays with `items`, objects with `properties`, and `messages` as an array with `format: messages`.
+
+GraphTool uses this exporter as input before mapping to Laravel AI's provider-compatible schema types. Some Laravel AI schema factories cannot represent every union exactly, so GraphTool may use a conservative public fallback while the exact graph contract remains available from the exporter and manifest.
+
+Stability: production-ready pre-v1 API.
 
 ### `GraphValidator` and `GraphValidationReport`
 
-`GraphValidator::validate(GraphDefinition $graph): GraphValidationReport` performs release-readiness checks without throwing on the first problem. The initial checks include unknown state schema types, unknown reducers, and nodes that are not reachable from `StateGraph::START`. Reachability follows runtime routing precedence: conditional routes on a node replace static outgoing edges for validation purposes.
+`GraphValidator::validate(GraphDefinition $graph): GraphValidationReport` performs release-readiness checks without throwing on the first problem. Checks include unknown state schema types, unknown reducers, unreachable nodes, reachable terminal paths without explicit outgoing routes, conditionals without a `default` route, and nodes that mix static plus conditional outgoing routes. Reachability follows runtime routing precedence: conditional routes on a node replace static outgoing edges for validation purposes.
 
-`GraphValidationReport` exposes `failed()`, `passed()`, `errors()`, `warnings()`, and `toArray()`.
+`GraphValidationReport` exposes `failed(bool $strict = false)`, `passed(bool $strict = false)`, `errors()`, `warnings()`, `issues()`, and `toArray(bool $strict = false)`. Strict mode treats warnings as failure without changing their warning severity.
 
-Use `php artisan agent-graph:validate` to validate graph definitions registered in the current Laravel process. The command fails when no graphs are registered unless `--allow-empty` is passed.
+Use `php artisan agent-graph:validate` to validate graph definitions registered in the current Laravel process. The command fails when no graphs are registered unless `--allow-empty` is passed. Use `--strict` to fail on warnings and `--json` to emit a machine-readable report.
 
-Stability: additive beta API.
+Stability: production-ready pre-v1 API.
 
 ### `StateSchema`
 
@@ -96,6 +111,7 @@ All methods are available through the `AgentGraph` facade and `AgentGraphManager
 - `graph(string $key): PendingGraphRun` creates a pending run builder for a registered graph. Calling `run()` on the builder intentionally creates a new run.
 - `resume(string $runId, array $payload = [], ?callable $onEvent = null, bool $collectEvents = false): RunResult` resumes an active run. If a pending interrupt exists, `interrupt_id` must match it. Terminal runs cannot be resumed.
 - `resumeStrict(string $runId, array $payload = [], ?callable $onEvent = null, bool $collectEvents = false): RunResult` resumes a run while rejecting unknown state keys.
+- `resumeContract(string $runId, array $payload = [], ?callable $onEvent = null, bool $collectEvents = false): RunResult` resumes a run after validating the response against a pending typed `InterruptContract` payload. Free-form interrupt payloads are left compatible.
 - `resumeWithStateEdit(string $runId, string $interruptId, array $statePatch, ?string $resolvedBy = null, ?callable $onEvent = null, bool $collectEvents = false): RunResult` resolves a `state_edit` interrupt on an active run after strict schema validation.
 - `cancel(string $runId, array $meta = []): RunResult` marks an active `running`, `interrupted`, or `delayed` run cancelled.
 - `inspect(string $runId, bool $withHistory = false, bool $withTraces = false): ?RunSnapshot` returns a read-only run snapshot without mutating runtime state.
@@ -199,9 +215,11 @@ Factories:
 - `InterruptContract::choice(string $nodeId, string $question, array $choices, bool $allowsMultiple = false, array $answerTypes = ['choice', 'cancel'], array $policy = [], array $meta = [])`
 - `InterruptContract::fromArray(array $payload, string $type = 'input')`
 
-Serialized payloads include `contract_version`, `node_id`, `reason`, `output`, and `interaction`. Consuming apps can project these payloads into UI waitpoints without guessing the meaning of arbitrary interrupt payloads.
+Serialized payloads include `contract_version`, `node_id`, `reason`, `output`, `interaction`, and `response_schema`. Consuming apps can project these payloads into UI waitpoints without guessing the meaning of arbitrary interrupt payloads.
 
-Stability: additive beta API.
+`InterruptContract::isContractPayload(array $payload): bool`, `responseSchema(): array`, and `assertResponse(array $response): void` support contract-aware resume validation. `AgentGraph::resumeContract()` uses this validation for slot-value, approval, and choice contracts before resolving the pending interrupt.
+
+Stability: production-ready pre-v1 API.
 
 ### `SubgraphNode`
 

@@ -142,6 +142,32 @@ it('rejects retry policies for unknown nodes when compiling', function () {
         ->compile();
 })->throws(InvalidArgumentException::class, 'Unknown policy node');
 
+it('compiles neutral node contract metadata into graph definitions', function () {
+    $graph = StateGraph::make('node_contract_metadata')
+        ->state(['input' => 'string', 'answer' => 'string|null'])
+        ->node('answer', NoopNode::class)
+        ->nodeMeta('answer', ['label' => 'Answer', 'type' => 'agent'])
+        ->nodeChannels('answer', input: ['input'], output: ['answer'])
+        ->nodeCanInterrupt('answer')
+        ->nodeSideEffects('answer', ['read', 'write'])
+        ->edge(StateGraph::START, 'answer')
+        ->compile();
+
+    expect($graph->nodeMetadata('answer'))->toBe(['label' => 'Answer', 'type' => 'agent'])
+        ->and($graph->nodeInputChannels('answer'))->toBe(['input'])
+        ->and($graph->nodeOutputChannels('answer'))->toBe(['answer'])
+        ->and($graph->nodeCanInterrupt('answer'))->toBeTrue()
+        ->and($graph->nodeSideEffects('answer'))->toBe(['read', 'write']);
+});
+
+it('rejects node contract metadata for unknown nodes when compiling', function () {
+    StateGraph::make('invalid_node_contract_metadata')
+        ->node('known', NoopNode::class)
+        ->edge(StateGraph::START, 'known')
+        ->nodeMeta('missing', ['label' => 'Missing'])
+        ->compile();
+})->throws(InvalidArgumentException::class, 'Unknown metadata node');
+
 it('rejects semaphore concurrency limits until they are implemented', function () {
     StateGraph::make('invalid_concurrency')
         ->node('call_api', NoopNode::class)

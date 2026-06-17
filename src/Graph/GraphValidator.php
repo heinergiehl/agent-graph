@@ -20,7 +20,9 @@ class GraphValidator
 
         $this->validateStateSchema($graph, $report);
         $this->validateReducers($graph, $report);
+        $this->validateConditionalRouting($graph, $report);
         $this->validateReachability($graph, $report);
+        $this->validateTerminalPaths($graph, $report);
 
         return $report;
     }
@@ -53,6 +55,23 @@ class GraphValidator
         }
     }
 
+    protected function validateConditionalRouting(GraphDefinition $graph, GraphValidationReport $report): void
+    {
+        foreach ($graph->conditionals() as $node => $conditional) {
+            if (! array_key_exists('default', $conditional->routes)) {
+                $report->warning('conditional_without_default', "Conditional node [{$node}] has no default route.", [
+                    'node' => $node,
+                ]);
+            }
+
+            if (($graph->edges()[$node] ?? []) !== []) {
+                $report->warning('mixed_static_conditional_outgoing', "Node [{$node}] has both static and conditional outgoing routes; conditional routes take precedence at runtime.", [
+                    'node' => $node,
+                ]);
+            }
+        }
+    }
+
     protected function validateReachability(GraphDefinition $graph, GraphValidationReport $report): void
     {
         $reachable = $this->reachableNodes($graph);
@@ -60,6 +79,27 @@ class GraphValidator
         foreach (array_keys($graph->nodes()) as $node) {
             if (! isset($reachable[$node])) {
                 $report->warning('unreachable_node', "Node [{$node}] is not reachable from __start__.", [
+                    'node' => $node,
+                ]);
+            }
+        }
+    }
+
+    protected function validateTerminalPaths(GraphDefinition $graph, GraphValidationReport $report): void
+    {
+        $reachable = $this->reachableNodes($graph);
+
+        foreach (array_keys($graph->nodes()) as $node) {
+            if (! isset($reachable[$node])) {
+                continue;
+            }
+
+            if (isset($graph->conditionals()[$node])) {
+                continue;
+            }
+
+            if (($graph->edges()[$node] ?? []) === []) {
+                $report->warning('terminal_path', "Reachable node [{$node}] has no explicit outgoing route to __end__ or another node.", [
                     'node' => $node,
                 ]);
             }

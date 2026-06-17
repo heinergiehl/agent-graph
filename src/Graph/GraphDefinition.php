@@ -15,6 +15,11 @@ class GraphDefinition
         protected array $conditionals,
         protected array $reducers = [],
         protected array $nodePolicies = [],
+        protected array $nodeMetadata = [],
+        protected array $nodeInputChannels = [],
+        protected array $nodeOutputChannels = [],
+        protected array $nodeInterrupts = [],
+        protected array $nodeSideEffects = [],
     ) {}
 
     public function key(): string
@@ -45,6 +50,35 @@ class GraphDefinition
     public function nodePolicies(): array
     {
         return $this->nodePolicies;
+    }
+
+    public function nodeMetadata(?string $nodeId = null): array
+    {
+        if ($nodeId === null) {
+            return $this->nodeMetadata;
+        }
+
+        return $this->nodeMetadata[$nodeId] ?? [];
+    }
+
+    public function nodeInputChannels(string $nodeId): array
+    {
+        return $this->nodeInputChannels[$nodeId] ?? [];
+    }
+
+    public function nodeOutputChannels(string $nodeId): array
+    {
+        return $this->nodeOutputChannels[$nodeId] ?? [];
+    }
+
+    public function nodeCanInterrupt(string $nodeId): bool
+    {
+        return (bool) ($this->nodeInterrupts[$nodeId] ?? false);
+    }
+
+    public function nodeSideEffects(string $nodeId): array
+    {
+        return $this->nodeSideEffects[$nodeId] ?? [];
     }
 
     public function node(string $id): callable|string
@@ -155,6 +189,23 @@ class GraphDefinition
                 throw new InvalidArgumentException("Unknown policy node [{$nodeId}].");
             }
         }
+
+        foreach ($this->metadataNodeIds() as $nodeId) {
+            if (! isset($this->nodes[$nodeId])) {
+                throw new InvalidArgumentException("Unknown metadata node [{$nodeId}].");
+            }
+        }
+    }
+
+    protected function metadataNodeIds(): array
+    {
+        return array_values(array_unique(array_merge(
+            array_keys($this->nodeMetadata),
+            array_keys($this->nodeInputChannels),
+            array_keys($this->nodeOutputChannels),
+            array_keys($this->nodeInterrupts),
+            array_keys($this->nodeSideEffects),
+        )));
     }
 
     protected function isKnownEndpoint(string $node): bool

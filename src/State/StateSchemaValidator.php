@@ -82,6 +82,10 @@ class StateSchemaValidator
 
     protected function matchesStructured(array $schema, mixed $value): bool
     {
+        if (($schema['nullable'] ?? false) === true && $value === null) {
+            return true;
+        }
+
         return match ($schema['type'] ?? 'mixed') {
             'mixed' => true,
             'enum' => in_array($value, (array) ($schema['values'] ?? []), true),

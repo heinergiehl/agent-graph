@@ -94,6 +94,16 @@ class AgentGraphManager
         );
     }
 
+    public function resumeContract(string $runId, array $payload = [], ?callable $onEvent = null, bool $collectEvents = false, RuntimeOptions|array $options = []): RunResult
+    {
+        return $this->observe(
+            $onEvent,
+            $collectEvents,
+            fn (): RunResult => $this->runtime->resume($runId, $payload, $this->graphs, options: $options, validateInterruptContract: true),
+            $runId,
+        );
+    }
+
     public function resumeWithStateEdit(string $runId, string $interruptId, array $statePatch, ?string $resolvedBy = null, ?callable $onEvent = null, bool $collectEvents = false): RunResult
     {
         return $this->observe(

@@ -1,5 +1,53 @@
 # Upgrade Guide
 
+## 0.14 To 0.15
+
+AgentGraph 0.15 hardens the graph contract APIs introduced in 0.14. Runtime execution remains compatible, but graph metadata and release validation are more explicit.
+
+### Graph schema export and manifests
+
+`GraphSchemaExporter` is now the neutral source for exact AgentGraph state schema export. It normalizes aliases such as `int` to `integer`, `float` to `number`, and `bool` to `boolean`, while preserving nullable flags, unions, enum values, array items, object properties, and message-channel format metadata.
+
+`GraphManifest::toArray()` now returns manifest v2 by default and includes `manifest_version: 2`. Node entries are SDK-neutral: `id`, `metadata`, `input_channels`, `output_channels`, `can_interrupt`, and `side_effects`. If a tool still needs the old PHP-oriented node shape with `class` and `callable`, call `GraphManifest::toArray(1)` explicitly.
+
+Use the new node metadata APIs to populate v2 manifests:
+
+```php
+StateGraph::make('support_triage')
+    ->node('answer', AnswerNode::class)
+    ->nodeMeta('answer', ['label' => 'Answer', 'type' => 'agent'])
+    ->nodeChannels('answer', input: ['input'], output: ['answer'])
+    ->nodeCanInterrupt('answer')
+    ->nodeSideEffects('answer', ['read', 'write']);
+```
+
+### Validation release gates
+
+`agent-graph:validate` now reports additional warnings:
+
+- `terminal_path` for reachable nodes without an explicit outgoing route.
+- `conditional_without_default` for conditionals without a `default` route.
+- `mixed_static_conditional_outgoing` when a node defines both static and conditional outgoing routes; runtime conditionals take precedence.
+
+Warnings remain warnings by default. Add `--strict` in CI when warnings should fail the release gate. Add `--json` to emit a machine-readable report without text output:
+
+```bash
+php artisan agent-graph:validate --strict --json
+```
+
+### Typed interrupt response validation
+
+Typed interrupt contracts now include `response_schema` metadata for slot-value, approval, and choice waitpoints. Existing `resume()` and `resumeStrict()` behavior is unchanged. Use `AgentGraph::resumeContract($runId, [...])` when a public endpoint should validate the pending typed interrupt response before the interrupt is resolved:
+
+```php
+AgentGraph::resumeContract($runId, [
+    'interrupt_id' => $interruptId,
+    'answer_type' => 'approve',
+]);
+```
+
+Free-form interrupt payloads continue to work and are ignored by contract-aware response validation.
+
 ## 0.13 To 0.14
 
 AgentGraph 0.14 adds runtime contract and release-gate APIs without removing the 0.13 runtime surface.

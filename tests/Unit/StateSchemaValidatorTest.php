@@ -74,6 +74,23 @@ it('validates structured array items from the StateSchema builder', function () 
         ->toThrow(InvalidArgumentException::class, 'State value [ids] must match schema type [{"type":"array","items":"string"}].');
 });
 
+it('honors nullable structured schemas', function () {
+    $validator = new StateSchemaValidator;
+
+    $validator->assertPatch([
+        'tags' => ['type' => 'array', 'items' => 'string', 'nullable' => true],
+        'profile' => ['type' => 'object', 'properties' => ['name' => 'string'], 'nullable' => true],
+    ], [
+        'tags' => null,
+        'profile' => null,
+    ]);
+
+    expect(fn () => $validator->assertPatch([
+        'tags' => ['type' => 'array', 'items' => 'string'],
+    ], ['tags' => null]))
+        ->toThrow(InvalidArgumentException::class, 'State value [tags] must match schema type [{"type":"array","items":"string"}].');
+});
+
 it('validates nested object properties and rejects unknown nested types', function () {
     $validator = new StateSchemaValidator;
     $schema = [

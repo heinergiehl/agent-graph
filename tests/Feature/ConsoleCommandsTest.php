@@ -90,6 +90,37 @@ it('validates registered graph definitions from the console', function () {
         ->assertFailed();
 });
 
+it('emits json validation reports and fails strict mode on warnings', function () {
+    AgentGraph::define(
+        StateGraph::make('warning_console_graph')
+            ->state(['message' => 'string'])
+            ->node('answer', ConsoleValidationAnswerNode::class)
+            ->edge(StateGraph::START, 'answer')
+            ->compile(),
+    );
+
+    $jsonExitCode = Artisan::call('agent-graph:validate', [
+        'graph' => 'warning_console_graph',
+        '--json' => true,
+    ]);
+    $json = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($jsonExitCode)->toBe(0)
+        ->and($json['passed'])->toBeTrue()
+        ->and($json['strict'])->toBeFalse()
+        ->and($json['graphs']['warning_console_graph']['warnings'][0]['code'])->toBe('terminal_path');
+
+    $strictExitCode = Artisan::call('agent-graph:validate', [
+        'graph' => 'warning_console_graph',
+        '--strict' => true,
+    ]);
+    $strictOutput = Artisan::output();
+
+    expect($strictExitCode)->toBe(1)
+        ->and($strictOutput)->toContain('WARN terminal_path')
+        ->and($strictOutput)->toContain('FAIL Graph [warning_console_graph] validation failed');
+});
+
 it('fails graph validation when no graphs are registered unless explicitly allowed', function () {
     $this->artisan('agent-graph:validate')
         ->expectsOutputToContain('FAIL No AgentGraph definitions are registered in this process.')
@@ -98,6 +129,23 @@ it('fails graph validation when no graphs are registered unless explicitly allow
     $this->artisan('agent-graph:validate --allow-empty')
         ->expectsOutputToContain('WARN No AgentGraph definitions are registered in this process.')
         ->assertSuccessful();
+
+    $this->artisan('agent-graph:validate --allow-empty --strict')
+        ->expectsOutputToContain('WARN No AgentGraph definitions are registered in this process.')
+        ->assertFailed();
+
+    $jsonExitCode = Artisan::call('agent-graph:validate', [
+        '--allow-empty' => true,
+        '--strict' => true,
+        '--json' => true,
+    ]);
+    $json = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($jsonExitCode)->toBe(1)
+        ->and($json['passed'])->toBeFalse()
+        ->and($json['failed'])->toBeTrue()
+        ->and($json['strict'])->toBeTrue()
+        ->and($json['warnings'][0]['code'])->toBe('empty_graph_registry');
 });
 
 final class ConsoleValidationAnswerNode

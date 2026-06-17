@@ -24,6 +24,16 @@ class StateGraph
 
     protected array $nodePolicies = [];
 
+    protected array $nodeMetadata = [];
+
+    protected array $nodeInputChannels = [];
+
+    protected array $nodeOutputChannels = [];
+
+    protected array $nodeInterrupts = [];
+
+    protected array $nodeSideEffects = [];
+
     protected function __construct(protected string $key, protected string $version = '1') {}
 
     public static function make(string $key, string $version = '1'): self
@@ -56,6 +66,38 @@ class StateGraph
         }
 
         $this->nodes[$id] = $node;
+
+        return $this;
+    }
+
+    public function nodeMeta(string $nodeId, array $metadata): self
+    {
+        $this->nodeMetadata[$nodeId] = $metadata;
+
+        return $this;
+    }
+
+    public function nodeChannels(string $nodeId, array $input = [], array $output = []): self
+    {
+        $this->nodeInputChannels[$nodeId] = array_values($input);
+        $this->nodeOutputChannels[$nodeId] = array_values($output);
+
+        return $this;
+    }
+
+    public function nodeCanInterrupt(string $nodeId, bool $canInterrupt = true): self
+    {
+        $this->nodeInterrupts[$nodeId] = $canInterrupt;
+
+        return $this;
+    }
+
+    public function nodeSideEffects(string $nodeId, array|string $sideEffects): self
+    {
+        $this->nodeSideEffects[$nodeId] = array_values(array_map(
+            fn (mixed $sideEffect): string => (string) $sideEffect,
+            (array) $sideEffects,
+        ));
 
         return $this;
     }
@@ -116,6 +158,11 @@ class StateGraph
             conditionals: $this->conditionals,
             reducers: $this->reducers,
             nodePolicies: $this->nodePolicies,
+            nodeMetadata: $this->nodeMetadata,
+            nodeInputChannels: $this->nodeInputChannels,
+            nodeOutputChannels: $this->nodeOutputChannels,
+            nodeInterrupts: $this->nodeInterrupts,
+            nodeSideEffects: $this->nodeSideEffects,
         );
 
         $definition->validate();

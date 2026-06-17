@@ -150,9 +150,9 @@ it('exposes a graph as a Laravel AI tool and returns structured json', function 
 });
 
 it('sanitizes default graph tool names for provider compatibility', function () {
-    $tool = AgentGraph::tool('filament-agentic-chatbot.workflow.123/alpha');
+    $tool = AgentGraph::tool('support-workflow.123/alpha');
 
-    expect($tool->name())->toBe('run_filament_agentic_chatbot_workflow_123_alpha');
+    expect($tool->name())->toBe('run_support_workflow_123_alpha');
 });
 
 it('rejects invalid custom graph tool names', function () {

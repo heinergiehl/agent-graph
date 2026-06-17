@@ -6,7 +6,7 @@ AgentGraph does not replace Laravel AI providers, agents, tools, streaming, or s
 
 ## Release Status
 
-`0.14.x` is the current stable pre-v1 release line for runtime contracts and release-readiness APIs. `0.13.x` remains available for applications that have not adopted the 0.14 contract additions yet. Breaking changes are still possible before v1, but they will be documented in `CHANGELOG.md` and `UPGRADE.md`.
+`0.15.x` is the current stable pre-v1 release line for production-grade graph contracts and release-readiness APIs. `0.14.x` remains available for applications that have not adopted the 0.15 contract hardening yet. Breaking changes are still possible before v1, but they will be documented in `CHANGELOG.md` and `UPGRADE.md`.
 
 The v1 target is a hardened MVP: stable graph execution, checkpoints, interrupts/resume, idempotent tasks, scoped memory, traces, queues, run-event observation, Laravel AI agent nodes, graphs as tools, native subgraph nodes, and durable app workflow sessions. Experimental checkpoint inspection, replay, forking, worker-backed queued supersteps, and vector memory contracts are available for post-v1-style workflows. OpenTelemetry export and visual workflow editing remain outside the stable v1 core.
 
@@ -15,12 +15,12 @@ CI validates the pre-v1 release line against PHP 8.3/8.4, Laravel 12/13, and `la
 ## Installation
 
 ```bash
-composer require heiner/agent-graph:^0.14
+composer require heiner/agent-graph:^0.15
 php artisan agent-graph:install
 php artisan migrate
 ```
 
-The `^0.14` constraint tracks the stable 0.14 line while staying below the next minor pre-v1 line. Applications pinned to `^0.13.0` remain on the 0.13 line and will not install 0.14 automatically.
+The `^0.15` constraint tracks the stable 0.15 line while staying below the next minor pre-v1 line. Applications pinned to `^0.14.0` remain on the 0.14 line and will not install 0.15 automatically.
 
 `agent-graph:install` publishes the package config and migrations. The database store uses these tables by default:
 
@@ -122,6 +122,15 @@ Resume later:
 $run = AgentGraph::resume($runId, [
     'interrupt_id' => $interruptId,
     'approved' => true,
+]);
+```
+
+For public endpoints that answer typed slot, approval, or choice contracts, use contract-aware resume validation:
+
+```php
+$run = AgentGraph::resumeContract($runId, [
+    'interrupt_id' => $interruptId,
+    'answer_type' => 'approve',
 ]);
 ```
 
@@ -238,11 +247,23 @@ Compiled graphs expose a read-only manifest for release checks, tooling, inspect
 ```php
 $manifest = AgentGraph::manifest('support_triage')->toArray();
 
+$manifest['manifest_version']; // 2
 $manifest['state'];       // normalized state channel definitions
-$manifest['nodes'];       // registered node ids and classes
+$manifest['nodes'];       // node ids, metadata, channels, interrupt and side-effect contracts
 $manifest['edges'];       // static routing
 $manifest['conditionals']; // conditional route metadata
 $manifest['policies'];    // retry, timeout, concurrency metadata
+```
+
+Populate node contract metadata without adding UI-specific classes:
+
+```php
+StateGraph::make('support_triage')
+    ->node('answer', AnswerNode::class)
+    ->nodeMeta('answer', ['label' => 'Answer', 'type' => 'agent'])
+    ->nodeChannels('answer', input: ['input'], output: ['answer'])
+    ->nodeCanInterrupt('answer')
+    ->nodeSideEffects('answer', ['read', 'write']);
 ```
 
 Validate registered graph definitions before release:
@@ -250,10 +271,11 @@ Validate registered graph definitions before release:
 ```bash
 php artisan agent-graph:validate
 php artisan agent-graph:validate support_triage
+php artisan agent-graph:validate --strict --json
 php artisan agent-graph:validate --allow-empty
 ```
 
-Validation reports unknown state schema types, unknown reducers, and unreachable nodes without mutating runtime state. The command fails when no graph definitions are registered, so CI does not pass accidentally because the host app skipped graph bootstrapping. Use `--allow-empty` only for packages or environments where an empty registry is intentional.
+Validation reports unknown state schema types, unknown reducers, unreachable nodes, terminal paths, conditionals without default routes, and mixed static plus conditional outgoing routes without mutating runtime state. The command fails when no graph definitions are registered, so CI does not pass accidentally because the host app skipped graph bootstrapping. Use `--strict` when warnings should fail CI, `--json` for machine-readable reports, and `--allow-empty` only for packages or environments where an empty registry is intentional.
 
 ## Supersteps and Send
 
@@ -516,7 +538,7 @@ Vector memory is contract-based and optional. Laravel AI can provide embeddings;
 
 ## Stable v1 Public APIs
 
-The 0.14 release line exposes the intended v1-stable API surface documented in [`docs/api-reference.md`](docs/api-reference.md). In short:
+The 0.15 release line exposes the intended v1-stable API surface documented in [`docs/api-reference.md`](docs/api-reference.md). In short:
 
 - `StateGraph` for fluent graph definitions.
 - `Node` and `NodeContext` for runtime node implementation.
@@ -525,7 +547,7 @@ The 0.14 release line exposes the intended v1-stable API surface documented in [
 - `RetryPolicy` and per-node `StateGraph::retry()` configuration for thrown node exceptions.
 - `TimeoutPolicy`, `ConcurrencyPolicy`, and per-node `StateGraph::timeout()` / `StateGraph::concurrency()` configuration.
 - `AgentGraph` facade for defining, running, resuming, state-edit resuming, inspecting, listing, cancelling, and exposing tools.
-- `GraphManifest` and `GraphValidator` for read-only graph metadata and release-readiness checks.
+- `GraphSchemaExporter`, `GraphManifest`, and `GraphValidator` for read-only graph contracts, exact state schemas, and release-readiness checks.
 - `InterruptContract` for typed human-in-the-loop waitpoint payloads.
 - `RunSnapshot` for read-only runtime inspection.
 - `RunTimeline` for ordered checkpoint/write/interrupt/failure timelines with optional state diffs.
@@ -562,14 +584,15 @@ The 0.14 release line exposes the intended v1-stable API surface documented in [
 - Configure `agent-graph.tasks.lease_seconds` for the maximum expected side-effect duration.
 - Configure `agent-graph.locks.ttl_seconds` longer than the longest expected node execution.
 - Use `resumeStrict()` for public endpoints that should reject unknown resume payload keys.
+- Use `resumeContract()` for public endpoints that answer typed interrupt contracts.
 - Treat terminal runs as immutable for resume/state-edit/cancel flows; use replay or fork for follow-up work from historical state.
 - Keep `GraphTool` generic; use `schemaInput()` for bounded public tool input and `DurableGraphTool` for active-run-per-thread application semantics.
 - Use explicit reducers for any state channel that can be written by more than one node in the same superstep.
 - Keep graph definitions generic; product-specific UI belongs in consuming apps.
 - For multi-tenant memory, always include tenant or actor scope in reads and writes.
 - Run `php artisan agent-graph:doctor` after deploys and before release validation. Treat `FAIL` lines as release blockers; the command checks database tables, cache locks, store driver, queue settings, lease/lock timing, and max-step bounds.
-- Run `php artisan agent-graph:validate` in host apps that register production graph definitions during boot.
+- Run `php artisan agent-graph:validate --strict` in host apps that register production graph definitions during boot.
 
 ## Status
 
-This MVP includes the durable runtime core, deterministic supersteps, dynamic `Send` fan-out, per-node retry/timeout/concurrency policies, database and in-memory stores, scoped memory, interrupts with expiry, task leases, traces, queue jobs, worker-backed queued supersteps, Laravel AI adapter, graph tool adapters, subgraph nodes, run-event observation, commands, tests, docs, optional experimental vector-memory adapters, and experimental checkpoint replay/fork APIs. Post-MVP work includes visual timeline tooling, production-grade pgvector CI/adapter hardening, OpenTelemetry export, and visual editor serialization.
+This MVP includes the durable runtime core, production-grade graph contracts, deterministic supersteps, dynamic `Send` fan-out, per-node retry/timeout/concurrency policies, database and in-memory stores, scoped memory, interrupts with expiry and typed response validation, task leases, traces, queue jobs, worker-backed queued supersteps, Laravel AI adapter, graph tool adapters, subgraph nodes, run-event observation, commands, tests, docs, optional experimental vector-memory adapters, and experimental checkpoint replay/fork APIs. Post-MVP work includes visual timeline tooling, production-grade pgvector CI/adapter hardening, OpenTelemetry export, and visual editor serialization.

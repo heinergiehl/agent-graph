@@ -2,6 +2,26 @@
 
 All notable changes to AgentGraph are documented here.
 
+## 0.15.0 - 2026-06-17
+
+Target: production-grade graph contracts, validation, and machine-readable schema metadata for Laravel workflow products built on AgentGraph.
+
+### Added
+
+- Added `GraphSchemaExporter` as the neutral, exact JSON-schema-like exporter for AgentGraph state schemas, including unions, nullable values, enums, arrays, object properties, and message channels.
+- Added GraphManifest v2 with `manifest_version`, neutral node metadata, input/output channels, interrupt capability, and side-effect declarations.
+- Added `StateGraph::nodeMeta()`, `nodeChannels()`, `nodeCanInterrupt()`, and `nodeSideEffects()` for SDK-neutral node contract metadata.
+- Added validator warnings for terminal paths, conditionals without default routes, and nodes mixing static and conditional outgoing routes.
+- Added `GraphValidationReport::issues()`, strict report evaluation, issue counts, and stable machine-readable report arrays.
+- Added `agent-graph:validate --strict` and `agent-graph:validate --json` for CI release gates.
+- Added `InterruptContract` response schemas and `AgentGraph::resumeContract()` for opt-in validation of slot, approval, and choice interrupt responses before resolving a pending interrupt.
+
+### Changed
+
+- `GraphTool` now derives provider-compatible input schemas from `GraphSchemaExporter` instead of depending on a manifest array shape.
+- Structured state schemas with `nullable: true` now accept `null` during runtime state validation.
+- Composer branch alias now targets `0.15-dev`.
+
 ## 0.14.0 - 2026-06-17
 
 Target: runtime contracts and release-readiness features for Laravel apps and workflow products built on AgentGraph.

@@ -4,6 +4,7 @@ namespace Heiner\AgentGraph\LaravelAi;
 
 use Closure;
 use Heiner\AgentGraph\AgentGraphManager;
+use Heiner\AgentGraph\Graph\GraphSchemaExporter;
 use Heiner\AgentGraph\Runtime\RunResult;
 use Heiner\AgentGraph\Runtime\RuntimeError;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
@@ -242,7 +243,7 @@ class GraphTool implements Stringable, Tool
 
         $properties = [];
 
-        foreach ($definition->manifest()->toArray()['state'] as $channel => $state) {
+        foreach ((new GraphSchemaExporter)->state($definition->schema()) as $channel => $state) {
             $properties[$channel] = $this->jsonSchemaType($schema, $state);
         }
 

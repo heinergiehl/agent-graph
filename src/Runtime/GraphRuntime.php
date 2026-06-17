@@ -28,6 +28,7 @@ use Heiner\AgentGraph\Events\GraphRunCompleted;
 use Heiner\AgentGraph\Events\GraphRunFailed;
 use Heiner\AgentGraph\Events\GraphRunStarted;
 use Heiner\AgentGraph\Graph\GraphDefinition;
+use Heiner\AgentGraph\Graph\InterruptContract;
 use Heiner\AgentGraph\Graph\RetryPolicy;
 use Heiner\AgentGraph\Graph\StateGraph;
 use Heiner\AgentGraph\Queue\ContinueSuperstepJob;
@@ -93,9 +94,9 @@ class GraphRuntime
     /**
      * @param  array<string, GraphDefinition>  $graphs
      */
-    public function resume(string $runId, array $payload, array $graphs, bool $strictKeys = false, RuntimeOptions|array $options = []): RunResult
+    public function resume(string $runId, array $payload, array $graphs, bool $strictKeys = false, RuntimeOptions|array $options = [], bool $validateInterruptContract = false): RunResult
     {
-        return $this->locks->withLock('agent-graph:run:'.$runId, function () use ($runId, $payload, $graphs, $strictKeys, $options): RunResult {
+        return $this->locks->withLock('agent-graph:run:'.$runId, function () use ($runId, $payload, $graphs, $strictKeys, $validateInterruptContract, $options): RunResult {
             $run = $this->runs->find($runId) ?? throw new RuntimeException("Run [{$runId}] was not found.");
             $incomingOptions = RuntimeOptions::from($options);
             $runtimeOptions = $incomingOptions->isDefault() ? RuntimeOptions::fromRun($run) : $incomingOptions;
@@ -114,6 +115,7 @@ class GraphRuntime
             if (isset($payload['interrupt_id'])) {
                 $resumeInterruptId = (string) $payload['interrupt_id'];
                 $this->assertMatchingPendingInterrupt($runId, $resumeInterruptId, $interrupt);
+                $this->assertInterruptContractResponse($interrupt, $resumePayload, $validateInterruptContract);
                 $this->interrupts->resolvePending($resumeInterruptId, $runId, $payload);
             } elseif ($interrupt !== null && in_array($run['status'], ['interrupted', 'delayed'], true)) {
                 throw new InvalidArgumentException("Run [{$runId}] requires interrupt_id to resume.");
@@ -1339,6 +1341,22 @@ class GraphRuntime
         if (($interrupt['interrupt_id'] ?? null) !== $interruptId) {
             throw new InvalidArgumentException("Interrupt [{$interruptId}] does not match the pending interrupt for run [{$runId}].");
         }
+    }
+
+    protected function assertInterruptContractResponse(?array $interrupt, array $response, bool $validateInterruptContract): void
+    {
+        if (! $validateInterruptContract || $interrupt === null || ! is_array($interrupt['payload'] ?? null)) {
+            return;
+        }
+
+        $payload = $interrupt['payload'];
+
+        if (! InterruptContract::isContractPayload($payload)) {
+            return;
+        }
+
+        InterruptContract::fromArray($payload, (string) ($interrupt['type'] ?? 'input'))
+            ->assertResponse($response);
     }
 
     protected function assertRunCanResume(array $run): void

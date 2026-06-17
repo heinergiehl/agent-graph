@@ -52,6 +52,16 @@ class InterruptContract
                 ],
                 'policy' => $policy,
             ],
+            'response_schema' => [
+                'kind' => 'slot_value',
+                'answer_types' => array_values($answerTypes),
+                'slot' => [
+                    'name' => $slot,
+                    'input_type' => $inputType,
+                    'required' => $required,
+                    'allows_multiple' => $allowsMultiple,
+                ],
+            ],
             'meta' => $meta,
         ]);
     }
@@ -79,6 +89,11 @@ class InterruptContract
                 'answer_types' => array_values($answerTypes),
                 'side_effect' => $sideEffect,
                 'policy' => $policy,
+            ],
+            'response_schema' => [
+                'kind' => 'approval',
+                'answer_types' => array_values($answerTypes),
+                'required' => ['answer_type'],
             ],
             'meta' => $meta,
         ]);
@@ -113,8 +128,20 @@ class InterruptContract
                 'allows_multiple' => $allowsMultiple,
                 'policy' => $policy,
             ],
+            'response_schema' => [
+                'kind' => 'choice',
+                'answer_types' => array_values($answerTypes),
+                'choices' => array_values($choices),
+                'allows_multiple' => $allowsMultiple,
+            ],
             'meta' => $meta,
         ]);
+    }
+
+    public static function isContractPayload(array $payload): bool
+    {
+        return ($payload['contract_version'] ?? null) === self::VERSION
+            && is_array($payload['interaction'] ?? null);
     }
 
     public function type(): string
@@ -140,6 +167,153 @@ class InterruptContract
     public function nodeId(): string
     {
         return (string) $this->payload['node_id'];
+    }
+
+    public function responseSchema(): array
+    {
+        if (is_array($this->payload['response_schema'] ?? null)) {
+            return $this->payload['response_schema'];
+        }
+
+        $interaction = $this->payload['interaction'];
+
+        return [
+            'kind' => (string) $interaction['kind'],
+            'answer_types' => array_values((array) ($interaction['answer_types'] ?? [])),
+        ];
+    }
+
+    public function assertResponse(array $response): void
+    {
+        match ($this->kind()) {
+            'slot_value' => $this->assertSlotValueResponse($response),
+            'approval' => $this->assertApprovalResponse($response),
+            'choice' => $this->assertChoiceResponse($response),
+            default => null,
+        };
+    }
+
+    protected function assertApprovalResponse(array $response): void
+    {
+        $answerType = $response['answer_type'] ?? null;
+
+        if (! is_string($answerType) || $answerType === '') {
+            throw new InvalidArgumentException('Approval interrupt responses require answer_type.');
+        }
+
+        $this->assertAllowedAnswerType($answerType);
+    }
+
+    protected function assertChoiceResponse(array $response): void
+    {
+        $answerType = $response['answer_type'] ?? 'choice';
+        $this->assertAllowedAnswerType($answerType);
+
+        if ($answerType !== 'choice') {
+            return;
+        }
+
+        $schema = $this->responseSchema();
+        $choices = array_values((array) ($schema['choices'] ?? $this->payload['interaction']['choices'] ?? []));
+        $allowsMultiple = (bool) ($schema['allows_multiple'] ?? $this->payload['interaction']['allows_multiple'] ?? false);
+
+        if (! array_key_exists('choice', $response)) {
+            throw new InvalidArgumentException('Choice interrupt responses require response key [choice].');
+        }
+
+        $selected = $response['choice'];
+
+        if ($allowsMultiple) {
+            if (! is_array($selected) || ! array_is_list($selected)) {
+                throw new InvalidArgumentException('Choice interrupt response key [choice] must be a list.');
+            }
+
+            foreach ($selected as $choice) {
+                $this->assertAllowedChoice($choice, $choices);
+            }
+
+            return;
+        }
+
+        $this->assertAllowedChoice($selected, $choices);
+    }
+
+    protected function assertSlotValueResponse(array $response): void
+    {
+        $answerType = $response['answer_type'] ?? 'slot_value';
+        $this->assertAllowedAnswerType($answerType);
+
+        if ($answerType !== 'slot_value') {
+            return;
+        }
+
+        $schema = $this->responseSchema();
+        $slot = (array) ($schema['slot'] ?? $this->payload['interaction']['slot'] ?? []);
+        $name = (string) ($slot['name'] ?? '');
+
+        if ($name === '') {
+            throw new InvalidArgumentException('Slot interrupt contracts require a slot name before response validation.');
+        }
+
+        if (! array_key_exists($name, $response)) {
+            if ((bool) ($slot['required'] ?? true)) {
+                throw new InvalidArgumentException("Slot interrupt response requires response key [{$name}].");
+            }
+
+            return;
+        }
+
+        $value = $response[$name];
+        $inputType = (string) ($slot['input_type'] ?? 'string');
+        $allowsMultiple = (bool) ($slot['allows_multiple'] ?? false);
+
+        if ($allowsMultiple) {
+            if (! is_array($value) || ! array_is_list($value)) {
+                throw new InvalidArgumentException("Slot interrupt response key [{$name}] must be a list.");
+            }
+
+            foreach ($value as $item) {
+                $this->assertSlotValueType($name, $inputType, $item);
+            }
+
+            return;
+        }
+
+        $this->assertSlotValueType($name, $inputType, $value);
+    }
+
+    protected function assertAllowedAnswerType(mixed $answerType): void
+    {
+        $schema = $this->responseSchema();
+        $answerTypes = array_values((array) ($schema['answer_types'] ?? $this->payload['interaction']['answer_types'] ?? []));
+
+        if (! is_string($answerType) || ! in_array($answerType, $answerTypes, true)) {
+            throw new InvalidArgumentException('Interrupt response answer_type must be one of ['.implode(', ', $answerTypes).'].');
+        }
+    }
+
+    protected function assertAllowedChoice(mixed $choice, array $choices): void
+    {
+        if (! in_array($choice, $choices, true)) {
+            $label = is_scalar($choice) ? (string) $choice : get_debug_type($choice);
+
+            throw new InvalidArgumentException("Choice interrupt response value [{$label}] is not an allowed choice.");
+        }
+    }
+
+    protected function assertSlotValueType(string $name, string $inputType, mixed $value): void
+    {
+        $valid = match ($inputType) {
+            'int', 'integer' => is_int($value),
+            'float', 'double', 'number' => is_int($value) || is_float($value),
+            'bool', 'boolean' => is_bool($value),
+            'array' => is_array($value),
+            default => is_string($value),
+        };
+
+        if (! $valid) {
+            throw new InvalidArgumentException("Slot interrupt response key [{$name}] must match input type [{$inputType}].");
+        }
     }
 
     protected function assertValidPayload(array $payload): void

@@ -55,6 +55,19 @@ Use `AGENT_GRAPH_STORE=memory` only for tests or throwaway local experiments. In
 
 Run `php artisan agent-graph:doctor` after deploys and before release validation. The command emits `PASS`, `WARN`, and `FAIL` lines for the store driver, database connection, cache locks, fail-closed lock behavior, execution mode, queue connection/name, task and node lease durations, lock TTL, max steps, and all package tables. In production-like environments, `FAIL` means the release should stop until the configuration or migrations are corrected.
 
+## Graph release validation
+
+Run graph validation in the same application boot path that registers production graph definitions:
+
+```bash
+php artisan agent-graph:validate --strict
+php artisan agent-graph:validate --strict --json
+```
+
+`--strict` fails the command on warnings such as terminal paths, conditionals without default routes, mixed static and conditional outgoing routes, or unreachable nodes. `--json` emits a machine-readable report suitable for CI artifacts and deployment gates.
+
+Review `AgentGraph::manifest($key)->toArray()` before exposing a graph to users or parent agents. Manifest v2 includes exact state schemas, reducers, routing, retry/timeout/concurrency policies, and neutral node metadata such as input/output channels, interrupt capability, and side-effect categories. Keep product UI classes out of core graph definitions; consuming apps can project manifest metadata into their own admin or workflow screens.
+
 ## Memory tenancy
 
 In multi-tenant apps, include `tenant` scope on every customer-specific memory write and read. Add `actor` scope for user-specific memory inside a tenant. Reserve `application` or `global` scope for product defaults that contain no customer or user data.
@@ -84,7 +97,7 @@ Run-event observation is not model streaming. Keep Laravel AI as the owner of to
 
 Use `AgentGraph::resumeWithStateEdit($runId, $interruptId, $statePatch, $resolvedBy)` for manual state correction. The runtime validates every patched key against the graph state schema before resolving the pending interrupt, so invalid edits fail without mutating the interrupt.
 
-Normal input and approval resumes should continue to use `AgentGraph::resume($runId, ['interrupt_id' => $interruptId, ...])`.
+Normal input and approval resumes should continue to use `AgentGraph::resume($runId, ['interrupt_id' => $interruptId, ...])`. Use `AgentGraph::resumeContract()` for public endpoints that answer typed `InterruptContract` slot, approval, or choice waitpoints and should validate the response before resolving the interrupt.
 
 Terminal runs are immutable for runtime control APIs. `completed`, `cancelled`, and `failed` runs reject `resume()`, `resumeWithStateEdit()`, and `cancel()`; use replay or fork when a workflow needs follow-up work from historical state.
 
