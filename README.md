@@ -6,7 +6,7 @@ AgentGraph does not replace Laravel AI providers, agents, tools, streaming, or s
 
 ## Release Status
 
-`0.14.x` is the current pre-v1 development line for runtime contracts and release-readiness APIs. `0.13.x` remains the latest stable pre-v1 release line until `0.14.0` is tagged. Breaking changes are still possible before v1, but they will be documented in `CHANGELOG.md` and `UPGRADE.md`.
+`0.14.x` is the current stable pre-v1 release line for runtime contracts and release-readiness APIs. `0.13.x` remains available for applications that have not adopted the 0.14 contract additions yet. Breaking changes are still possible before v1, but they will be documented in `CHANGELOG.md` and `UPGRADE.md`.
 
 The v1 target is a hardened MVP: stable graph execution, checkpoints, interrupts/resume, idempotent tasks, scoped memory, traces, queues, run-event observation, Laravel AI agent nodes, graphs as tools, native subgraph nodes, and durable app workflow sessions. Experimental checkpoint inspection, replay, forking, worker-backed queued supersteps, and vector memory contracts are available for post-v1-style workflows. OpenTelemetry export and visual workflow editing remain outside the stable v1 core.
 
@@ -15,12 +15,12 @@ CI validates the pre-v1 release line against PHP 8.3/8.4, Laravel 12/13, and `la
 ## Installation
 
 ```bash
-composer require heiner/agent-graph:^0.13
+composer require heiner/agent-graph:^0.14
 php artisan agent-graph:install
 php artisan migrate
 ```
 
-The `^0.13` constraint tracks the stable 0.13 line while staying below the next minor pre-v1 line. Historical `0.13.0-beta.*` tags remain available for apps that explicitly test prereleases, but normal installs should use the stable tag.
+The `^0.14` constraint tracks the stable 0.14 line while staying below the next minor pre-v1 line. Applications pinned to `^0.13.0` remain on the 0.13 line and will not install 0.14 automatically.
 
 `agent-graph:install` publishes the package config and migrations. The database store uses these tables by default:
 
@@ -516,7 +516,7 @@ Vector memory is contract-based and optional. Laravel AI can provide embeddings;
 
 ## Stable v1 Public APIs
 
-The 0.14 development line exposes the intended v1-stable API surface documented in [`docs/api-reference.md`](docs/api-reference.md). In short:
+The 0.14 release line exposes the intended v1-stable API surface documented in [`docs/api-reference.md`](docs/api-reference.md). In short:
 
 - `StateGraph` for fluent graph definitions.
 - `Node` and `NodeContext` for runtime node implementation.

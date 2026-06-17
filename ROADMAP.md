@@ -1,6 +1,6 @@
 # AgentGraph Roadmap
 
-AgentGraph `0.14.x` is the current pre-v1 development line for real Laravel app testing. The goal for v1 is a durable agent workflow SDK for Laravel, not a complete LangGraph platform clone.
+AgentGraph `0.14.x` is the current pre-v1 release line for real Laravel app testing. The goal for v1 is a durable agent workflow SDK for Laravel, not a complete LangGraph platform clone.
 
 ## 0.14 Runtime Contracts Scope
 

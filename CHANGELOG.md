@@ -2,7 +2,7 @@
 
 All notable changes to AgentGraph are documented here.
 
-## 0.14.0 - Unreleased
+## 0.14.0 - 2026-06-17
 
 Target: runtime contracts and release-readiness features for Laravel apps and workflow products built on AgentGraph.
 

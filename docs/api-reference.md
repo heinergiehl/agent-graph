@@ -1,6 +1,6 @@
 # AgentGraph API Reference
 
-This document describes the public API surface exposed by the 0.14 development line and intended for v1 stabilization. APIs marked experimental are public but may receive compatibility-preserving hardening before a later stable time-travel release.
+This document describes the public API surface exposed by the 0.14 release line and intended for v1 stabilization. APIs marked experimental are public but may receive compatibility-preserving hardening before a later stable time-travel release.
 
 ## Graph Definition
 
