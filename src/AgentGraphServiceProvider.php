@@ -7,6 +7,7 @@ use Heiner\AgentGraph\Console\InstallCommand;
 use Heiner\AgentGraph\Console\MakeGraphCommand;
 use Heiner\AgentGraph\Console\MakeNodeCommand;
 use Heiner\AgentGraph\Console\PruneCommand;
+use Heiner\AgentGraph\Console\ValidateCommand;
 use Heiner\AgentGraph\Contracts\CheckpointStore;
 use Heiner\AgentGraph\Contracts\Clock;
 use Heiner\AgentGraph\Contracts\DelayScheduler;
@@ -89,6 +90,7 @@ class AgentGraphServiceProvider extends ServiceProvider
                 MakeNodeCommand::class,
                 DoctorCommand::class,
                 PruneCommand::class,
+                ValidateCommand::class,
             ]);
         }
     }

@@ -2,6 +2,8 @@
 
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Heiner\AgentGraph\Facades\AgentGraph;
+use Heiner\AgentGraph\Graph\StateGraph;
 
 it('doctor reports missing tables and infrastructure settings', function () {
     $this->artisan('agent-graph:doctor')
@@ -58,6 +60,43 @@ it('doctor fails unsafe production settings', function () {
         $this->app->detectEnvironment(fn () => 'testing');
     }
 });
+
+it('validates registered graph definitions from the console', function () {
+    AgentGraph::define(
+        StateGraph::make('valid_console_graph')
+            ->state(['message' => 'string'])
+            ->node('answer', ConsoleValidationAnswerNode::class)
+            ->edge(StateGraph::START, 'answer')
+            ->compile(),
+    );
+
+    AgentGraph::define(
+        StateGraph::make('invalid_console_graph')
+            ->state(['message' => 'strng'])
+            ->node('answer', ConsoleValidationAnswerNode::class)
+            ->node('orphan', ConsoleValidationAnswerNode::class)
+            ->edge(StateGraph::START, 'answer')
+            ->compile(),
+    );
+
+    $this->artisan('agent-graph:validate valid_console_graph')
+        ->expectsOutputToContain('PASS Graph [valid_console_graph] passed validation')
+        ->assertSuccessful();
+
+    $this->artisan('agent-graph:validate invalid_console_graph')
+        ->expectsOutputToContain('FAIL Graph [invalid_console_graph] validation failed')
+        ->expectsOutputToContain('unknown_state_schema_type')
+        ->expectsOutputToContain('unreachable_node')
+        ->assertFailed();
+});
+
+final class ConsoleValidationAnswerNode
+{
+    public function __invoke(): array
+    {
+        return [];
+    }
+}
 
 it('prunes only selected old data and expired memories', function () {
     $this->loadMigrationsFrom(__DIR__.'/../../database/migrations');

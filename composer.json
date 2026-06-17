@@ -57,11 +57,13 @@
         "test": "pest",
         "test:types": "phpstan analyse --memory-limit=1G",
         "test:lint": "pint --test",
+        "test:security": "composer audit --no-dev",
         "lint": "pint",
         "check": [
             "@test:lint",
             "@test",
-            "@test:types"
+            "@test:types",
+            "@test:security"
         ]
     },
     "config": {

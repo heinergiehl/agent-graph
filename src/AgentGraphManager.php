@@ -3,6 +3,9 @@
 namespace Heiner\AgentGraph;
 
 use Heiner\AgentGraph\Graph\GraphDefinition;
+use Heiner\AgentGraph\Graph\GraphManifest;
+use Heiner\AgentGraph\Graph\GraphValidationReport;
+use Heiner\AgentGraph\Graph\GraphValidator;
 use Heiner\AgentGraph\Graph\StateGraph;
 use Heiner\AgentGraph\LaravelAi\DurableGraphTool;
 use Heiner\AgentGraph\LaravelAi\GraphTool;
@@ -44,6 +47,21 @@ class AgentGraphManager
     public function definition(string $key): GraphDefinition
     {
         return $this->graphs[$key] ?? throw new InvalidArgumentException("Graph [{$key}] is not defined.");
+    }
+
+    public function definitions(): array
+    {
+        return $this->graphs;
+    }
+
+    public function manifest(string $key): GraphManifest
+    {
+        return $this->definition($key)->manifest();
+    }
+
+    public function validate(string $key): GraphValidationReport
+    {
+        return GraphValidator::validate($this->definition($key));
     }
 
     public function run(GraphDefinition $graph, string $threadId, array $input = [], array $meta = [], ?callable $onEvent = null, bool $collectEvents = false, RuntimeOptions|array $options = []): RunResult
