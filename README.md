@@ -101,6 +101,21 @@ return NodeResult::interrupt('approval', [
 ]);
 ```
 
+For machine-readable waitpoints, use typed interrupt contracts. They keep the existing interrupt runtime behavior while giving apps, inspectors, and chat projections a stable payload shape.
+
+```php
+use Heiner\AgentGraph\Graph\InterruptContract;
+
+return NodeResult::interruptContract(
+    InterruptContract::slotValue(
+        nodeId: 'collect_email',
+        question: 'Which email should receive the follow-up?',
+        slot: 'email',
+        inputType: 'email',
+    )
+);
+```
+
 Resume later:
 
 ```php
@@ -215,6 +230,29 @@ AgentGraph::childRuns($parentRunId, limit: 25);
 ```
 
 Parent metadata is stored under `run.meta.parent`. Manual child runs and native `SubgraphNode` child runs use the same lineage shape so inspector UIs can show delegated work consistently.
+
+## Graph Manifests and Validation
+
+Compiled graphs expose a read-only manifest for release checks, tooling, inspectors, and visual editors:
+
+```php
+$manifest = AgentGraph::manifest('support_triage')->toArray();
+
+$manifest['state'];       // normalized state channel definitions
+$manifest['nodes'];       // registered node ids and classes
+$manifest['edges'];       // static routing
+$manifest['conditionals']; // conditional route metadata
+$manifest['policies'];    // retry, timeout, concurrency metadata
+```
+
+Validate registered graph definitions before release:
+
+```bash
+php artisan agent-graph:validate
+php artisan agent-graph:validate support_triage
+```
+
+Validation reports unknown state schema types, unknown reducers, and unreachable nodes without mutating runtime state.
 
 ## Supersteps and Send
 
@@ -481,6 +519,8 @@ The 0.13 release exposes the intended v1-stable API surface documented in [`docs
 - `RetryPolicy` and per-node `StateGraph::retry()` configuration for thrown node exceptions.
 - `TimeoutPolicy`, `ConcurrencyPolicy`, and per-node `StateGraph::timeout()` / `StateGraph::concurrency()` configuration.
 - `AgentGraph` facade for defining, running, resuming, state-edit resuming, inspecting, listing, cancelling, and exposing tools.
+- `GraphManifest` and `GraphValidator` for read-only graph metadata and release-readiness checks.
+- `InterruptContract` for typed human-in-the-loop waitpoint payloads.
 - `RunSnapshot` for read-only runtime inspection.
 - `RunTimeline` for ordered checkpoint/write/interrupt/failure timelines with optional state diffs.
 - `RunEvent` for optional per-run workflow event observation and collection.
@@ -522,6 +562,7 @@ The 0.13 release exposes the intended v1-stable API surface documented in [`docs
 - Keep graph definitions generic; product-specific UI belongs in consuming apps.
 - For multi-tenant memory, always include tenant or actor scope in reads and writes.
 - Run `php artisan agent-graph:doctor` after deploys and before release validation. Treat `FAIL` lines as release blockers; the command checks database tables, cache locks, store driver, queue settings, lease/lock timing, and max-step bounds.
+- Run `php artisan agent-graph:validate` in host apps that register production graph definitions during boot.
 
 ## Status
 

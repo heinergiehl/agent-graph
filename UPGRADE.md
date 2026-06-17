@@ -1,5 +1,40 @@
 # Upgrade Guide
 
+## 0.13 To 0.14
+
+AgentGraph 0.14 adds runtime contract and release-gate APIs without removing the 0.13 runtime surface.
+
+### Typed interrupt contracts
+
+Existing `NodeResult::interrupt($type, $payload, $writes)` calls continue to work. New code can use `InterruptContract` plus `NodeResult::interruptContract()` when a consuming app needs a stable machine-readable waitpoint payload:
+
+```php
+return NodeResult::interruptContract(
+    InterruptContract::slotValue(
+        nodeId: 'collect_email',
+        question: 'Which email should receive the follow-up?',
+        slot: 'email',
+        inputType: 'email',
+    ),
+);
+```
+
+Consumer projections should treat `contract_version`, `node_id`, `output`, and `interaction.kind` as the stable contract shape. Apps that already store custom interrupt payloads do not need to migrate historical rows.
+
+### Graph manifests and validation
+
+Compiled graph definitions now expose `manifest()` for read-only metadata. `AgentGraphManager::manifest($key)` and `AgentGraphManager::validate($key)` are additive read APIs for tools, visual editors, CI checks, and admin diagnostics.
+
+`agent-graph:validate {graph?}` validates graph definitions registered in the current Laravel process. Host apps that register graphs during service-provider boot can add this command to release smoke tests.
+
+### GraphTool input schemas
+
+`GraphTool::schema()` now derives `input` properties from the registered graph state schema. If code expected the tool schema to contain only a generic nullable object, update tests to allow concrete `properties` and `required` entries. Runtime tool handling remains compatible.
+
+### Security audit check
+
+`composer check` now includes `composer audit --no-dev`. Release environments should keep dependency resolution current enough for this command to pass.
+
 ## 0.13 To v1
 
 AgentGraph 0.13 is the hardened pre-v1 release line. v1 freezes the durable runtime core, documents the public API, and tightens validation around state, resume, queues, and time travel.

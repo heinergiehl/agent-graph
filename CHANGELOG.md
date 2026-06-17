@@ -2,6 +2,21 @@
 
 All notable changes to AgentGraph are documented here.
 
+## 0.14.0 - Unreleased
+
+Target: runtime contracts and release-readiness features for Laravel apps and workflow products built on AgentGraph.
+
+### Added
+
+- Added `InterruptContract` for typed human-in-the-loop interrupt payloads, including slot-value, approval, and choice contracts.
+- Added `NodeResult::interruptContract()` for emitting typed interrupt contracts while preserving the existing `NodeResult::interrupt()` API.
+- Added `GraphManifest` and `GraphDefinition::manifest()` for read-only graph metadata, including state schema, reducers, nodes, edges, conditional routes, and node policies.
+- Added `GraphValidator` and `GraphValidationReport` for release-time graph checks such as unknown state schema types, unknown reducers, and unreachable nodes.
+- Added `AgentGraphManager::definitions()`, `manifest()`, and `validate()` read APIs.
+- Added `agent-graph:validate {graph?}` to validate registered graph definitions from CLI release gates.
+- `GraphTool::schema()` now derives the `input` object properties from a registered graph's state schema, falling back to the previous generic object schema when the graph is not registered.
+- Added `composer audit --no-dev` to the package `check` script through `test:security`.
+
 ## 0.13.0 - 2026-05-31
 
 Target: stable 0.13 release channel for Laravel app consumption without requiring Composer prerelease flags.

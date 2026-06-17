@@ -2,6 +2,18 @@
 
 AgentGraph `0.13.x` is the hardened pre-v1 release line for real Laravel app testing. The goal for v1 is a durable agent workflow SDK for Laravel, not a complete LangGraph platform clone.
 
+## 0.14 Runtime Contracts Scope
+
+Implemented on the 0.14 line:
+
+- Typed `InterruptContract` payloads for slot-value, approval, and choice waitpoints.
+- `NodeResult::interruptContract()` as an additive API over the existing free-form interrupt support.
+- `GraphManifest` for read-only graph metadata covering state schema, reducers, nodes, edges, conditional routes, and policies.
+- `GraphValidator` / `GraphValidationReport` for release-readiness checks without throwing on the first issue.
+- `agent-graph:validate` for validating registered graph definitions from host-app release gates.
+- `GraphTool::schema()` input properties derived from registered graph state schemas.
+- `composer audit --no-dev` as part of the package check script.
+
 ## 0.9 Beta Scope
 
 Implemented and ready for sandbox testing:
@@ -83,6 +95,9 @@ These items should be completed before tagging `v1.0.0`:
 Implemented v1 hardening:
 
 - Public API reference for `StateGraph`, `Node`, `NodeContext`, `NodeResult`, `AgentGraph`, `AgentNode`, `GraphTool`, runtime DTOs, and store contracts.
+- Typed interrupt contracts for stable app waitpoint projections.
+- Read-only graph manifests and CLI graph validation for release gates.
+- GraphTool state-schema-derived input schemas.
 - Runtime inspection APIs for active, completed, interrupted, delayed, failed, and cancelled runs.
 - Generic run timeline inspector with state diffs, redaction, node metadata, and skipped-step status.
 - Safe state-edit resume with schema key/type validation.

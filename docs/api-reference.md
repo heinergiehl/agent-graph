@@ -23,7 +23,7 @@ Stability: stable.
 
 ### `GraphDefinition`
 
-Compiled definitions expose `key()`, `version()`, `schema()`, `reducers()`, `node()`, `nodes()`, `nodePolicy()`, `nodePolicies()`, `hasNode()`, `hasEndpoint()`, `entryNode()`, `entryNodes()`, `resolveNext()`, and `successorsOf()`.
+Compiled definitions expose `key()`, `version()`, `schema()`, `reducers()`, `node()`, `nodes()`, `edges()`, `conditionals()`, `nodePolicy()`, `nodePolicies()`, `hasNode()`, `hasEndpoint()`, `entryNode()`, `entryNodes()`, `resolveNext()`, `successorsOf()`, and `manifest()`.
 
 Multiple edges from `StateGraph::START` are valid. `entryNodes()` returns every start target in declaration order; `entryNode()` remains as a compatibility helper for the first start target.
 
@@ -32,6 +32,32 @@ At runtime, multiple START targets execute together as the first superstep and r
 Errors: unknown nodes, endpoints, or invalid graph structure throw `InvalidArgumentException`.
 
 Stability: stable for read-only metadata and endpoint helpers.
+
+### `GraphManifest`
+
+`GraphDefinition::manifest()` returns a read-only `GraphManifest`. `GraphManifest::toArray()` contains:
+
+- `key` and `version`
+- normalized `state` channel definitions
+- configured `reducers`
+- registered `nodes`
+- static `edges`
+- conditional route metadata under `conditionals`
+- retry, timeout, and concurrency metadata under `policies`
+
+The manifest is intended for validators, tools, visual editors, inspectors, and release checks. It does not serialize closures or product-specific UI metadata.
+
+Stability: additive beta API.
+
+### `GraphValidator` and `GraphValidationReport`
+
+`GraphValidator::validate(GraphDefinition $graph): GraphValidationReport` performs release-readiness checks without throwing on the first problem. The initial checks include unknown state schema types, unknown reducers, and nodes that are not reachable from `StateGraph::START`.
+
+`GraphValidationReport` exposes `failed()`, `passed()`, `errors()`, `warnings()`, and `toArray()`.
+
+Use `php artisan agent-graph:validate` to validate graph definitions registered in the current Laravel process.
+
+Stability: additive beta API.
 
 ### `StateSchema`
 
@@ -64,6 +90,9 @@ Stability: stable.
 All methods are available through the `AgentGraph` facade and `AgentGraphManager`.
 
 - `define(StateGraph|GraphDefinition $graph): GraphDefinition` registers a graph.
+- `definitions(): array` returns registered graph definitions keyed by graph key.
+- `manifest(string $key): GraphManifest` returns a registered graph manifest.
+- `validate(string $key): GraphValidationReport` validates one registered graph definition.
 - `graph(string $key): PendingGraphRun` creates a pending run builder for a registered graph. Calling `run()` on the builder intentionally creates a new run.
 - `resume(string $runId, array $payload = [], ?callable $onEvent = null, bool $collectEvents = false): RunResult` resumes an active run. If a pending interrupt exists, `interrupt_id` must match it. Terminal runs cannot be resumed.
 - `resumeStrict(string $runId, array $payload = [], ?callable $onEvent = null, bool $collectEvents = false): RunResult` resumes a run while rejecting unknown state keys.
@@ -143,6 +172,7 @@ Stability: stable.
 - `NodeResult::send(string $node, array $input = [], array $writes = []): NodeResult`
 - `NodeResult::sendMany(array $sends, array $writes = []): NodeResult`
 - `NodeResult::interrupt(string $type, array $payload = [], array $writes = []): NodeResult`
+- `NodeResult::interruptContract(InterruptContract $contract, array $writes = []): NodeResult`
 - `NodeResult::end(array $writes = []): NodeResult`
 - `NodeResult::fail(string $message, array $meta = []): NodeResult`
 - `withMeta(array $meta): self`
@@ -157,6 +187,21 @@ State writes are validated against graph state schema before persistence. Invali
 Standard node metadata keys under `meta.node` are `id`, `label`, `type`, `status`, `category`, `source`, and `description`. Timeline and inspection APIs expose this metadata without requiring apps to inspect package tables.
 
 Stability: stable.
+
+### `InterruptContract`
+
+`InterruptContract` creates stable machine-readable payloads for common human-in-the-loop waitpoints while preserving the existing free-form interrupt API.
+
+Factories:
+
+- `InterruptContract::slotValue(string $nodeId, string $question, string $slot, string $inputType = 'string', bool $required = true, bool $allowsMultiple = false, string $sideEffect = 'read', array $answerTypes = ['slot_value', 'cancel'], array $policy = [], array $meta = [])`
+- `InterruptContract::approval(string $nodeId, string $title, string $summary, string $sideEffect = 'write', array $answerTypes = ['approve', 'reject', 'edit'], array $policy = [], array $meta = [])`
+- `InterruptContract::choice(string $nodeId, string $question, array $choices, bool $allowsMultiple = false, array $answerTypes = ['choice', 'cancel'], array $policy = [], array $meta = [])`
+- `InterruptContract::fromArray(array $payload, string $type = 'input')`
+
+Serialized payloads include `contract_version`, `node_id`, `reason`, `output`, and `interaction`. Consuming apps can project these payloads into UI waitpoints without guessing the meaning of arbitrary interrupt payloads.
+
+Stability: additive beta API.
 
 ### `SubgraphNode`
 
@@ -299,6 +344,8 @@ Default tool names are sanitized provider-compatible names derived from the grap
 `input(Closure $mapper)` maps a Laravel AI tool `Request` into graph input for new runs and resume payloads. `meta(Closure|array $meta)` adds metadata to new runs only. `output(Closure $mapper)` maps the final `RunResult` and original `Request` into the tool response.
 
 Default tool responses are JSON with `status`, `run_id`, `thread_id`, `state`, `interrupt`, and `error`. Tool exceptions are converted into a failed JSON response.
+
+When the graph is registered before `schema()` is called, `GraphTool` derives the `input` object properties from the graph state schema. Unknown or unregistered graphs keep the previous generic nullable `input` object schema.
 
 Stability: stable.
 
