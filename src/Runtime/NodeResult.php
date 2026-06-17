@@ -2,6 +2,7 @@
 
 namespace Heiner\AgentGraph\Runtime;
 
+use Heiner\AgentGraph\Graph\InterruptContract;
 use Heiner\AgentGraph\Graph\InterruptPolicy;
 
 class NodeResult
@@ -33,6 +34,11 @@ class NodeResult
     public static function interrupt(string $type, array $payload = [], array $writes = []): self
     {
         return new self('interrupted', $writes, null, $type, $payload);
+    }
+
+    public static function interruptContract(InterruptContract $contract, array $writes = []): self
+    {
+        return self::interrupt($contract->type(), $contract->toArray(), $writes);
     }
 
     public static function end(array $writes = []): self

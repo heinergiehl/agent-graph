@@ -61,6 +61,21 @@ class GraphDefinition
         return $this->nodes;
     }
 
+    public function edges(): array
+    {
+        return $this->edges;
+    }
+
+    public function conditionals(): array
+    {
+        return $this->conditionals;
+    }
+
+    public function manifest(): GraphManifest
+    {
+        return new GraphManifest($this);
+    }
+
     public function hasNode(string $id): bool
     {
         return isset($this->nodes[$id]);

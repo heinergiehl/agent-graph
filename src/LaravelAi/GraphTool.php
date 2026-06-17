@@ -7,8 +7,10 @@ use Heiner\AgentGraph\AgentGraphManager;
 use Heiner\AgentGraph\Runtime\RunResult;
 use Heiner\AgentGraph\Runtime\RuntimeError;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
+use Illuminate\JsonSchema\Types\Type;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
+use InvalidArgumentException;
 use Stringable;
 use Throwable;
 
@@ -139,9 +141,8 @@ class GraphTool implements Stringable, Tool
             'interrupt_id' => $schema->string()
                 ->description('Pending interrupt identifier being answered during resume.')
                 ->nullable(),
-            'input' => $schema->object()
-                ->description('Structured graph input or interrupt response payload.')
-                ->nullable(),
+            'input' => $this->inputSchema($schema)
+                ->description('Structured graph input or interrupt response payload.'),
         ];
     }
 
@@ -210,5 +211,69 @@ class GraphTool implements Stringable, Tool
         }
 
         return json_encode($payload, JSON_THROW_ON_ERROR);
+    }
+
+    protected function inputSchema(JsonSchema $schema): Type
+    {
+        try {
+            $definition = $this->manager->definition($this->graphKey);
+        } catch (InvalidArgumentException) {
+            return $schema->object()->nullable();
+        }
+
+        $properties = [];
+
+        foreach ($definition->manifest()->toArray()['state'] as $channel => $state) {
+            $type = $this->jsonSchemaType($schema, $state);
+
+            if (! ($state['nullable'] ?? false)) {
+                $type->required();
+            }
+
+            $properties[$channel] = $type;
+        }
+
+        return $schema->object($properties);
+    }
+
+    protected function jsonSchemaType(JsonSchema $schema, array $state): Type
+    {
+        $nullable = (bool) ($state['nullable'] ?? false);
+        $type = match ($state['type'] ?? 'mixed') {
+            'string' => $schema->string(),
+            'int', 'integer' => $schema->integer(),
+            'float', 'double', 'number' => $schema->number(),
+            'bool', 'boolean' => $schema->boolean(),
+            'array', 'messages' => $this->arraySchemaType($schema, $state),
+            'object' => $this->objectSchemaType($schema, $state),
+            'enum' => $schema->string()->enum((array) ($state['values'] ?? [])),
+            default => $schema->object(),
+        };
+
+        return $nullable ? $type->nullable() : $type;
+    }
+
+    protected function arraySchemaType(JsonSchema $schema, array $state): Type
+    {
+        $array = $schema->array();
+
+        if (isset($state['items']) && is_array($state['items'])) {
+            $array->items($this->jsonSchemaType($schema, $state['items']));
+        }
+
+        return $array;
+    }
+
+    protected function objectSchemaType(JsonSchema $schema, array $state): Type
+    {
+        $properties = [];
+
+        foreach ((array) ($state['properties'] ?? []) as $property => $definition) {
+            if (is_array($definition)) {
+                $properties[$property] = $this->jsonSchemaType($schema, $definition);
+            }
+        }
+
+        return $schema->object($properties);
     }
 }
