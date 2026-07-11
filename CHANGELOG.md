@@ -2,7 +2,7 @@
 
 All notable changes to AgentGraph are documented here.
 
-## 0.15.1 - 2026-07-11
+## 0.15.1 - 2026-07-12
 
 Target: crash-recoverable resume, cancellation, and queued frontier transitions on the stable 0.15 line.
 
