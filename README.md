@@ -15,12 +15,12 @@ CI validates the pre-v1 release line against PHP 8.3/8.4, Laravel 12/13, and `la
 ## Installation
 
 ```bash
-composer require heiner/agent-graph:^0.15
+composer require heiner/agent-graph:^0.15.1
 php artisan agent-graph:install
 php artisan migrate
 ```
 
-The `^0.15` constraint tracks the stable 0.15 line while staying below the next minor pre-v1 line. Applications pinned to `^0.14.0` remain on the 0.14 line and will not install 0.15 automatically.
+The `^0.15.1` constraint tracks the recovery-hardened stable 0.15 line while staying below the next minor pre-v1 line. Applications pinned to `^0.14.0` remain on the 0.14 line and will not install 0.15 automatically.
 
 `agent-graph:install` publishes the package config and migrations. The database store uses these tables by default:
 
