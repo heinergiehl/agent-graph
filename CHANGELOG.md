@@ -2,6 +2,19 @@
 
 All notable changes to AgentGraph are documented here.
 
+## Unreleased
+
+### Added
+
+- Added `AgentGraphManager::recover()` / `AgentGraph::recover()` for lock-protected recovery of `running` runs from their latest durable checkpoint or an accepted pending-resume recovery marker.
+
+### Hardened
+
+- Resume and state-edit resume now persist interrupt resolution, run status, runtime options, and a bounded recovery marker in one database transaction before continuation starts.
+- Exact duplicate resume delivery can recover the accepted transition without resolving the interrupt twice; a different payload remains rejected.
+- Cancel now resolves a pending interrupt with a typed `cancelled` response in the same transaction as the terminal run transition.
+- Queued-superstep frontier records are persisted atomically before dispatch, and recovery redrives durable pending executions or their continuation aggregation after post-commit dispatch loss.
+
 ## 0.15.0 - 2026-06-17
 
 Target: production-grade graph contracts, validation, and machine-readable schema metadata for Laravel workflow products built on AgentGraph.

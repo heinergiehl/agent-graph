@@ -113,7 +113,8 @@ All methods are available through the `AgentGraph` facade and `AgentGraphManager
 - `resumeStrict(string $runId, array $payload = [], ?callable $onEvent = null, bool $collectEvents = false): RunResult` resumes a run while rejecting unknown state keys.
 - `resumeContract(string $runId, array $payload = [], ?callable $onEvent = null, bool $collectEvents = false): RunResult` resumes a run after validating the response against a pending typed `InterruptContract` payload. Free-form interrupt payloads are left compatible.
 - `resumeWithStateEdit(string $runId, string $interruptId, array $statePatch, ?string $resolvedBy = null, ?callable $onEvent = null, bool $collectEvents = false): RunResult` resolves a `state_edit` interrupt on an active run after strict schema validation.
-- `cancel(string $runId, array $meta = []): RunResult` marks an active `running`, `interrupted`, or `delayed` run cancelled.
+- `cancel(string $runId, array $meta = []): RunResult` atomically marks an active `running`, `interrupted`, or `delayed` run cancelled and resolves its pending interrupt with a typed `cancelled` response when present.
+- `recover(string $runId, ?callable $onEvent = null, bool $collectEvents = false): RunResult` continues a `running` run from an accepted pending-resume marker or its latest durable checkpoint under the run lock. Waiting and terminal runs are returned without mutation.
 - `inspect(string $runId, bool $withHistory = false, bool $withTraces = false): ?RunSnapshot` returns a read-only run snapshot without mutating runtime state.
 - `timeline(string $runId, bool $includeState = false, bool $includeDiff = true): ?RunTimeline` returns ordered, read-only timeline steps built from checkpoints, writes, interrupts, failures, and state diffs.
 - `runs(array $filters = [], int $limit = 50): array` lists recent runs. Supported filters are `status`, `thread_id`, `graph_key`, and `graph_version`.

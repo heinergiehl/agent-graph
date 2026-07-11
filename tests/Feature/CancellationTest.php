@@ -16,10 +16,15 @@ it('cancels a durable run and persists the cancelled status', function () {
     );
 
     $run = AgentGraph::graph('cancel_graph')->thread('cancel-thread')->input([])->run();
+    $interruptId = $run->interrupt()['interrupt_id'];
     $cancelled = AgentGraph::cancel($run->runId());
+    $storedInterrupt = app('agent-graph.interrupts')->find($interruptId);
 
     expect($cancelled->cancelled())->toBeTrue()
-        ->and(app('agent-graph.runs')->find($run->runId())['status'])->toBe('cancelled');
+        ->and(app('agent-graph.runs')->find($run->runId())['status'])->toBe('cancelled')
+        ->and(app('agent-graph.interrupts')->pendingForRun($run->runId()))->toBeNull()
+        ->and($storedInterrupt['status'])->toBe('resolved')
+        ->and($storedInterrupt['response']['type'])->toBe('cancelled');
 });
 
 final class CancelApprovalNode implements Node

@@ -89,6 +89,12 @@ Use `AgentGraph::runs($filters, $limit)` to list recent runs by `status`, `threa
 
 Use `AgentGraph::tasks($filters, $limit)` to inspect idempotent side effects by `run_id`, `node_id`, `checkpoint_id`, or `status`.
 
+Use `AgentGraph::recover($runId)` when a `running` run lost its process after an accepted resume/state-edit transition, after a durable checkpoint, or after queued execution records were committed but dispatch was lost. Recovery acquires the run lock, preserves graph-version checks, and returns waiting or terminal runs without mutation.
+
+Database-backed resume acceptance is one transaction across the pending interrupt compare-and-set, `running` status/options, and a bounded recovery marker. The marker is cleared atomically at the next checkpoint or queued-frontier persistence boundary. Cancel similarly resolves a pending interrupt and writes the terminal run status in one transaction.
+
+This is recoverable execution, not an exactly-once promise for arbitrary PHP callbacks. In sync mode, a process exit before the next checkpoint can cause the current frontier to run again. Put external side effects inside `$context->tasks()->once()` with stable keys, use provider idempotency where available, and reconcile unknown remote outcomes instead of blindly retrying them.
+
 Use `onEvent()` or `collectEvents()` when an application needs ordered workflow observations for a single run. Listeners run synchronously in the runtime path, so keep them lightweight and move broadcasting, persistence copies, or expensive processing into application-level jobs.
 
 Run-event observation is not model streaming. Keep Laravel AI as the owner of token streaming and provider behavior; AgentGraph only normalizes workflow events such as run lifecycle, node lifecycle, checkpoints, interrupts, failures, and existing `GraphStreamDelta` payloads.
@@ -113,7 +119,7 @@ Keep external side effects inside `$context->tasks()->once()` so queue retries d
 
 Task leases prevent duplicate active execution for the same idempotency key. Completed tasks continue to return their stored result, and reusing a key with different input still fails.
 
-Queued node executions are the durable task-level pending writes boundary for `queued_supersteps`. A completed node execution row is returned as-is when a worker retry claims it again, so a completed sibling in the same frontier is not rerun while the continuation job waits for the remaining siblings. The continuation job creates one checkpoint for the frontier after all node execution rows are terminal.
+Queued node executions are the durable task-level pending writes boundary for `queued_supersteps`. Every frontier is stored in one database transaction before any job is dispatched. `recover()` redrives pending/running execution jobs, or the continuation aggregator when all records are terminal, so post-commit dispatch loss remains recoverable. A completed node execution row is returned as-is when a worker retry claims it again, so a completed sibling in the same frontier is not rerun while the continuation job waits for the remaining siblings. The continuation job creates one checkpoint for the frontier after all node execution rows are terminal.
 
 `queued_supersteps` is opt-in. Configure `agent-graph.execution.mode=queued_supersteps`, optionally set `agent-graph.execution.queue_connection` and `agent-graph.execution.queue`, and run Laravel workers for that queue. Queued workers must boot the same graph definitions as the process that started or resumed the run.
 
@@ -132,7 +138,7 @@ AGENT_GRAPH_LOCK_TTL_SECONDS=300
 
 AgentGraph queue jobs apply `AGENT_GRAPH_JOB_TRIES`, `AGENT_GRAPH_JOB_TIMEOUT`, and comma-separated `AGENT_GRAPH_JOB_BACKOFF` values uniformly across run, resume, delayed resume, node execution, and continuation jobs. Jobs also include `agent-graph` tags plus operation-specific run, graph, thread, execution, or step identifiers for queue dashboards and worker telemetry.
 
-Resume, state-edit resume, cancel, queued continuation, and delayed continuation paths all acquire the run lock before mutating runtime state. Keep lock TTLs longer than the longest expected node execution so those guards remain effective.
+Resume, state-edit resume, recovery, cancel, queued continuation, and delayed continuation paths all acquire the run lock before mutating runtime state. Keep lock TTLs longer than the longest expected node execution so those guards remain effective.
 
 Keep `AGENT_GRAPH_EXECUTION_MODE=sync` unless graph definitions are registered during app boot and workers are guaranteed to process `NodeExecutionJob` and `ContinueSuperstepJob`.
 

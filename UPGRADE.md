@@ -1,5 +1,13 @@
 # Upgrade Guide
 
+## Unreleased after 0.15
+
+Resume and state-edit acceptance now persist a bounded recovery marker in the run metadata in the same database transaction as pending interrupt resolution and the `running` transition. No migration is required. Use `AgentGraph::recover($runId)` to continue a `running` run after process loss; retrying the exact same accepted resume payload also recovers it. Different payloads remain rejected.
+
+Cancel now resolves a pending interrupt with a typed `cancelled` response atomically with the terminal run update. Applications that previously performed best-effort interrupt cleanup after `cancel()` should remove that duplicate cleanup when adopting this SDK version.
+
+Queued-superstep frontier rows are now committed atomically before dispatch. Recovery may redispatch pending/running execution jobs or the continuation aggregator; completed execution claims remain idempotent.
+
 ## 0.14 To 0.15
 
 AgentGraph 0.15 hardens the graph contract APIs introduced in 0.14. Runtime execution remains compatible, but graph metadata and release validation are more explicit.

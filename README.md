@@ -136,6 +136,8 @@ $run = AgentGraph::resumeContract($runId, [
 
 Only active runs can be resumed. `completed`, `cancelled`, and `failed` runs reject `resume()` and `resumeWithStateEdit()` so terminal history is not mutated accidentally.
 
+Resume acceptance is durable before continuation starts. If a process exits after the interrupt was accepted but before the next checkpoint or queued frontier was persisted, retry the exact same resume payload or call `AgentGraph::recover($runId)`. A different payload cannot take over the accepted transition.
+
 The resumed node can read the original resume response separately from merged graph state:
 
 ```php
@@ -155,6 +157,14 @@ $run = AgentGraph::resumeWithStateEdit(
     resolvedBy: (string) $user->id,
 );
 ```
+
+Recover a `running` run from its accepted resume transition or latest durable checkpoint:
+
+```php
+$run = AgentGraph::recover($runId);
+```
+
+Recovery is a no-op for runs that are still `interrupted` or `delayed` with a pending interrupt, and for terminal runs. In sync mode a frontier that did not reach its next checkpoint can run again, so keep external side effects inside `$context->tasks()->once()`.
 
 ## Runtime Inspection
 
@@ -346,7 +356,7 @@ Normal `resume()` remains permissive for unknown payload keys while still valida
 
 State schemas are strict about schema definitions. Unknown primitive types such as `strng`, unknown union members, and unknown structured types throw during validation. Structured arrays declared with `StateSchema::array('ids', 'string')` require a PHP list, and every item is validated against the item schema.
 
-`cancel()` applies only to active runs: `running`, `interrupted`, or `delayed`. Terminal runs remain unchanged. Resume, state-edit resume, cancel, queued continuation, and delayed continuation paths are protected by run locks.
+`cancel()` applies only to active runs: `running`, `interrupted`, or `delayed`. Terminal runs remain unchanged. When a pending interrupt exists, cancel resolves it with a typed `cancelled` response in the same database transaction as the terminal run transition. Resume, state-edit resume, recovery, cancel, queued continuation, and delayed continuation paths are protected by run locks.
 
 Interrupts can carry expiry policy metadata:
 

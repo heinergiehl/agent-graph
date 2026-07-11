@@ -119,6 +119,16 @@ class AgentGraphManager
         return $this->runtime->cancel($runId, $meta);
     }
 
+    public function recover(string $runId, ?callable $onEvent = null, bool $collectEvents = false): RunResult
+    {
+        return $this->observe(
+            $onEvent,
+            $collectEvents,
+            fn (): RunResult => $this->runtime->recover($runId, $this->graphs),
+            $runId,
+        );
+    }
+
     public function checkpoint(string $checkpointId, bool $withWrites = false): ?CheckpointSnapshot
     {
         return $this->runtime->checkpoint($checkpointId, $withWrites);

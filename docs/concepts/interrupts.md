@@ -17,4 +17,8 @@ For stable machine-readable waitpoints, nodes can return `NodeResult::interruptC
 
 During the resumed node invocation, `NodeContext::hasResumePayload()`, `resumePayload()`, and `interruptId()` expose the resume response. Delay interrupts are scheduled through the `DelayScheduler` contract; the default implementation dispatches `ContinueDelayedGraphJob`, and applications may bind their own scheduler.
 
-Resume and state-edit resume run under the AgentGraph run lock. Terminal runs cannot be resumed again, and interrupt resolution is scoped to the expected run and pending interrupt id.
+Resume and state-edit resume run under the AgentGraph run lock. For database stores, pending interrupt resolution, run status/options, and a bounded recovery marker are committed in one transaction before continuation starts. The marker is removed atomically when the next checkpoint or queued frontier becomes durable.
+
+If the process exits after accepting the answer but before that next durable boundary, retry the exact same resume payload or call `AgentGraph::recover($runId)`. A different payload is rejected, and `resolvePending()` remains pending-only and run-scoped. Recovery does not mutate a run that is still waiting on a pending interrupt.
+
+Cancelling an active run resolves its pending interrupt with a `cancelled` response in the same database transaction as the terminal run status. Terminal runs cannot be resumed or cancelled again.
