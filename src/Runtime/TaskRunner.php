@@ -3,7 +3,6 @@
 namespace Heiner\AgentGraph\Runtime;
 
 use Closure;
-use Heiner\AgentGraph\Contracts\LeasingTaskStore;
 use Heiner\AgentGraph\Contracts\TaskStore;
 use Heiner\AgentGraph\Events\GraphTaskCompleted;
 use Heiner\AgentGraph\Events\GraphTaskFailed;
@@ -29,40 +28,35 @@ class TaskRunner
             throw new SerializationException('AgentGraph task input is not JSON serializable: '.$exception->getMessage(), previous: $exception);
         }
 
-        $existing = $this->tasks->findByKey($key);
-
-        if ($existing !== null) {
-            if ($existing['input_hash'] !== $hash) {
-                throw new RuntimeException("Task key [{$key}] was reused with different input.");
-            }
-
-            if ($existing['status'] === 'completed') {
-                return $existing['result'];
-            }
-
-            if ($this->tasks instanceof LeasingTaskStore && $this->tasks->activeLeaseUntil($existing) !== null) {
-                throw new RuntimeException("Task key [{$key}] is already running.");
-            }
-        }
-
-        $this->tasks->start($key, $hash, $input, [
+        $task = $this->tasks->start($key, $hash, $input, [
             'run_id' => $this->runId,
             'node_id' => $this->nodeId,
             'checkpoint_id' => $this->checkpointId,
         ]);
-        event(new GraphTaskStarted($this->runId, nodeId: $this->nodeId, payload: ['task_key' => $key, 'input' => $input]));
+
+        if ($task['status'] === 'completed') {
+            return $task['result'];
+        }
+
+        $attempt = (int) ($task['attempts'] ?? 0);
+
+        if ($task['status'] !== 'running' || $attempt < 1) {
+            throw new RuntimeException("Task key [{$key}] did not return an owned running attempt.");
+        }
 
         try {
+            event(new GraphTaskStarted($this->runId, nodeId: $this->nodeId, payload: ['task_key' => $key, 'input' => $input]));
             $result = $handler();
-            $this->tasks->complete($key, $result);
-            event(new GraphTaskCompleted($this->runId, nodeId: $this->nodeId, payload: ['task_key' => $key, 'result' => $result]));
-
-            return $result;
         } catch (\Throwable $exception) {
-            $this->tasks->fail($key, $exception->getMessage());
+            $this->tasks->fail($key, $attempt, $exception->getMessage());
             event(new GraphTaskFailed($this->runId, nodeId: $this->nodeId, payload: ['task_key' => $key, 'message' => $exception->getMessage()]));
 
             throw $exception;
         }
+
+        $this->tasks->complete($key, $attempt, $result);
+        event(new GraphTaskCompleted($this->runId, nodeId: $this->nodeId, payload: ['task_key' => $key, 'result' => $result]));
+
+        return $result;
     }
 }

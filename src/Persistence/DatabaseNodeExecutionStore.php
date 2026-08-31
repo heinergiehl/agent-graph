@@ -3,6 +3,7 @@
 namespace Heiner\AgentGraph\Persistence;
 
 use Heiner\AgentGraph\Contracts\NodeExecutionStore;
+use Heiner\AgentGraph\Exceptions\NodeExecutionClaimLostException;
 use Heiner\AgentGraph\Persistence\Concerns\SerializesDatabaseValues;
 use Heiner\AgentGraph\Persistence\Concerns\UsesAgentGraphDatabaseConnection;
 use Illuminate\Database\DatabaseManager;
@@ -45,6 +46,7 @@ class DatabaseNodeExecutionStore implements NodeExecutionStore
             'interrupt' => $this->encode($execution['interrupt'] ?? null),
             'error' => $this->encode($execution['error'] ?? null),
             'meta' => $this->encode($execution['meta'] ?? []),
+            'claim_token' => $execution['claim_token'] ?? null,
             'locked_until' => $execution['locked_until'] ?? null,
             'started_at' => $execution['started_at'] ?? null,
             'finished_at' => $execution['finished_at'] ?? null,
@@ -91,6 +93,7 @@ class DatabaseNodeExecutionStore implements NodeExecutionStore
 
             $this->query()->where('execution_id', $executionId)->update([
                 'status' => 'running',
+                'claim_token' => (string) str()->ulid(),
                 'locked_until' => $lockedUntil,
                 'started_at' => $execution['started_at'] ?? now(),
                 'updated_at' => now(),
@@ -100,19 +103,19 @@ class DatabaseNodeExecutionStore implements NodeExecutionStore
         });
     }
 
-    public function complete(string $executionId, array $result): array
+    public function complete(string $executionId, string $claimToken, array $result): array
     {
-        return $this->updateResult($executionId, 'completed', $result);
+        return $this->updateResult($executionId, $claimToken, 'completed', $result);
     }
 
-    public function interrupt(string $executionId, array $result): array
+    public function interrupt(string $executionId, string $claimToken, array $result): array
     {
-        return $this->updateResult($executionId, 'interrupted', $result);
+        return $this->updateResult($executionId, $claimToken, 'interrupted', $result);
     }
 
-    public function fail(string $executionId, array $error): array
+    public function fail(string $executionId, string $claimToken, array $error): array
     {
-        return $this->updateResult($executionId, 'failed', ['error' => $error]);
+        return $this->updateResult($executionId, $claimToken, 'failed', ['error' => $error]);
     }
 
     public function listForRun(string $runId): array
@@ -137,32 +140,43 @@ class DatabaseNodeExecutionStore implements NodeExecutionStore
             ->all();
     }
 
-    protected function updateResult(string $executionId, string $status, array $result): array
+    protected function updateResult(string $executionId, string $claimToken, string $status, array $result): array
     {
-        foreach (['base_state', 'node_state', 'resume_payload', 'writes', 'next_schedule', 'interrupt', 'error', 'meta'] as $field) {
-            if (array_key_exists($field, $result)) {
-                $result[$field] = $this->encode($result[$field]);
+        if ($claimToken === '') {
+            throw new NodeExecutionClaimLostException("Claim for node execution [{$executionId}] is no longer active.");
+        }
+
+        return $this->connection()->transaction(function () use ($executionId, $claimToken, $status, $result): array {
+            foreach (['base_state', 'node_state', 'resume_payload', 'writes', 'next_schedule', 'interrupt', 'error', 'meta'] as $field) {
+                if (array_key_exists($field, $result)) {
+                    $result[$field] = $this->encode($result[$field]);
+                }
             }
-        }
 
-        $result['status'] = $status;
-        $result['locked_until'] = null;
-        $result['finished_at'] = now();
-        $result['updated_at'] = now();
+            $result['status'] = $status;
+            $result['claim_token'] = $claimToken;
+            $result['locked_until'] = null;
+            $result['finished_at'] = now();
+            $result['updated_at'] = now();
 
-        $updated = $this->query()->where('execution_id', $executionId)->update($result);
+            $updated = $this->query()
+                ->where('execution_id', $executionId)
+                ->where('status', 'running')
+                ->where('claim_token', $claimToken)
+                ->update($result);
 
-        if ($updated < 1) {
-            throw new RuntimeException("Node execution [{$executionId}] was not found.");
-        }
+            if ($updated !== 1) {
+                throw new NodeExecutionClaimLostException("Claim for node execution [{$executionId}] is no longer active.");
+            }
 
-        $record = $this->find($executionId);
+            $record = $this->find($executionId);
 
-        if ($record === null) {
-            throw new RuntimeException("Node execution [{$executionId}] could not be read after it was updated.");
-        }
+            if ($record === null) {
+                throw new RuntimeException("Node execution [{$executionId}] could not be read after it was updated.");
+            }
 
-        return $record;
+            return $record;
+        });
     }
 
     protected function decodeExecution(object $record): array

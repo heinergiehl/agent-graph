@@ -5,11 +5,13 @@ namespace Heiner\AgentGraph\LaravelAi;
 use Closure;
 use Heiner\AgentGraph\Contracts\Node;
 use Heiner\AgentGraph\Events\GraphStreamDelta;
+use Heiner\AgentGraph\Exceptions\AgentStreamException;
 use Heiner\AgentGraph\Runtime\NodeContext;
 use Heiner\AgentGraph\Runtime\NodeResult;
 use Heiner\AgentGraph\Runtime\RunEventDispatcher;
 use Illuminate\Support\Collection;
 use Laravel\Ai\Contracts\Agent;
+use Laravel\Ai\Streaming\Events\Error as StreamError;
 use Laravel\Ai\Streaming\Events\TextDelta;
 use Laravel\Ai\Streaming\Events\ToolCall;
 use Laravel\Ai\Streaming\Events\ToolResult;
@@ -190,6 +192,10 @@ class AgentNode implements Node
             $toolResults = [];
 
             foreach ($response as $event) {
+                if ($event instanceof StreamError && ! $event->recoverable) {
+                    throw new AgentStreamException($this->id, $event);
+                }
+
                 if (method_exists($event, 'toArray')) {
                     $streamEvents[] = $event->toArray();
                 }

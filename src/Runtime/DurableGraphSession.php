@@ -3,6 +3,7 @@
 namespace Heiner\AgentGraph\Runtime;
 
 use Heiner\AgentGraph\AgentGraphManager;
+use InvalidArgumentException;
 use RuntimeException;
 
 class DurableGraphSession
@@ -34,6 +35,13 @@ class DurableGraphSession
 
         if (! is_string($runId) || $runId === '') {
             throw new RuntimeException("No active run found for graph [{$this->graphKey}] and thread [{$this->threadId}].");
+        }
+
+        $run = $this->manager->inspect($runId)
+            ?? throw new RuntimeException("Run [{$runId}] was not found.");
+
+        if ($run->graphKey() !== $this->graphKey || $run->threadId() !== $this->threadId) {
+            throw new InvalidArgumentException("Run [{$runId}] does not belong to this session's graph and thread.");
         }
 
         unset($payload['run_id']);

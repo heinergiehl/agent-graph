@@ -82,7 +82,7 @@
             }
         },
         "branch-alias": {
-            "dev-main": "0.15-dev"
+            "dev-main": "0.16-dev"
         }
     },
     "minimum-stability": "stable",

@@ -2,6 +2,36 @@
 
 All notable changes to AgentGraph are documented here.
 
+## 0.16.0-rc.1 - 2026-08-31
+
+Target: atomic ownership and durable runtime transitions. This is a release candidate for integration testing, not a stable production release. Version 0.15.1 remains the stable release.
+
+### Breaking changes
+
+- `TaskStore::complete()` and `fail()` require the claimed `int $attempt` as their second argument. Custom stores must claim atomically and fence final writes against the matching running attempt.
+- `NodeExecutionStore::complete()`, `interrupt()`, and `fail()` require the claimed `string $claimToken` as their second argument. Stale writers raise `TaskClaimLostException` or `NodeExecutionClaimLostException` instead of overwriting another worker's result.
+- Added the nullable `claim_token` column through `2026_08_31_010000_add_claim_token_to_agent_graph_node_executions.php`. Publish and run this additive migration before starting 0.16 application processes.
+- Removed the protected `GraphRuntime::persistQueuedInterrupt()` hook in favor of `persistSuperstepCheckpoint()` and `notifySuperstepCommitted()`. Review runtime subclasses.
+- Ordinary `TaskRunner::once()` and public graph/run/resume method signatures remain unchanged. Stricter graph, thread, and child-run binding rejects previously accepted invalid resume requests.
+
+### Fixed
+
+- Task claims now reject active leases and conflicting input atomically, preserve completed receipts, and use monotonically increasing attempts to fence late completion or failure. A throwing `GraphTaskCompleted` listener no longer changes a completed task to failed.
+- Database-backed supersteps commit the checkpoint, writes, interrupt, and waiting run status together before notifying observers.
+- Recovery can redrive an initial persisted queue frontier before the first checkpoint. Inconsistent legacy wait state requires reconciliation unless durable records prove the matching resume was accepted; recovery does not infer approval from a successor schedule.
+- Queue delivery failure no longer downgrades a successful node result. Persisted peer failures stop further peer dispatch, and late worker failures cannot overwrite run cancellation.
+- Database child-run and time-travel queries apply lineage filters before the requested limit, so unrelated newer runs cannot hide matching children.
+- `GraphTool` checks the target graph and any configured or supplied thread on resume; its thread resolver also runs for resume requests. `DurableGraphSession` rejects runs outside its graph and thread.
+- Terminal Laravel AI streaming `Error` events now raise `AgentStreamException` rather than persisting partial output as success.
+- Subgraph resumes reject missing, foreign, or stale child identities and invalid child state before accepting the parent response. Delayed children remain waiting; non-completed children are not mapped as successful output.
+- Embedded `GraphDefinition` objects in native subgraphs are registered recursively when defining their parent.
+
+### Upgrade
+
+See [UPGRADE.md](UPGRADE.md) for store signatures, migration commands, and the coordinated rollout checklist. Do not mix 0.15 and 0.16 PHP processes. Existing task attempts need no migration; external effects still require stable keys, provider idempotency where available, and reconciliation of unknown outcomes.
+
+The [0.16 release-candidate notes](docs/releases/v0.16.0.md) map the audit findings to fixes and record verification evidence and remaining integration gates. Select `0.16.0-rc.1` explicitly when testing; existing `^0.15.1` consumers do not receive it automatically.
+
 ## 0.15.1 - 2026-07-12
 
 Target: crash-recoverable resume, cancellation, and queued frontier transitions on the stable 0.15 line.

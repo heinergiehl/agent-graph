@@ -129,6 +129,15 @@ class DoctorCommand extends Command
             $this->failStatus('Queued supersteps require the node_executions table.');
         }
 
+        if ($tables['node_executions'] ?? false) {
+            $hasClaimToken = $schema->hasColumn(config('agent-graph.tables.node_executions'), 'claim_token');
+            $failed = $failed || ! $hasClaimToken;
+
+            $hasClaimToken
+                ? $this->pass('Node execution claim_token column: present')
+                : $this->failStatus('Node execution claim_token column: missing; publish and run the 0.16 migration.');
+        }
+
         return $failed ? self::FAILURE : self::SUCCESS;
     }
 

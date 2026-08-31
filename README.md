@@ -6,7 +6,7 @@ AgentGraph does not replace Laravel AI providers, agents, tools, streaming, or s
 
 ## Release Status
 
-`0.15.x` is the current stable pre-v1 release line for production-grade graph contracts and release-readiness APIs. `0.14.x` remains available for applications that have not adopted the 0.15 contract hardening yet. Breaking changes are still possible before v1, but they will be documented in `CHANGELOG.md` and `UPGRADE.md`.
+`0.15.1` remains the current stable pre-v1 version. **0.16.0-rc.1** is a release candidate for integration testing, with runtime hardening and breaking persistence-store signatures. It is not a stable production release. Ordinary graph/run/resume and `TaskRunner::once()` method signatures remain unchanged; custom stores need a coordinated upgrade. Read the [changelog](CHANGELOG.md), [release notes](docs/releases/v0.16.0.md), and [upgrade guide](UPGRADE.md) before adopting it.
 
 The v1 target is a hardened MVP: stable graph execution, checkpoints, interrupts/resume, idempotent tasks, scoped memory, traces, queues, run-event observation, Laravel AI agent nodes, graphs as tools, native subgraph nodes, and durable app workflow sessions. Experimental checkpoint inspection, replay, forking, worker-backed queued supersteps, and vector memory contracts are available for post-v1-style workflows. OpenTelemetry export and visual workflow editing remain outside the stable v1 core.
 
@@ -20,7 +20,13 @@ php artisan agent-graph:install
 php artisan migrate
 ```
 
-The `^0.15.1` constraint tracks the recovery-hardened stable 0.15 line while staying below the next minor pre-v1 line. Applications pinned to `^0.14.0` remain on the 0.14 line and will not install 0.15 automatically.
+The `^0.15.1` constraint stays on the stable 0.15 line and will not install 0.16 automatically. For an explicit release-candidate test, after adapting custom stores and pausing runtime execution as described in the [upgrade checklist](UPGRADE.md#coordinated-rollout-checklist), require the exact candidate:
+
+```bash
+composer require "heiner/agent-graph:0.16.0-rc.1" --with-dependencies --minimal-changes
+```
+
+The root application must explicitly permit the candidate; if a consuming plugin also requires AgentGraph, its constraint must agree. There is no need to change global `minimum-stability` to `dev`. The 0.16 build requires adapted custom stores, an additive migration, and a coordinated restart of all application processes. See the [Filament plugin upgrade guide](docs/guides/filament-plugin-upgrade-0.16.md) for the two-package integration.
 
 `agent-graph:install` publishes the package config and migrations. The database store uses these tables by default:
 
@@ -164,7 +170,9 @@ Recover a `running` run from its accepted resume transition or latest durable ch
 $run = AgentGraph::recover($runId);
 ```
 
-Recovery is a no-op for runs that are still `interrupted` or `delayed` with a pending interrupt, and for terminal runs. In sync mode a frontier that did not reach its next checkpoint can run again, so keep external side effects inside `$context->tasks()->once()`.
+In 0.16, database-backed supersteps commit the checkpoint, writes, interrupt, and waiting status before notifying observers. Recovery also redrives an initial persisted queued frontier before the first checkpoint. Inconsistent legacy wait state requires reconciliation unless durable records prove the matching resume was accepted.
+
+Recovery is a no-op for runs that are still `interrupted` or `delayed` with a pending interrupt, and for terminal runs. It does not repair a lost delay-queue push; inspect and re-enqueue the existing delay through the application's scheduler. In sync mode a frontier that did not reach its next checkpoint can run again. Use `$context->tasks()->once()` with stable operation keys and provider idempotency where available, and reconcile unknown external outcomes before retrying.
 
 ## Runtime Inspection
 
@@ -341,7 +349,7 @@ StateGraph::make('support')
 
 Timeouts are portable wall-clock checks after node execution returns. Concurrency uses AgentGraph's lock provider and does not change Laravel AI provider, queue, or streaming behavior. The built-in runtime currently supports exclusive node concurrency only: `limit` must be `1`.
 
-Idempotent tasks now use leases. A running task key cannot be executed again until its lease expires; completed task keys still return their stored result and key reuse with different input is rejected.
+In 0.16, task claims are atomic. Completed keys return their stored result, conflicting input is rejected, and unexpired leases block another claim. Each claim has a monotonically increasing attempt; late completion or failure cannot overwrite a replacement claim. A throwing `GraphTaskCompleted` listener leaves the completed receipt intact. These checks protect stored results, not exactly-once execution of remote effects; see [idempotent tasks](docs/concepts/idempotent-tasks.md).
 
 For stricter human-resume flows, use `resumeStrict()`:
 
@@ -386,7 +394,9 @@ StateGraph::make('parent')
     ->edge(StateGraph::START, 'delegate');
 ```
 
-Supported modes are `isolated()`, `shared()`, and `mapped()`. Child interrupts bubble as parent `subgraph` interrupts with `child_run_id` and `child_interrupt_id`; resuming the parent forwards the answer to the child before continuing the parent node. Parallel interrupt restrictions still apply.
+Supported modes are `isolated()`, `shared()`, and `mapped()`. Child interrupts bubble as parent `subgraph` interrupts; resume the parent with the current bubbled `child_run_id` and `child_interrupt_id`. In 0.16, missing, foreign, or stale child identities and invalid child state are rejected before parent acceptance. Delayed children remain waiting, and only completed children supply successful output. Parallel interrupt restrictions still apply.
+
+Passing an embedded `GraphDefinition` to `SubgraphNode::make()` registers its child definitions recursively when the parent is defined. The SDK does not provide asynchronous child orchestration or cancellation cascading. Keep application coordinators and the Filament plugin's structured-concurrency wrappers; see the [plugin upgrade guide](docs/guides/filament-plugin-upgrade-0.16.md).
 
 ## Time Travel
 
@@ -433,7 +443,7 @@ $branches = AgentGraph::timeTravelChildren($checkpointId, limit: 25);
 
 Replay and fork runs also store `run.meta.parent` with `relationship` set to `replay` or `fork`, so `AgentGraph::childRuns($sourceRunId)` can visualize run-level lineage while `timeTravelChildren()` remains checkpoint-specific.
 
-Replay and fork can execute downstream nodes again. Wrap external side effects such as CRM writes, email, payments, and API calls in idempotent `$context->tasks()->once()` blocks before using time travel in production.
+Replay and fork can execute downstream nodes again. They create new run IDs, so a task key containing `$context->runId()` also changes and may intentionally execute new work. To deduplicate the same business operation across runs, preserve its operation key and input hash, use provider idempotency where supported, and reconcile unknown results. See [task key scope](docs/concepts/idempotent-tasks.md#retries-replay-and-fork).
 
 ## Laravel AI Agent Node
 
@@ -447,7 +457,9 @@ AgentNode::make('answer')
     ->writeUsageTo('usage');
 ```
 
-`AgentNode::stream()` still delegates to Laravel AI's `stream()` API. AgentGraph keeps dispatching `GraphStreamDelta` for streamed text deltas and, when run-event observation is enabled, also exposes those deltas as normalized `stream.delta` `RunEvent` objects. Use `onTextDelta()` for a direct synchronous callback to bridge deltas into app transports:
+`AgentNode::stream()` delegates to Laravel AI's `stream()` API. In 0.16, a terminal Laravel AI streaming `Error` raises `AgentStreamException` instead of committing partial output as success. Already delivered deltas can remain visible, so consumers must check the final outcome.
+
+AgentGraph dispatches `GraphStreamDelta` for streamed text deltas and, when run-event observation is enabled, exposes those deltas as normalized `stream.delta` `RunEvent` objects. Use `onTextDelta()` for a direct synchronous callback to bridge deltas into app transports:
 
 ```php
 AgentNode::make('answer')
@@ -492,6 +504,8 @@ public function tools(): iterable
 ```
 
 The tool returns JSON with `status`, `run_id`, `thread_id`, `state`, `interrupt`, and `error`.
+
+In 0.16, `GraphTool` rejects resume targets from a different graph or a different configured/supplied thread. Its `thread()` resolver is evaluated on resume too. `DurableGraphSession` requires the run to match its graph and thread. Derive thread identity from trusted application context and retain tenant authorization at the application boundary.
 
 When the graph is registered before Laravel AI asks for the tool schema, `GraphTool` derives optional `input` properties from graph state. Prefer `schemaInput()` for public tool contracts so internal state channels do not become the parent agent's input surface. Laravel's current JSON schema factory does not express arbitrary union schemas, so union state channels are described conservatively in the tool schema while the exact state contract remains available through `GraphManifest`.
 
@@ -546,9 +560,9 @@ AgentGraph::memory()->deleteNamespace($scope, 'profile');
 
 Vector memory is contract-based and optional. Laravel AI can provide embeddings; AgentGraph stores vectors only when an application binds a vector store. The default bindings are deterministic/in-memory test-safe adapters. `PgvectorMemoryStore` and `stubs/pgvector-memory-migration.stub` are optional experimental starting points for semantic memory on PostgreSQL pgvector, not core persistence for runs, checkpoints, interrupts, queues, or audit logs.
 
-## Stable v1 Public APIs
+## Public APIs
 
-The 0.15 release line exposes the intended v1-stable API surface documented in [`docs/api-reference.md`](docs/api-reference.md). In short:
+The graph-building and runtime surface remains available in 0.16. Persistence adapter signatures change before v1; review [UPGRADE.md](UPGRADE.md) alongside the [API reference](docs/api-reference.md):
 
 - `StateGraph` for fluent graph definitions.
 - `Node` and `NodeContext` for runtime node implementation.
@@ -573,6 +587,7 @@ The 0.15 release line exposes the intended v1-stable API surface documented in [
 
 ## Production Checklist
 
+- For 0.16, follow the [coordinated upgrade](UPGRADE.md#coordinated-rollout-checklist): adapt stores, back up, drain all old PHP processes, publish missing migrations without `--force`, migrate, and run doctor before restarting. Do not mix 0.15 and 0.16 processes.
 - Run and monitor the published migrations.
 - Use database stores as the source of truth.
 - Set `AGENT_GRAPH_DB_CONNECTION` before migrating when AgentGraph should use a dedicated connection.
@@ -583,7 +598,7 @@ The 0.15 release line exposes the intended v1-stable API surface documented in [
 - Run `php artisan agent-graph:prune --dry-run --traces --tasks --memories` before enabling retention deletes.
 - Keep trace redaction keys current for your domain.
 - Scope memory by tenant or actor before using it in multi-tenant apps.
-- Use idempotent task keys for every external side effect.
+- Use stable task keys and provider idempotency for external effects; reconcile unknown outcomes before retrying.
 - Use `tasks()` for side-effect inspection instead of reading package task tables directly.
 - Use `inspect()` and `runs()` for recovery/admin UIs instead of reading package tables directly.
 - Use `timeline()` for debugger and trace UIs instead of reconstructing checkpoint history manually.
@@ -600,7 +615,7 @@ The 0.15 release line exposes the intended v1-stable API surface documented in [
 - Use explicit reducers for any state channel that can be written by more than one node in the same superstep.
 - Keep graph definitions generic; product-specific UI belongs in consuming apps.
 - For multi-tenant memory, always include tenant or actor scope in reads and writes.
-- Run `php artisan agent-graph:doctor` after deploys and before release validation. Treat `FAIL` lines as release blockers; the command checks database tables, cache locks, store driver, queue settings, lease/lock timing, and max-step bounds.
+- Run `php artisan agent-graph:doctor` before restarting after an upgrade and before release validation. Treat `FAIL` lines as blockers; in 0.16 it also checks the node-execution `claim_token` column, alongside tables, locks, stores, queues, lease timing, and max-step bounds.
 - Run `php artisan agent-graph:validate --strict` in host apps that register production graph definitions during boot.
 
 ## Status

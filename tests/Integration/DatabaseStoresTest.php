@@ -61,7 +61,7 @@ it('persists runs checkpoints writes tasks and memory in the database', function
     ]);
 
     $task = $tasks->start('task-key', 'hash', ['input' => true], ['run_id' => $run['public_id']]);
-    $tasks->complete('task-key', ['ok' => true]);
+    $tasks->complete('task-key', $task['attempts'], ['ok' => true]);
 
     $memory->write(MemoryScope::actor('tenant-db', 'user-db'), 'preferences', 'language', 'de', 'preference', 'Prefers German.');
 

@@ -4,6 +4,7 @@ use Heiner\AgentGraph\Contracts\LockProvider;
 use Heiner\AgentGraph\Contracts\Node;
 use Heiner\AgentGraph\Contracts\NodeExecutionStore;
 use Heiner\AgentGraph\Contracts\WriteStore;
+use Heiner\AgentGraph\Exceptions\NodeExecutionClaimLostException;
 use Heiner\AgentGraph\Exceptions\SerializationException;
 use Heiner\AgentGraph\Graph\StateGraph;
 use Heiner\AgentGraph\Persistence\DatabaseCheckpointStore;
@@ -77,8 +78,8 @@ it('rolls back checkpoint creation when write persistence fails', function () {
 it('raises when database node execution updates target a missing execution', function (string $method, array $payload) {
     $store = new DatabaseNodeExecutionStore(app('db'));
 
-    expect(fn () => $store->{$method}('missing-execution', $payload))
-        ->toThrow(RuntimeException::class, 'Node execution [missing-execution] was not found.');
+    expect(fn () => $store->{$method}('missing-execution', 'missing-claim', $payload))
+        ->toThrow(NodeExecutionClaimLostException::class, 'Claim for node execution [missing-execution] is no longer active.');
 })->with([
     ['complete', ['writes' => []]],
     ['interrupt', ['interrupt' => ['type' => 'input', 'payload' => []]]],
@@ -236,19 +237,20 @@ function makeTerminalNodeExecution(NodeExecutionStore $store, string $status): a
         'base_state' => ['items' => []],
         'node_state' => ['items' => []],
     ]);
+    $execution = $store->claim($execution['execution_id'], now()->addMinute());
 
     return match ($status) {
-        'completed' => $store->complete($execution['execution_id'], [
+        'completed' => $store->complete($execution['execution_id'], $execution['claim_token'], [
             'writes' => ['items' => ['done']],
             'next_schedule' => [['node' => 'next', 'input' => [], 'meta' => []]],
             'meta' => ['attempt' => 1],
         ]),
-        'interrupted' => $store->interrupt($execution['execution_id'], [
+        'interrupted' => $store->interrupt($execution['execution_id'], $execution['claim_token'], [
             'writes' => ['items' => ['wait']],
             'interrupt' => ['type' => 'input', 'payload' => ['prompt' => 'Continue?']],
             'meta' => ['attempt' => 1],
         ]),
-        'failed' => $store->fail($execution['execution_id'], ['message' => 'boom']),
+        'failed' => $store->fail($execution['execution_id'], $execution['claim_token'], ['message' => 'boom']),
         default => throw new InvalidArgumentException("Unsupported status [{$status}]."),
     };
 }

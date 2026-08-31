@@ -1,0 +1,42 @@
+diff --git a/src/Infrastructure/AgentGraph/Persistence/BoundedDatabaseTaskStore.php b/src/Infrastructure/AgentGraph/Persistence/BoundedDatabaseTaskStore.php
+index 9b1d8ed3..f7d129f2 100644
+--- a/src/Infrastructure/AgentGraph/Persistence/BoundedDatabaseTaskStore.php
++++ b/src/Infrastructure/AgentGraph/Persistence/BoundedDatabaseTaskStore.php
+@@ -14,7 +14,7 @@ final class BoundedDatabaseTaskStore extends DatabaseTaskStore
+      * @param  array<string, mixed>  $meta
+      * @return array<string, mixed>
+      */
+-    public function fail(string $key, string $message, array $meta = []): array
++    public function fail(string $key, int $attempt, string $message, array $meta = []): array
+     {
+         $error = BoundedError::known(
+             code: 'agent_graph_task_failed',
+@@ -32,6 +32,7 @@ final class BoundedDatabaseTaskStore extends DatabaseTaskStore
+
+         return parent::fail(
+             $key,
++            $attempt,
+             $error->safeMessage,
+             array_merge($meta, ['bounded_error' => $error->toArray()]),
+         );
+diff --git a/src/Infrastructure/AgentGraph/Persistence/BoundedDatabaseNodeExecutionStore.php b/src/Infrastructure/AgentGraph/Persistence/BoundedDatabaseNodeExecutionStore.php
+index c57df35e..e09fd6af 100644
+--- a/src/Infrastructure/AgentGraph/Persistence/BoundedDatabaseNodeExecutionStore.php
++++ b/src/Infrastructure/AgentGraph/Persistence/BoundedDatabaseNodeExecutionStore.php
+@@ -14,7 +14,7 @@ final class BoundedDatabaseNodeExecutionStore extends DatabaseNodeExecutionStore
+      * @param  array<string, mixed>  $error
+      * @return array<string, mixed>
+      */
+-    public function fail(string $executionId, array $error): array
++    public function fail(string $executionId, string $claimToken, array $error): array
+     {
+         $normalizer = new DurableErrorNormalizer;
+         $bounded = $normalizer->normalizeError($error, 'agent_graph.node_executions.'.$executionId.'.error');
+@@ -25,6 +25,6 @@ final class BoundedDatabaseNodeExecutionStore extends DatabaseNodeExecutionStore
+             'bounded_error' => $bounded,
+         ]);
+
+-        return parent::fail($executionId, $bounded ?? []);
++        return parent::fail($executionId, $claimToken, $bounded ?? []);
+     }
+ }
