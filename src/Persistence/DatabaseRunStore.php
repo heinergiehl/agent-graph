@@ -6,6 +6,7 @@ use Heiner\AgentGraph\Contracts\RunStore;
 use Heiner\AgentGraph\Persistence\Concerns\SerializesDatabaseValues;
 use Heiner\AgentGraph\Persistence\Concerns\UsesAgentGraphDatabaseConnection;
 use Illuminate\Database\DatabaseManager;
+use Illuminate\Database\Query\Builder;
 
 class DatabaseRunStore implements RunStore
 {
@@ -79,14 +80,11 @@ class DatabaseRunStore implements RunStore
     {
         $limit = max(1, min($limit, 500));
 
-        return $this->query()
+        return $this->queryForMetadata(['parent', 'run_id'], $parentRunId)
             ->orderByDesc('id')
-            ->limit(1000)
+            ->limit($limit)
             ->get()
             ->map(fn ($record) => $this->decodeRecord($record, ['input', 'error', 'meta']))
-            ->filter(fn (array $run): bool => ($run['meta']['parent']['run_id'] ?? null) === $parentRunId)
-            ->take($limit)
-            ->values()
             ->all();
     }
 
@@ -94,14 +92,11 @@ class DatabaseRunStore implements RunStore
     {
         $limit = max(1, min($limit, 500));
 
-        return $this->query()
+        return $this->queryForMetadata(['time_travel', 'source_checkpoint_id'], $checkpointId)
             ->orderByDesc('id')
-            ->limit(1000)
+            ->limit($limit)
             ->get()
             ->map(fn ($record) => $this->decodeRecord($record, ['input', 'error', 'meta']))
-            ->filter(fn (array $run): bool => ($run['meta']['time_travel']['source_checkpoint_id'] ?? null) === $checkpointId)
-            ->take($limit)
-            ->values()
             ->all();
     }
 
@@ -131,5 +126,19 @@ class DatabaseRunStore implements RunStore
     protected function table(): string
     {
         return config('agent-graph.tables.runs', 'agent_graph_runs');
+    }
+
+    protected function queryForMetadata(array $path, string $value): Builder
+    {
+        $query = $this->query();
+
+        if ($this->connection()->getDriverName() === 'pgsql') {
+            $column = $query->getGrammar()->wrap('meta');
+
+            // The shipped schema stores metadata as text, not a native JSON column.
+            return $query->whereRaw("({$column}::jsonb #>> ?) = ?", ['{'.implode(',', $path).'}', $value]);
+        }
+
+        return $query->where('meta->'.implode('->', $path), $value);
     }
 }
