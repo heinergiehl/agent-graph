@@ -3,6 +3,7 @@
 namespace Heiner\AgentGraph\Persistence;
 
 use Heiner\AgentGraph\Contracts\NodeExecutionStore;
+use Heiner\AgentGraph\Exceptions\NodeExecutionClaimLostException;
 
 class InMemoryNodeExecutionStore implements NodeExecutionStore
 {
@@ -32,6 +33,7 @@ class InMemoryNodeExecutionStore implements NodeExecutionStore
             'interrupt' => null,
             'error' => null,
             'meta' => [],
+            'claim_token' => null,
             'locked_until' => null,
             'started_at' => null,
             'finished_at' => null,
@@ -74,6 +76,7 @@ class InMemoryNodeExecutionStore implements NodeExecutionStore
 
             $this->executions[$index] = array_merge($execution, [
                 'status' => 'running',
+                'claim_token' => (string) str()->ulid(),
                 'locked_until' => $lockedUntil,
                 'started_at' => $execution['started_at'] ?? now(),
                 'updated_at' => now(),
@@ -85,19 +88,19 @@ class InMemoryNodeExecutionStore implements NodeExecutionStore
         return null;
     }
 
-    public function complete(string $executionId, array $result): array
+    public function complete(string $executionId, string $claimToken, array $result): array
     {
-        return $this->updateResult($executionId, 'completed', $result);
+        return $this->updateResult($executionId, $claimToken, 'completed', $result);
     }
 
-    public function interrupt(string $executionId, array $result): array
+    public function interrupt(string $executionId, string $claimToken, array $result): array
     {
-        return $this->updateResult($executionId, 'interrupted', $result);
+        return $this->updateResult($executionId, $claimToken, 'interrupted', $result);
     }
 
-    public function fail(string $executionId, array $error): array
+    public function fail(string $executionId, string $claimToken, array $error): array
     {
-        return $this->updateResult($executionId, 'failed', ['error' => $error]);
+        return $this->updateResult($executionId, $claimToken, 'failed', ['error' => $error]);
     }
 
     public function listForRun(string $runId): array
@@ -113,15 +116,20 @@ class InMemoryNodeExecutionStore implements NodeExecutionStore
         ));
     }
 
-    protected function updateResult(string $executionId, string $status, array $result): array
+    protected function updateResult(string $executionId, string $claimToken, string $status, array $result): array
     {
         foreach ($this->executions as $index => $execution) {
             if (($execution['execution_id'] ?? null) !== $executionId) {
                 continue;
             }
 
+            if ($claimToken === '' || $execution['status'] !== 'running' || $execution['claim_token'] !== $claimToken) {
+                throw new NodeExecutionClaimLostException("Claim for node execution [{$executionId}] is no longer active.");
+            }
+
             $this->executions[$index] = array_merge($execution, $result, [
                 'status' => $status,
+                'claim_token' => $claimToken,
                 'locked_until' => null,
                 'finished_at' => now(),
                 'updated_at' => now(),
@@ -130,6 +138,6 @@ class InMemoryNodeExecutionStore implements NodeExecutionStore
             return $this->executions[$index];
         }
 
-        throw new \RuntimeException("Node execution [{$executionId}] was not found.");
+        throw new NodeExecutionClaimLostException("Claim for node execution [{$executionId}] is no longer active.");
     }
 }

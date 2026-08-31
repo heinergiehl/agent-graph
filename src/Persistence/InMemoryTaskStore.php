@@ -5,6 +5,8 @@ namespace Heiner\AgentGraph\Persistence;
 use Carbon\CarbonImmutable;
 use DateTimeInterface;
 use Heiner\AgentGraph\Contracts\LeasingTaskStore;
+use Heiner\AgentGraph\Exceptions\TaskClaimLostException;
+use RuntimeException;
 
 class InMemoryTaskStore implements LeasingTaskStore
 {
@@ -53,7 +55,23 @@ class InMemoryTaskStore implements LeasingTaskStore
 
     public function start(string $key, string $inputHash, array $input, array $context = []): array
     {
-        $task = $this->tasks[$key] ?? [
+        $existing = $this->tasks[$key] ?? null;
+
+        if ($existing !== null) {
+            if ($existing['input_hash'] !== $inputHash) {
+                throw new RuntimeException("Task key [{$key}] was reused with different input.");
+            }
+
+            if ($existing['status'] === 'completed') {
+                return $existing;
+            }
+
+            if ($this->activeLeaseUntil($existing) !== null) {
+                throw new RuntimeException("Task key [{$key}] is already running.");
+            }
+        }
+
+        $task = $existing ?? [
             'id' => count($this->tasks) + 1,
             'task_key' => $key,
             'status' => 'running',
@@ -73,31 +91,50 @@ class InMemoryTaskStore implements LeasingTaskStore
         $task['status'] = 'running';
         $task['attempts']++;
         $task['locked_until'] = now()->addSeconds((int) config('agent-graph.tasks.lease_seconds', 300));
+        $task['result'] = null;
+        $task['error'] = null;
         $task['updated_at'] = now();
-        $task = array_merge($task, $context);
+
+        foreach (['run_id', 'checkpoint_id', 'node_id', 'meta'] as $field) {
+            if (array_key_exists($field, $context)) {
+                $task[$field] = $context[$field];
+            }
+        }
 
         $this->tasks[$key] = $task;
 
         return $task;
     }
 
-    public function complete(string $key, mixed $result): array
+    public function complete(string $key, int $attempt, mixed $result): array
     {
+        $this->assertOwnedAttempt($key, $attempt);
         $this->tasks[$key]['status'] = 'completed';
         $this->tasks[$key]['result'] = $result;
+        $this->tasks[$key]['error'] = null;
         $this->tasks[$key]['locked_until'] = null;
         $this->tasks[$key]['updated_at'] = now();
 
         return $this->tasks[$key];
     }
 
-    public function fail(string $key, string $message, array $meta = []): array
+    public function fail(string $key, int $attempt, string $message, array $meta = []): array
     {
+        $this->assertOwnedAttempt($key, $attempt);
         $this->tasks[$key]['status'] = 'failed';
         $this->tasks[$key]['error'] = ['message' => $message, 'meta' => $meta];
         $this->tasks[$key]['locked_until'] = null;
         $this->tasks[$key]['updated_at'] = now();
 
         return $this->tasks[$key];
+    }
+
+    protected function assertOwnedAttempt(string $key, int $attempt): void
+    {
+        $task = $this->tasks[$key] ?? null;
+
+        if ($attempt < 1 || $task === null || $task['status'] !== 'running' || $task['attempts'] !== $attempt) {
+            throw new TaskClaimLostException("Task key [{$key}] attempt [{$attempt}] is no longer active.");
+        }
     }
 }

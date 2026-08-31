@@ -19,6 +19,7 @@ use Heiner\AgentGraph\Runtime\RunResult;
 use Heiner\AgentGraph\Runtime\RunSnapshot;
 use Heiner\AgentGraph\Runtime\RunTimeline;
 use Heiner\AgentGraph\Runtime\RuntimeOptions;
+use Heiner\AgentGraph\Runtime\SubgraphNode;
 use InvalidArgumentException;
 
 class AgentGraphManager
@@ -34,7 +35,30 @@ class AgentGraphManager
     public function define(StateGraph|GraphDefinition $graph): GraphDefinition
     {
         $definition = $graph instanceof StateGraph ? $graph->compile() : $graph;
-        $this->graphs[$definition->key()] = $definition;
+        $definitions = [];
+        $pending = [$definition];
+
+        while ($current = array_pop($pending)) {
+            $key = $current->key();
+
+            if (isset($definitions[$key])) {
+                if ($definitions[$key] !== $current) {
+                    throw new InvalidArgumentException("Embedded graphs must use distinct keys; graph [{$key}] has conflicting definitions.");
+                }
+
+                continue;
+            }
+
+            $definitions[$key] = $current;
+
+            foreach ($current->nodes() as $node) {
+                if ($node instanceof SubgraphNode && ($child = $node->graphDefinition()) !== null) {
+                    $pending[] = $child;
+                }
+            }
+        }
+
+        $this->graphs = array_replace($this->graphs, $definitions);
 
         return $definition;
     }

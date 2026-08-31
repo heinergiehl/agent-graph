@@ -5,10 +5,11 @@ namespace Heiner\AgentGraph\Persistence;
 use Carbon\CarbonImmutable;
 use DateTimeInterface;
 use Heiner\AgentGraph\Contracts\LeasingTaskStore;
+use Heiner\AgentGraph\Exceptions\TaskClaimLostException;
 use Heiner\AgentGraph\Persistence\Concerns\SerializesDatabaseValues;
 use Heiner\AgentGraph\Persistence\Concerns\UsesAgentGraphDatabaseConnection;
 use Illuminate\Database\DatabaseManager;
-use Illuminate\Database\QueryException;
+use Illuminate\Database\UniqueConstraintViolationException;
 use RuntimeException;
 
 class DatabaseTaskStore implements LeasingTaskStore
@@ -60,11 +61,11 @@ class DatabaseTaskStore implements LeasingTaskStore
 
     public function start(string $key, string $inputHash, array $input, array $context = []): array
     {
-        $existing = $this->findByKey($key);
-        $now = now();
+        $claim = function () use ($key, $inputHash, $input, $context): array {
+            $record = $this->query()->where('task_key', $key)->lockForUpdate()->first();
+            $now = now();
 
-        if ($existing === null) {
-            try {
+            if ($record === null) {
                 $this->query()->insert([
                     'task_key' => $key,
                     'status' => 'running',
@@ -80,52 +81,69 @@ class DatabaseTaskStore implements LeasingTaskStore
                     'updated_at' => $now,
                 ]);
 
-                return $this->findByKey($key);
-            } catch (QueryException $exception) {
-                if (! $this->isDuplicateKeyException($exception)) {
-                    throw $exception;
-                }
-
-                $existing = $this->findByKey($key);
+                return $this->findByKey($key)
+                    ?? throw new RuntimeException("Task key [{$key}] was not found after creation.");
             }
+
+            $existing = $this->decodeRecord($record, ['input', 'result', 'error', 'meta']);
+
+            if ($existing['input_hash'] !== $inputHash) {
+                throw new RuntimeException("Task key [{$key}] was reused with different input.");
+            }
+
+            if ($existing['status'] === 'completed') {
+                return $existing;
+            }
+
+            if ($this->activeLeaseUntil($existing) !== null) {
+                throw new RuntimeException("Task key [{$key}] is already running.");
+            }
+
+            $attributes = [
+                'status' => 'running',
+                'attempts' => $existing['attempts'] + 1,
+                'locked_until' => $this->leaseUntil(),
+                'result' => null,
+                'error' => null,
+                'updated_at' => $now,
+            ];
+
+            foreach (['run_id', 'checkpoint_id', 'node_id', 'meta'] as $field) {
+                if (array_key_exists($field, $context)) {
+                    $attributes[$field] = $field === 'meta' ? $this->encode($context[$field]) : $context[$field];
+                }
+            }
+
+            $this->query()->where('task_key', $key)->update($attributes);
+
+            return $this->findByKey($key)
+                ?? throw new RuntimeException("Task key [{$key}] was not found after claiming.");
+        };
+
+        try {
+            return $this->connection()->transaction($claim, 3);
+        } catch (UniqueConstraintViolationException) {
+            // Retry after rollback (or savepoint rollback), never inside an
+            // aborted PostgreSQL transaction after a concurrent first insert.
+            return $this->connection()->transaction($claim, 3);
         }
-
-        if ($existing['input_hash'] !== $inputHash) {
-            throw new RuntimeException("Task key [{$key}] was reused with different input.");
-        }
-
-        $this->query()->where('task_key', $key)->update([
-            'status' => 'running',
-            'attempts' => $existing['attempts'] + 1,
-            'locked_until' => $this->leaseUntil(),
-            'updated_at' => $now,
-        ]);
-
-        return $this->findByKey($key);
     }
 
-    public function complete(string $key, mixed $result): array
+    public function complete(string $key, int $attempt, mixed $result): array
     {
-        $this->query()->where('task_key', $key)->update([
+        return $this->finishAttempt($key, $attempt, [
             'status' => 'completed',
             'result' => $this->encode($result),
-            'locked_until' => null,
-            'updated_at' => now(),
+            'error' => null,
         ]);
-
-        return $this->findByKey($key);
     }
 
-    public function fail(string $key, string $message, array $meta = []): array
+    public function fail(string $key, int $attempt, string $message, array $meta = []): array
     {
-        $this->query()->where('task_key', $key)->update([
+        return $this->finishAttempt($key, $attempt, [
             'status' => 'failed',
             'error' => $this->encode(['message' => $message, 'meta' => $meta]),
-            'locked_until' => null,
-            'updated_at' => now(),
         ]);
-
-        return $this->findByKey($key);
     }
 
     protected function table(): string
@@ -138,9 +156,24 @@ class DatabaseTaskStore implements LeasingTaskStore
         return now()->addSeconds((int) config('agent-graph.tasks.lease_seconds', 300))->toImmutable();
     }
 
-    protected function isDuplicateKeyException(QueryException $exception): bool
+    protected function finishAttempt(string $key, int $attempt, array $attributes): array
     {
-        return str_contains(strtolower($exception->getMessage()), 'unique')
-            || str_contains(strtolower($exception->getMessage()), 'duplicate');
+        return $this->connection()->transaction(function () use ($key, $attempt, $attributes): array {
+            $updated = $this->query()
+                ->where('task_key', $key)
+                ->where('status', 'running')
+                ->where('attempts', $attempt)
+                ->update(array_merge($attributes, [
+                    'locked_until' => null,
+                    'updated_at' => now(),
+                ]));
+
+            if ($attempt < 1 || $updated !== 1) {
+                throw new TaskClaimLostException("Task key [{$key}] attempt [{$attempt}] is no longer active.");
+            }
+
+            return $this->findByKey($key)
+                ?? throw new RuntimeException("Task key [{$key}] was not found after finishing its attempt.");
+        });
     }
 }

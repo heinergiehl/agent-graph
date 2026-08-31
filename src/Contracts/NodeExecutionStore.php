@@ -10,13 +10,17 @@ interface NodeExecutionStore
 
     public function find(string $executionId): ?array;
 
+    /**
+     * A running claim contains a new claim_token. Terminal records are returned
+     * unchanged without granting ownership to the caller.
+     */
     public function claim(string $executionId, mixed $lockedUntil): ?array;
 
-    public function complete(string $executionId, array $result): array;
+    public function complete(string $executionId, string $claimToken, array $result): array;
 
-    public function interrupt(string $executionId, array $result): array;
+    public function interrupt(string $executionId, string $claimToken, array $result): array;
 
-    public function fail(string $executionId, array $error): array;
+    public function fail(string $executionId, string $claimToken, array $error): array;
 
     public function listForRun(string $runId): array;
 
