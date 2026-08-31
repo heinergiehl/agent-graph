@@ -2,7 +2,7 @@
 
 AgentGraph 0.16 changes the durable task and queued-node completion contracts to reject writes from workers whose claim has been replaced. The existing Filament Agentic Chatbot database-store subclasses must be updated together with the SDK. The unchanged subclasses cause PHP declaration errors when loaded; passing the plugin's memory-store tests does not establish production compatibility.
 
-This guide describes a prepared upgrade. Version 0.16.0 must be released before changing the plugin's Composer requirement to `^0.16.0`. The compatibility audit did not modify the active plugin, its Composer files, its vendor tree, or its Git index. The patch was prepared separately and checked without applying it.
+This guide describes the upgrade for the `0.16.0-rc.1` integration candidate. Select that exact version in both the plugin and the root test application; reserve `^0.16.0` for the subsequent stable release. The compatibility audit and SDK publication did not modify the active plugin, its Composer files, its vendor tree, or its Git index. The patch was prepared separately and checked without applying it.
 
 ## Required plugin changes
 
@@ -46,11 +46,13 @@ interrupt(string $executionId, string $claimToken, array $result): array;
 fail(string $executionId, string $claimToken, array $error): array;
 ```
 
-After the SDK release, update the plugin's requirement in the same upgrade change:
+For release-candidate testing, update the plugin's requirement in the same change as the two store overrides:
 
 ```json
-"heiner/agent-graph": "^0.16.0"
+"heiner/agent-graph": "0.16.0-rc.1"
 ```
+
+The root test application must also explicitly require `0.16.0-rc.1`, including when it installs this plugin through a path repository. Dependencies' stability flags do not grant permission at the root. Keep the existing stable minimum-stability setting and unrelated repository definitions. Refresh the plugin package metadata and SDK together when updating the host's lock file. Changing only the plugin's own vendor directory does not update the host's SDK. After successful integration and publication of stable `0.16.0`, change both constraints to `^0.16.0` in the stable plugin release.
 
 The supplied patch intentionally does not modify Composer files. Do not combine the new SDK with the old overrides, or the new overrides with SDK 0.15.1; the method signatures are incompatible in both directions. Resolve dependencies and validate the plugin in its normal isolated development workflow before deploying.
 

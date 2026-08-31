@@ -6,7 +6,7 @@ AgentGraph does not replace Laravel AI providers, agents, tools, streaming, or s
 
 ## Release Status
 
-`0.15.1` is the current published stable pre-v1 version. `main` is being prepared for **0.16.0 (unreleased)**, with runtime hardening and breaking persistence-store signatures. The 0.16 notes below describe development code, not a published release. Ordinary graph/run/resume and `TaskRunner::once()` method signatures remain unchanged; custom stores need a coordinated upgrade. Read the [changelog](CHANGELOG.md) and [upgrade guide](UPGRADE.md) before adopting it.
+`0.15.1` remains the current stable pre-v1 version. **0.16.0-rc.1** is a release candidate for integration testing, with runtime hardening and breaking persistence-store signatures. It is not a stable production release. Ordinary graph/run/resume and `TaskRunner::once()` method signatures remain unchanged; custom stores need a coordinated upgrade. Read the [changelog](CHANGELOG.md), [release notes](docs/releases/v0.16.0.md), and [upgrade guide](UPGRADE.md) before adopting it.
 
 The v1 target is a hardened MVP: stable graph execution, checkpoints, interrupts/resume, idempotent tasks, scoped memory, traces, queues, run-event observation, Laravel AI agent nodes, graphs as tools, native subgraph nodes, and durable app workflow sessions. Experimental checkpoint inspection, replay, forking, worker-backed queued supersteps, and vector memory contracts are available for post-v1-style workflows. OpenTelemetry export and visual workflow editing remain outside the stable v1 core.
 
@@ -20,7 +20,13 @@ php artisan agent-graph:install
 php artisan migrate
 ```
 
-The `^0.15.1` constraint stays on the stable 0.15 line and will not install 0.16 automatically. The prepared 0.16 build requires adapted custom stores, an additive migration, and a coordinated restart of all application processes; see the [upgrade checklist](UPGRADE.md#coordinated-rollout-checklist).
+The `^0.15.1` constraint stays on the stable 0.15 line and will not install 0.16 automatically. For an explicit release-candidate test, after adapting custom stores and pausing runtime execution as described in the [upgrade checklist](UPGRADE.md#coordinated-rollout-checklist), require the exact candidate:
+
+```bash
+composer require "heiner/agent-graph:0.16.0-rc.1" --with-dependencies --minimal-changes
+```
+
+The root application must explicitly permit the candidate; if a consuming plugin also requires AgentGraph, its constraint must agree. There is no need to change global `minimum-stability` to `dev`. The 0.16 build requires adapted custom stores, an additive migration, and a coordinated restart of all application processes. See the [Filament plugin upgrade guide](docs/guides/filament-plugin-upgrade-0.16.md) for the two-package integration.
 
 `agent-graph:install` publishes the package config and migrations. The database store uses these tables by default:
 

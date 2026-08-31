@@ -2,9 +2,9 @@
 
 All notable changes to AgentGraph are documented here.
 
-## 0.16.0 - Unreleased
+## 0.16.0-rc.1 - 2026-08-31
 
-Target: atomic ownership and durable runtime transitions. This version is in preparation; no 0.16 release is published yet.
+Target: atomic ownership and durable runtime transitions. This is a release candidate for integration testing, not a stable production release. Version 0.15.1 remains the stable release.
 
 ### Breaking changes
 
@@ -30,7 +30,7 @@ Target: atomic ownership and durable runtime transitions. This version is in pre
 
 See [UPGRADE.md](UPGRADE.md) for store signatures, migration commands, and the coordinated rollout checklist. Do not mix 0.15 and 0.16 PHP processes. Existing task attempts need no migration; external effects still require stable keys, provider idempotency where available, and reconciliation of unknown outcomes.
 
-The [0.16 preparation notes](docs/releases/v0.16.0.md) map the audit findings to fixes and record verification evidence and remaining release gates.
+The [0.16 release-candidate notes](docs/releases/v0.16.0.md) map the audit findings to fixes and record verification evidence and remaining integration gates. Select `0.16.0-rc.1` explicitly when testing; existing `^0.15.1` consumers do not receive it automatically.
 
 ## 0.15.1 - 2026-07-12
 

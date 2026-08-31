@@ -1,8 +1,8 @@
 # Upgrade Guide
 
-## 0.15.1 To 0.16.0 (Unreleased)
+## 0.15.1 To 0.16.0-rc.1
 
-0.16.0 is being prepared; 0.15.1 remains the published stable version. This upgrade changes persistence adapter contracts and rejects unsafe resume requests. Ordinary `TaskRunner::once()` and public graph/run/resume method signatures remain unchanged.
+0.16.0-rc.1 is a release candidate for integration testing; 0.15.1 remains the published stable version. Select `0.16.0-rc.1` explicitly in the root application's Composer requirements and align any consuming plugin constraint. Reserve `^0.16.0` for the subsequent stable release. This upgrade changes persistence adapter contracts and rejects unsafe resume requests. Ordinary `TaskRunner::once()` and public graph/run/resume method signatures remain unchanged.
 
 ### Migration map
 
@@ -60,7 +60,7 @@ A non-recoverable Laravel AI streaming `Error` now raises `Heiner\AgentGraph\Exc
 1. Prepare the SDK and consuming application together. Adapt custom stores and runtime subclasses, preserve graph versions for active runs, and verify the affected task, interrupt/resume, subgraph, stream-error, and queue flows in staging.
 2. Back up the AgentGraph database and record active runs, tasks, leases, and queued jobs. Reconcile unknown external outcomes before deciding which work may be retried.
 3. Pause new work and drain in-flight operations. Stop every old PHP entry point that can execute AgentGraph: web processes, Octane, queue workers, Horizon, and scheduler processes. **Never run 0.15 and 0.16 processes concurrently**, even though the schema change is additive; old code can bypass the new ownership checks.
-4. Deploy the reviewed 0.16 build and adapted application while execution remains paused. This is an unreleased upgrade procedure, not a claim that a 0.16 tag is available.
+4. Install the reviewed `0.16.0-rc.1` build and adapted application in the isolated test or staging environment while execution remains paused. A successful candidate test is required before adopting a subsequent stable 0.16 production release.
 5. Publish only missing package migrations, without `--force`, then migrate and run doctor before starting application processes:
 
 ```bash
