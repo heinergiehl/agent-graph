@@ -230,6 +230,10 @@ Configuration methods: `isolated(?Closure $input = null, ?Closure $output = null
 
 Child runs are persisted as normal runs with `run.meta.parent`. Child interrupts bubble to the parent as `subgraph` interrupts containing `child_run_id`, `child_interrupt_id`, and the child interrupt payload. Resuming the parent with those child identifiers resumes the child first, then maps the child state back into the parent writes.
 
+In 0.16, the saved parent/child binding and child state schema are checked before accepting a parent response. Delayed children also bubble a waitpoint; only completed children produce output writes. A still-running asynchronous child fails closed rather than completing its parent. The SDK does not provide asynchronous child orchestration or cascade cancellation.
+
+`graphDefinition(): ?GraphDefinition` returns an embedded definition, or `null` for a string reference. `AgentGraphManager::define()` recursively registers embedded definitions, including nested children, so they are available after worker restart. Distinct embedded definitions in the same tree must have distinct graph keys.
+
 Stability: additive beta API.
 
 ### `Send`
@@ -340,6 +344,8 @@ Configuration methods: `agent()`, `prompt()`, `attachments()`, `stream()`, `prov
 
 Errors: missing or invalid agent configuration and non-string prompts throw `RuntimeException`.
 
+In 0.16, a non-recoverable Laravel AI streaming `Error` throws `AgentStreamException`, with public readonly `nodeId` and `event` properties. The node follows normal failure/retry handling without persisting partial output as success. Already delivered deltas cannot be withdrawn. Recoverable error events may continue to a valid final response.
+
 Stability: stable.
 
 ### `DurableGraphSession`
@@ -349,6 +355,8 @@ Stability: stable.
 Methods: `start(array $input = [], array $meta = [], RuntimeOptions|array $options = [])`, `run(array $input = [], array $meta = [], RuntimeOptions|array $options = [])`, `resume(array $payload = [], bool $strict = false, RuntimeOptions|array $options = [])`, `cancel(array $meta = [])`, `status()`, and `activeRun()`.
 
 `run()` returns the active interrupted/delayed/running run for the graph+thread when one exists; otherwise it starts a new run. The active-run lookup and start path are protected by an AgentGraph session lock. `start()` always creates a fresh run.
+
+`resume()` checks that the selected or explicit `run_id` belongs to this session's graph and thread, and rejects a mismatch before mutation. Application authentication and tenant authorization remain the caller's responsibility.
 
 Stability: additive beta API.
 
@@ -363,6 +371,8 @@ Default tool names are sanitized provider-compatible names derived from the grap
 `input(Closure $mapper)` maps a Laravel AI tool `Request` into graph input for new runs and resume payloads. `meta(Closure|array $meta)` adds metadata to new runs only. `output(Closure $mapper)` maps the final `RunResult` and original `Request` into the tool response.
 
 Default tool responses are JSON with `status`, `run_id`, `thread_id`, `state`, `interrupt`, and `error`. Tool exceptions are converted into a failed JSON response.
+
+Resume checks the target graph and, when configured or supplied, the thread. A `thread()` resolver runs for resume requests too and must derive the same trusted identity as on start. Without a configured or supplied thread, graph identity alone is checked; use a trusted thread resolver and application authorization for scoped public endpoints.
 
 When the graph is registered before `schema()` is called, `GraphTool` derives optional `input` object properties from the graph state schema. Unknown or unregistered graphs keep the previous generic nullable `input` object schema.
 
@@ -413,6 +423,27 @@ Production adapters may implement these contracts:
 
 Adapters must preserve JSON-serializable arrays for stored payloads and return decoded arrays matching database and in-memory store shapes.
 
+### Ownership contracts in 0.16
+
+```php
+// TaskStore
+public function complete(string $key, int $attempt, mixed $result): array;
+public function fail(string $key, int $attempt, string $message, array $meta = []): array;
+
+// NodeExecutionStore
+public function complete(string $executionId, string $claimToken, array $result): array;
+public function interrupt(string $executionId, string $claimToken, array $result): array;
+public function fail(string $executionId, string $claimToken, array $error): array;
+```
+
+Task `start()` atomically returns a completed receipt or acquires an available attempt. It rejects conflicting input hashes and active, unexpired leases. Each successful claim increments `attempts`. A running node `claim()` returns a new non-empty `claim_token`; an existing terminal record is returned unchanged and does not grant ownership.
+
+All final writes must atomically match running status and the originally claimed attempt/token. A stale caller receives `TaskClaimLostException` or `NodeExecutionClaimLostException`. Never substitute a newer owner's token from a subsequent read. Database node stores require the additive `claim_token` migration. See [UPGRADE.md](../UPGRADE.md) for custom-store and process-cutover requirements.
+
+These contracts fence stored results; an external request can outlive its lease or succeed before its receipt is persisted. Use provider idempotency and reconcile unknown outcomes before retrying.
+
+### Runtime integration
+
 The package database stores use `agent-graph.database.connection`, which maps to `AGENT_GRAPH_DB_CONNECTION`. The same configured connection is used by package migrations, runtime transactions, `agent-graph:doctor`, `agent-graph:prune`, and the optional `PgvectorMemoryStore`.
 
 Production runs require a cache store that supports atomic locks. Keep `AGENT_GRAPH_LOCK_FAIL_WITHOUT_PROVIDER=true` outside local throwaway tests.
@@ -421,7 +452,7 @@ Queue jobs use package-level defaults for tries, timeout, and backoff, and inclu
 
 The default `DelayScheduler` dispatches `ContinueDelayedGraphJob` on the configured AgentGraph execution queue connection and queue; Laravel applications can bind their own scheduler implementation. `GraphRuntime` resolves the scheduler lazily through `DelaySchedulerResolver`, so container rebindings made after runtime construction are honored.
 
-Stability: stable, with v1 contract changes documented in `UPGRADE.md`.
+Stability: pre-v1 contracts with breaking 0.16 changes documented in [UPGRADE.md](../UPGRADE.md).
 
 ## Errors and Compatibility
 
@@ -434,10 +465,11 @@ Stability: stable, with v1 contract changes documented in `UPGRADE.md`.
 - Terminal `completed`, `cancelled`, and `failed` runs cannot be resumed, state-edit resumed, or cancelled again.
 - Replay and fork require persisted `graph_version` to match the currently registered graph definition.
 - Supersteps store one checkpoint per frontier and preserve dynamic `Send` schedules in checkpoint metadata.
+- Database-backed wait checkpoints, writes, interrupts, and waiting status commit together before observers run. Recovery rejects unsafe legacy wait state unless persisted records prove the matching resume was accepted.
 - `queued_supersteps` is opt-in and uses Laravel Queue jobs for worker-backed node execution. Sync execution remains the default.
 - Resume, state-edit resume, cancel, queued continuation, and delayed continuation paths are run-lock protected.
 - Parallel interrupts inside a multi-node frontier fail the run with a clear error; single-node interrupts keep existing resume behavior.
-- Per-node retry policies are synchronous inside the current runtime. They retry thrown node exceptions only and may repeat side effects unless nodes use `tasks()->once()`.
+- Per-node retry policies are synchronous inside the current runtime. They retry thrown node exceptions only and may repeat side effects. `tasks()->once()` reuses completed receipts but still needs stable operation keys, provider idempotency, and unknown-outcome handling.
 - Run-event observation is additive and does not change `GraphStreamDelta`, Laravel AI `StreamableAgentResponse`, `GraphTool` JSON shape, or provider behavior.
 - GraphTool mapping hooks are adapter conveniences; durable active-thread semantics belong in `DurableGraphSession` or `DurableGraphTool`.
 - Parent/child run metadata is stored under `run.meta.parent` for inspection and lineage. `SubgraphNode` uses this same lineage.
