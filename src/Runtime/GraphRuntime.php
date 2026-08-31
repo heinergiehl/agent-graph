@@ -1285,6 +1285,10 @@ class GraphRuntime
             ? $checkpoint['state']
             : (is_array($run['input'] ?? null) ? $run['input'] : []);
 
+        if (($run['status'] ?? null) === 'delayed') {
+            $this->redeliverPendingDelay($run, $checkpoint, $interrupt, $graphs);
+        }
+
         if (($run['status'] ?? null) !== 'running' || $interrupt !== null) {
             return new RunResult($run, $state, $interrupt);
         }
@@ -1350,6 +1354,51 @@ class GraphRuntime
             resumeContext: $resumeContext,
             options: RuntimeOptions::fromRun($run),
         );
+    }
+
+    /**
+     * @param  array<string, GraphDefinition>  $graphs
+     */
+    protected function redeliverPendingDelay(array $run, ?array $checkpoint, ?array $interrupt, array $graphs): void
+    {
+        $runId = $run['public_id'];
+        $graph = $graphs[$run['graph_key']] ?? throw new RuntimeException("Graph [{$run['graph_key']}] is not defined.");
+        $this->assertGraphVersionMatches($run, $graph, 'Run');
+        $interruptId = $interrupt['interrupt_id'] ?? null;
+        $nodeId = $interrupt['node_id'] ?? null;
+        $checkpointId = $checkpoint['checkpoint_id'] ?? null;
+
+        if ($checkpoint === null || $interrupt === null
+            || ! is_string($interruptId) || $interruptId === ''
+            || ! is_string($nodeId) || $nodeId === ''
+            || ! is_string($checkpointId) || $checkpointId === ''
+            || ($interrupt['status'] ?? null) !== 'pending'
+            || ($interrupt['type'] ?? null) !== 'delay'
+            || ($interrupt['run_id'] ?? null) !== $runId
+            || ($checkpoint['run_id'] ?? null) !== $runId
+            || ($checkpoint['thread_id'] ?? null) !== $run['thread_id']
+            || ($checkpoint['graph_key'] ?? null) !== $run['graph_key']
+            || ($checkpoint['checkpoint_id'] ?? null) !== ($run['current_checkpoint_id'] ?? null)
+            || ($checkpoint['checkpoint_id'] ?? null) !== ($interrupt['checkpoint_id'] ?? null)
+            || ($checkpoint['next_nodes'] ?? null) !== [$nodeId]
+            || data_get($checkpoint, 'meta.runtime.wait.type') !== 'delay'
+            || data_get($checkpoint, 'meta.runtime.wait.node_id') !== $nodeId) {
+            throw new RuntimeException("Run [{$runId}] has no matching durable delay authority; legacy or inconsistent waits require reconciliation.");
+        }
+
+        $this->assertGraphVersionMatches($checkpoint, $graph, 'Checkpoint');
+        $storedResumeAt = data_get($interrupt, 'payload.resume_at');
+        $resumeAt = $this->normaliseResumeAt($storedResumeAt);
+
+        // The committed interrupt contains the normalized absolute timestamp.
+        // Never re-interpret relative input or restart the original delay.
+        if ($resumeAt->toJSON() !== $storedResumeAt) {
+            throw new RuntimeException("Run [{$runId}] has an invalid persisted delay timestamp; reconciliation is required.");
+        }
+
+        // Delivery is repeatable; the existing interrupt remains the authority.
+        // The bound scheduler still owns transport, due-time handling and retries.
+        $this->delayScheduler()->schedule($runId, ['interrupt_id' => $interruptId], $resumeAt);
     }
 
     protected function assertCheckpointContinuationIsSafe(array $run, ?array $checkpoint, array $executions): void

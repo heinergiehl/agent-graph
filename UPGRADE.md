@@ -1,5 +1,15 @@
 # Upgrade Guide
 
+## After 0.16.0-rc.1: Pending Delay Recovery (Unreleased)
+
+`AgentGraph::recover($runId)` can now request delivery again for a valid persisted delay. It returns the waiting result and preserves the original interrupt ID, absolute due time, checkpoint, and status. It does not grant approval or execute the waiting node inline. No database migration or public method signature change is introduced by this slice.
+
+Custom `DelayScheduler` implementations must accept repeated scheduling for the same `(runId, interrupt_id)`, retain the original due time even if it has passed, and use the runtime's guarded resume path when the job is delivered. Use an asynchronous queue that honors delayed delivery, and review overrides of `GraphRuntime::recover()`/`recoverLocked()` before adopting this behavior.
+
+Missing, stale, or mismatched checkpoint/interrupt records and noncanonical persisted timestamps are rejected for reconciliation. Legacy wait records without the matching `runtime.wait` checkpoint metadata are not silently repaired. Ordinary input waits and terminal runs still do not schedule work. The caller or host recovery service must invoke recovery; no background scanner is added.
+
+This supersedes the delay-recovery no-op limitation described for the historical 0.16.0-rc.1 release below. See [delay recovery](docs/guides/delay-recovery.md) for the design reference, tests, and transport limits.
+
 ## 0.15.1 To 0.16.0-rc.1
 
 0.16.0-rc.1 is a release candidate for integration testing; 0.15.1 remains the published stable version. Select `0.16.0-rc.1` explicitly in the root application's Composer requirements and align any consuming plugin constraint. Reserve `^0.16.0` for the subsequent stable release. This upgrade changes persistence adapter contracts and rejects unsafe resume requests. Ordinary `TaskRunner::once()` and public graph/run/resume method signatures remain unchanged.

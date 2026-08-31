@@ -2,6 +2,17 @@
 
 All notable changes to AgentGraph are documented here.
 
+## Unreleased
+
+### Fixed
+
+- `recover()` can redeliver a committed pending delay through the currently bound `DelayScheduler` after a failed or lost queue dispatch. It preserves the original interrupt, due time, checkpoint, and run state; it does not re-execute the waiting node or replay its observers.
+- Delay redelivery rejects inconsistent checkpoint/interrupt bindings, missing or changed graph versions, and invalid persisted timestamps instead of inventing a continuation.
+
+### Changed
+
+- `DelayScheduler::schedule()` may be called repeatedly for the same run and interrupt by recovery. Custom schedulers must tolerate this and preserve the original due time. See [delay recovery](docs/guides/delay-recovery.md) for the contract and remaining transport responsibilities.
+
 ## 0.16.0-rc.1 - 2026-08-31
 
 Target: atomic ownership and durable runtime transitions. This is a release candidate for integration testing, not a stable production release. Version 0.15.1 remains the stable release.

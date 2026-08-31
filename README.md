@@ -164,7 +164,7 @@ $run = AgentGraph::resumeWithStateEdit(
 );
 ```
 
-Recover a `running` run from its accepted resume transition or latest durable checkpoint:
+Recover a `running` run from its accepted resume transition or latest durable checkpoint, or redeliver a committed pending delay:
 
 ```php
 $run = AgentGraph::recover($runId);
@@ -172,7 +172,9 @@ $run = AgentGraph::recover($runId);
 
 In 0.16, database-backed supersteps commit the checkpoint, writes, interrupt, and waiting status before notifying observers. Recovery also redrives an initial persisted queued frontier before the first checkpoint. Inconsistent legacy wait state requires reconciliation unless durable records prove the matching resume was accepted.
 
-Recovery is a no-op for runs that are still `interrupted` or `delayed` with a pending interrupt, and for terminal runs. It does not repair a lost delay-queue push; inspect and re-enqueue the existing delay through the application's scheduler. In sync mode a frontier that did not reach its next checkpoint can run again. Use `$context->tasks()->once()` with stable operation keys and provider idempotency where available, and reconcile unknown external outcomes before retrying.
+Recovery leaves ordinary `interrupted` runs and terminal runs unchanged. For a valid `delayed` run, it requests delivery again through the bound `DelayScheduler` with the same interrupt ID and original absolute due time. It returns the unchanged waiting result without re-executing the node or resolving the interrupt. This delay recovery is an unreleased addition after 0.16.0-rc.1; callers must invoke recovery explicitly, and custom schedulers must tolerate repeated scheduling. See [delay recovery](docs/guides/delay-recovery.md) for validation and transport requirements.
+
+In sync mode a frontier that did not reach its next checkpoint can run again. Use `$context->tasks()->once()` with stable operation keys and provider idempotency where available, and reconcile unknown external outcomes before retrying.
 
 ## Runtime Inspection
 

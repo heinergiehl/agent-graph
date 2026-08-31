@@ -4,6 +4,14 @@ AgentGraph 0.16 changes the durable task and queued-node completion contracts to
 
 This guide describes the upgrade for the `0.16.0-rc.1` integration candidate. Select that exact version in both the plugin and the root test application; reserve `^0.16.0` for the subsequent stable release. The compatibility audit and SDK publication did not modify the active plugin, its Composer files, its vendor tree, or its Git index. The patch was prepared separately and checked without applying it.
 
+## Additional gate for unreleased delay recovery
+
+The [pending delay recovery addition](delay-recovery.md) after 0.16.0-rc.1 can call the bound scheduler repeatedly for an existing interrupt. The earlier compatibility evidence below does not cover this addition.
+
+Code review of plugin commit `5d853a94` identified an adapter mismatch: `AgentGraphWorkflowDelayScheduler::schedule()` calculates `expectedRunVersion` from the current `WorkflowRun::state_version + 1` on every call. `AgentGraphWorkflowProjection` increments that version when the initial wait is projected. The existing `WorkflowResumeDeliveryLedger` requires repeated scheduling of the same interrupt to match the original expected version. Redelivery after that projection can therefore be rejected as a changed delivery identity. This is a code-derived integration risk; no live host failure was reproduced in this SDK slice.
+
+Before adopting delay recovery, characterize scheduling before and after the initial projection and update the plugin adapter to reuse the exact existing delivery authority where valid. Do not relax checkpoint, interrupt, deployment, continuation-token, version, cancellation, or structured-concurrency checks. Test repeated recovery, lost delivery, and cancellation through the plugin's normal gateway/runtime path. No plugin files, dependencies, live bots, or deployments were changed by the SDK slice.
+
 ## Required plugin changes
 
 Apply [filament-plugin-upgrade-0.16.patch](filament-plugin-upgrade-0.16.patch) from the plugin repository root in the authorized plugin-upgrade change. Review the patch before applying it. It changes only these two overrides:
