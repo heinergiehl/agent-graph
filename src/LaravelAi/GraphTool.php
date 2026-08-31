@@ -12,6 +12,7 @@ use Illuminate\JsonSchema\Types\Type;
 use InvalidArgumentException;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
+use RuntimeException;
 use Stringable;
 use Throwable;
 
@@ -101,6 +102,10 @@ class GraphTool implements Stringable, Tool
     public function handle(Request $request): Stringable|string
     {
         try {
+            if (isset($request['run_id'])) {
+                $this->assertResumeBinding($request['run_id'], $request);
+            }
+
             $input = $this->resolveInput($request);
 
             if (isset($request['run_id'])) {
@@ -179,6 +184,19 @@ class GraphTool implements Stringable, Tool
         return $request['input'] ?? collect($request->all())
             ->except(['thread_id', 'run_id', 'interrupt_id'])
             ->all();
+    }
+
+    protected function assertResumeBinding(string $runId, Request $request): void
+    {
+        $threadId = $this->threadResolver !== null || isset($request['thread_id'])
+            ? $this->resolveThread($request)
+            : null;
+        $run = $this->manager->inspect($runId)
+            ?? throw new RuntimeException("Run [{$runId}] was not found.");
+
+        if ($run->graphKey() !== $this->graphKey || ($threadId !== null && $run->threadId() !== $threadId)) {
+            throw new InvalidArgumentException("Run [{$runId}] does not belong to this graph tool's graph and thread.");
+        }
     }
 
     protected function resolveMeta(Request $request): array

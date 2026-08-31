@@ -239,6 +239,7 @@ it('returns stable GraphTool json for interrupted resumed and failed runs', func
         ->and($interrupted['error'])->toBeNull();
 
     $completed = json_decode((string) $tool->handle(new Request([
+        'thread_id' => 'tool-interrupt-thread',
         'run_id' => $interrupted['run_id'],
         'interrupt_id' => $interrupted['interrupt']['interrupt_id'],
         'input' => ['question' => 'shipping'],
