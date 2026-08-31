@@ -1,6 +1,6 @@
 # Pending Delay Recovery
 
-Status: unreleased addition after 0.16.0-rc.1.
+Available in **0.16.0-rc.2**, an integration candidate; 0.15.1 remains the stable release. See the [RC2 release notes](../releases/v0.16.0-rc.2.md) for verification scope.
 
 ## Failure and recovery boundary
 
@@ -58,3 +58,5 @@ php vendor/bin/pest tests/Feature/DelayRecoveryTest.php tests/Feature/DelayInter
 ```
 
 These tests use SQLite and a fake queue. Actual queue transport, cross-process contention, other database engines, and consuming-plugin integration remain separate verification gates.
+
+The [RC2 release smoke](../releases/v0.16.0-rc.2.md#verification) additionally exercised fresh PHP recovery processes and real Laravel database-queue workers against an isolated SQLite app. Both synchronous and queued-superstep graphs preserved the wait and original due time, ignored pre-due work, and completed once after duplicated replacement delivery. That check does not certify other queue transports, concurrent-worker races, other database engines, or consuming-plugin integration.

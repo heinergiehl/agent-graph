@@ -2,11 +2,11 @@
 
 AgentGraph 0.16 changes the durable task and queued-node completion contracts to reject writes from workers whose claim has been replaced. The existing Filament Agentic Chatbot database-store subclasses must be updated together with the SDK. The unchanged subclasses cause PHP declaration errors when loaded; passing the plugin's memory-store tests does not establish production compatibility.
 
-This guide describes the upgrade for the `0.16.0-rc.1` integration candidate. Select that exact version in both the plugin and the root test application; reserve `^0.16.0` for the subsequent stable release. The compatibility audit and SDK publication did not modify the active plugin, its Composer files, its vendor tree, or its Git index. The patch was prepared separately and checked without applying it.
+This guide describes the upgrade for the `0.16.0-rc.2` integration candidate. Select that exact version in both the plugin and the root test application; reserve `^0.16.0` for the subsequent stable release. The original RC1 compatibility audit did not modify the active plugin, its Composer files, its vendor tree, or its Git index. Its patch and test results below are historical RC1 evidence, not verification of RC2's delay recovery or a complete host upgrade.
 
-## Additional gate for unreleased delay recovery
+## Additional gate for RC2 delay recovery
 
-The [pending delay recovery addition](delay-recovery.md) after 0.16.0-rc.1 can call the bound scheduler repeatedly for an existing interrupt. The earlier compatibility evidence below does not cover this addition.
+The [pending delay recovery addition](delay-recovery.md) in 0.16.0-rc.2 can call the bound scheduler repeatedly for an existing interrupt. The earlier compatibility evidence below does not cover this addition.
 
 Code review of plugin commit `5d853a94` identified an adapter mismatch: `AgentGraphWorkflowDelayScheduler::schedule()` calculates `expectedRunVersion` from the current `WorkflowRun::state_version + 1` on every call. `AgentGraphWorkflowProjection` increments that version when the initial wait is projected. The existing `WorkflowResumeDeliveryLedger` requires repeated scheduling of the same interrupt to match the original expected version. Redelivery after that projection can therefore be rejected as a changed delivery identity. This is a code-derived integration risk; no live host failure was reproduced in this SDK slice.
 
@@ -57,10 +57,12 @@ fail(string $executionId, string $claimToken, array $error): array;
 For release-candidate testing, update the plugin's requirement in the same change as the two store overrides:
 
 ```json
-"heiner/agent-graph": "0.16.0-rc.1"
+"heiner/agent-graph": "0.16.0-rc.2"
 ```
 
-The root test application must also explicitly require `0.16.0-rc.1`, including when it installs this plugin through a path repository. Dependencies' stability flags do not grant permission at the root. Keep the existing stable minimum-stability setting and unrelated repository definitions. Refresh the plugin package metadata and SDK together when updating the host's lock file. Changing only the plugin's own vendor directory does not update the host's SDK. After successful integration and publication of stable `0.16.0`, change both constraints to `^0.16.0` in the stable plugin release.
+The root test application must also explicitly require `0.16.0-rc.2`, including when it installs this plugin through a path repository. Dependencies' stability flags do not grant permission at the root. Keep the existing stable minimum-stability setting and unrelated repository definitions. Refresh the plugin package metadata and SDK together when updating the host's lock file. Changing only the plugin's own vendor directory does not update the host's SDK. After successful integration and publication of stable `0.16.0`, change both constraints to `^0.16.0` in the stable plugin release.
+
+Composer installation alone does not authorize existing immutable deployments to use a new runtime. The plugin must also review its SDK-version acceptance and artifact compatibility contract. Do not rewrite stored artifact hashes, deployment manifests, graph versions, or pinned dependency closures to bypass that check. Verify preserved releases through an explicit compatibility policy or publish newly compiled releases through the normal deployment lifecycle.
 
 The supplied patch intentionally does not modify Composer files. Do not combine the new SDK with the old overrides, or the new overrides with SDK 0.15.1; the method signatures are incompatible in both directions. Resolve dependencies and validate the plugin in its normal isolated development workflow before deploying.
 

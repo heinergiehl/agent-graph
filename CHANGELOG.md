@@ -2,7 +2,9 @@
 
 All notable changes to AgentGraph are documented here.
 
-## Unreleased
+## 0.16.0-rc.2 - 2026-08-31
+
+Target: recover delivery of committed pending delays. This remains a release candidate for integration testing; 0.15.1 remains the stable release. It includes the 0.16.0-rc.1 hardening and breaking persistence contracts below.
 
 ### Fixed
 
@@ -12,6 +14,11 @@ All notable changes to AgentGraph are documented here.
 ### Changed
 
 - `DelayScheduler::schedule()` may be called repeatedly for the same run and interrupt by recovery. Custom schedulers must tolerate this and preserve the original due time. See [delay recovery](docs/guides/delay-recovery.md) for the contract and remaining transport responsibilities.
+
+### Upgrade and verification
+
+- No additional migration or public method signature change since 0.16.0-rc.1. Review custom delay schedulers and runtime recovery overrides before adoption. Legacy 0.15.1 delay checkpoints without `runtime.wait` remain an explicit reconciliation boundary.
+- Select `heiner/agent-graph:0.16.0-rc.2` explicitly. See the [RC2 release notes](docs/releases/v0.16.0-rc.2.md) for verified scope, remaining gates, and the coordinated plugin upgrade requirements.
 
 ## 0.16.0-rc.1 - 2026-08-31
 
