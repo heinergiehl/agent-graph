@@ -114,7 +114,7 @@ All methods are available through the `AgentGraph` facade and `AgentGraphManager
 - `resumeContract(string $runId, array $payload = [], ?callable $onEvent = null, bool $collectEvents = false): RunResult` resumes a run after validating the response against a pending typed `InterruptContract` payload. Free-form interrupt payloads are left compatible.
 - `resumeWithStateEdit(string $runId, string $interruptId, array $statePatch, ?string $resolvedBy = null, ?callable $onEvent = null, bool $collectEvents = false): RunResult` resolves a `state_edit` interrupt on an active run after strict schema validation.
 - `cancel(string $runId, array $meta = []): RunResult` atomically marks an active `running`, `interrupted`, or `delayed` run cancelled and resolves its pending interrupt with a typed `cancelled` response when present.
-- `recover(string $runId, ?callable $onEvent = null, bool $collectEvents = false): RunResult` continues a `running` run from an accepted pending-resume marker or its latest durable checkpoint under the run lock. Waiting and terminal runs are returned without mutation.
+- `recover(string $runId, ?callable $onEvent = null, bool $collectEvents = false): RunResult` continues a `running` run from an accepted pending-resume marker or its latest durable checkpoint under the run lock. From 0.16.0-rc.2, it can also redeliver a valid pending delay through the bound scheduler while leaving its stored state unchanged. Ordinary input waits and terminal runs are unchanged. See [delay recovery](guides/delay-recovery.md).
 - `inspect(string $runId, bool $withHistory = false, bool $withTraces = false): ?RunSnapshot` returns a read-only run snapshot without mutating runtime state.
 - `timeline(string $runId, bool $includeState = false, bool $includeDiff = true): ?RunTimeline` returns ordered, read-only timeline steps built from checkpoints, writes, interrupts, failures, and state diffs.
 - `runs(array $filters = [], int $limit = 50): array` lists recent runs. Supported filters are `status`, `thread_id`, `graph_key`, and `graph_version`.
@@ -451,6 +451,8 @@ Production runs require a cache store that supports atomic locks. Keep `AGENT_GR
 Queue jobs use package-level defaults for tries, timeout, and backoff, and include `agent-graph` tags plus operation-specific identifiers for queue dashboards and worker telemetry.
 
 The default `DelayScheduler` dispatches `ContinueDelayedGraphJob` on the configured AgentGraph execution queue connection and queue; Laravel applications can bind their own scheduler implementation. `GraphRuntime` resolves the scheduler lazily through `DelaySchedulerResolver`, so container rebindings made after runtime construction are honored.
+
+Recovery may schedule the same `(runId, interrupt_id)` more than once with its original absolute due time, including a past due time. Custom schedulers must safely accept repeated requests and continue to own transport retries and due-time enforcement. They must use a durable asynchronous backend and must not resolve the interrupt or execute the graph inline under the recovery lock. This is a transport requirement, not a runtime-enforced backend check; Laravel `sync` and `deferred` queues do not meet it. The default queue job ignores terminal runs and stale interrupt IDs; this does not provide exactly-once external effects or an automatic recovery scanner.
 
 Stability: pre-v1 contracts with breaking 0.16 changes documented in [UPGRADE.md](../UPGRADE.md).
 

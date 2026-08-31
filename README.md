@@ -6,7 +6,7 @@ AgentGraph does not replace Laravel AI providers, agents, tools, streaming, or s
 
 ## Release Status
 
-`0.15.1` remains the current stable pre-v1 version. **0.16.0-rc.1** is a release candidate for integration testing, with runtime hardening and breaking persistence-store signatures. It is not a stable production release. Ordinary graph/run/resume and `TaskRunner::once()` method signatures remain unchanged; custom stores need a coordinated upgrade. Read the [changelog](CHANGELOG.md), [release notes](docs/releases/v0.16.0.md), and [upgrade guide](UPGRADE.md) before adopting it.
+`0.15.1` remains the current stable pre-v1 version. **0.16.0-rc.2** is a release candidate for integration testing, with durable delay redelivery, runtime hardening, and breaking persistence-store signatures inherited from RC1. It is not a stable production release. Ordinary graph/run/resume and `TaskRunner::once()` method signatures remain unchanged; custom stores and delay schedulers need a coordinated upgrade. Read the [changelog](CHANGELOG.md), [release notes](docs/releases/v0.16.0-rc.2.md), and [upgrade guide](UPGRADE.md) before adopting it.
 
 The v1 target is a hardened MVP: stable graph execution, checkpoints, interrupts/resume, idempotent tasks, scoped memory, traces, queues, run-event observation, Laravel AI agent nodes, graphs as tools, native subgraph nodes, and durable app workflow sessions. Experimental checkpoint inspection, replay, forking, worker-backed queued supersteps, and vector memory contracts are available for post-v1-style workflows. OpenTelemetry export and visual workflow editing remain outside the stable v1 core.
 
@@ -23,7 +23,7 @@ php artisan migrate
 The `^0.15.1` constraint stays on the stable 0.15 line and will not install 0.16 automatically. For an explicit release-candidate test, after adapting custom stores and pausing runtime execution as described in the [upgrade checklist](UPGRADE.md#coordinated-rollout-checklist), require the exact candidate:
 
 ```bash
-composer require "heiner/agent-graph:0.16.0-rc.1" --with-dependencies --minimal-changes
+composer require "heiner/agent-graph:0.16.0-rc.2" --with-dependencies --minimal-changes
 ```
 
 The root application must explicitly permit the candidate; if a consuming plugin also requires AgentGraph, its constraint must agree. There is no need to change global `minimum-stability` to `dev`. The 0.16 build requires adapted custom stores, an additive migration, and a coordinated restart of all application processes. See the [Filament plugin upgrade guide](docs/guides/filament-plugin-upgrade-0.16.md) for the two-package integration.
@@ -164,7 +164,7 @@ $run = AgentGraph::resumeWithStateEdit(
 );
 ```
 
-Recover a `running` run from its accepted resume transition or latest durable checkpoint:
+Recover a `running` run from its accepted resume transition or latest durable checkpoint, or redeliver a committed pending delay:
 
 ```php
 $run = AgentGraph::recover($runId);
@@ -172,7 +172,9 @@ $run = AgentGraph::recover($runId);
 
 In 0.16, database-backed supersteps commit the checkpoint, writes, interrupt, and waiting status before notifying observers. Recovery also redrives an initial persisted queued frontier before the first checkpoint. Inconsistent legacy wait state requires reconciliation unless durable records prove the matching resume was accepted.
 
-Recovery is a no-op for runs that are still `interrupted` or `delayed` with a pending interrupt, and for terminal runs. It does not repair a lost delay-queue push; inspect and re-enqueue the existing delay through the application's scheduler. In sync mode a frontier that did not reach its next checkpoint can run again. Use `$context->tasks()->once()` with stable operation keys and provider idempotency where available, and reconcile unknown external outcomes before retrying.
+Recovery leaves ordinary `interrupted` runs and terminal runs unchanged. For a valid `delayed` run, it requests delivery again through the bound `DelayScheduler` with the same interrupt ID and original absolute due time. It returns the unchanged waiting result without re-executing the node or resolving the interrupt. Delay recovery is available in 0.16.0-rc.2; callers must invoke recovery explicitly, and custom schedulers must tolerate repeated scheduling. See [delay recovery](docs/guides/delay-recovery.md) for validation and transport requirements.
+
+In sync mode a frontier that did not reach its next checkpoint can run again. Use `$context->tasks()->once()` with stable operation keys and provider idempotency where available, and reconcile unknown external outcomes before retrying.
 
 ## Runtime Inspection
 
