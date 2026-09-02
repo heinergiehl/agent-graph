@@ -1,6 +1,6 @@
 # Idempotent Tasks
 
-Use `$context->tasks()->once()` to persist an external operation's result under a stable key. The public API is unchanged in stable 0.16.0:
+Use `$context->tasks()->once()` to persist an external operation's result under a stable key. The public API is unchanged in stable 0.16.1:
 
 ```php
 $result = $context->tasks()->once(
