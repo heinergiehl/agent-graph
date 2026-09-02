@@ -2,6 +2,23 @@
 
 All notable changes to AgentGraph are documented here.
 
+## 0.16.1 - 2026-09-02
+
+Target: unblock upgrades where a timestamp-renamed RC or package migration already created `agent_graph_node_executions.claim_token`, while the canonical 0.16 migration is still pending.
+
+### Fixed
+
+- The claim-token migration now inspects the configured AgentGraph connection and table before changing schema. A correctly shaped nullable `varchar(26)` column with no default or generated behavior is accepted without issuing another `ADD COLUMN`.
+- Existing columns with the wrong type, length, nullability, default, auto-increment, or generated definition fail closed with their observed schema shape; the migration does not coerce or replace them.
+- Fresh installations still create and verify the column. Repeated `up()` execution is idempotent for a compatible schema.
+- Rollback validates the column before removal. It preserves the column when another recorded timestamp variant of the same published migration owns it, while a fresh migration can still remove the column it introduced.
+
+### Upgrade
+
+- General applications should update to `heiner/agent-graph:^0.16.1`, keep workers stopped, and rerun their normal migration command. No data rewrite or additional migration file is introduced.
+- Applications already recorded as successfully migrated on 0.16.0 require no schema change, but should still take the patch before the next deployment.
+- The release-bound Filament Agentic Chatbot package must pin exact `0.16.1` in both its package requirement and release contract, then refresh and verify its immutable lock.
+
 ## 0.16.0 - 2026-09-02
 
 Target: promote the RC2 runtime to the stable pre-v1 Composer channel after the previously open consuming-plugin delay and accepted-parent-resume integration gates were closed.

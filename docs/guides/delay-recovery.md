@@ -1,6 +1,6 @@
 # Pending Delay Recovery
 
-Available in stable **0.16.0**; it was introduced and first verified in RC2. See the [stable release notes](../releases/v0.16.0.md) for current verification scope and the [RC2 notes](../releases/v0.16.0-rc.2.md) for historical prerelease evidence.
+Available in stable **0.16.1**; it was introduced and first verified in RC2, and its runtime behavior is unchanged by the migration-only patch. See the [current release notes](../releases/v0.16.1.md), the [0.16.0 notes](../releases/v0.16.0.md), and the [RC2 notes](../releases/v0.16.0-rc.2.md) for the respective verification scopes.
 
 ## Failure and recovery boundary
 

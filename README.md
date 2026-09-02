@@ -6,7 +6,7 @@ AgentGraph does not replace Laravel AI providers, agents, tools, streaming, or s
 
 ## Release Status
 
-**0.16.0** is the current stable pre-v1 release line. It promotes the runtime verified as RC2, including durable delay redelivery, atomic ownership hardening, and the breaking persistence-store signatures introduced in RC1. Ordinary graph/run/resume and `TaskRunner::once()` method signatures remain unchanged; custom stores and delay schedulers still need the coordinated upgrade. Read the [changelog](CHANGELOG.md), [stable release notes](docs/releases/v0.16.0.md), and [upgrade guide](UPGRADE.md) before adopting it.
+**0.16.1** is the current stable pre-v1 release. It retains the 0.16.0 runtime and fixes the claim-token migration when a correctly shaped column already exists from an earlier published migration. Ordinary graph/run/resume and `TaskRunner::once()` method signatures remain unchanged; custom stores and delay schedulers still need the coordinated 0.16 upgrade. Read the [changelog](CHANGELOG.md), [0.16.1 release notes](docs/releases/v0.16.1.md), and [upgrade guide](UPGRADE.md) before adopting it.
 
 The v1 target is a hardened MVP: stable graph execution, checkpoints, interrupts/resume, idempotent tasks, scoped memory, traces, queues, run-event observation, Laravel AI agent nodes, graphs as tools, native subgraph nodes, and durable app workflow sessions. Experimental checkpoint inspection, replay, forking, worker-backed queued supersteps, and vector memory contracts are available for post-v1-style workflows. OpenTelemetry export and visual workflow editing remain outside the stable v1 core.
 
@@ -15,12 +15,12 @@ CI validates the pre-v1 release line against PHP 8.3/8.4, Laravel 12/13, and `la
 ## Installation
 
 ```bash
-composer require heiner/agent-graph:^0.16.0
+composer require heiner/agent-graph:^0.16.1
 php artisan agent-graph:install
 php artisan migrate
 ```
 
-Existing `^0.15.1` constraints stay on the 0.15 line and do not install this minor release automatically. AgentGraph 0.16 requires adapted custom stores, the additive claim-token migration, and a coordinated restart of every application process. Root applications already verified on RC2 need no additional schema or runtime change; they can replace the exact prerelease constraint with `^0.16.0` and verify the resolved source. A release-bound consuming plugin may instead require an exact dependency closure. The Filament Agentic Chatbot package must pin exact `0.16.0`, update its release contract, and refresh the host lock together. See the [Filament plugin upgrade guide](docs/guides/filament-plugin-upgrade-0.16.md) for that two-package integration.
+Existing `^0.15.1` constraints stay on the 0.15 line and do not install this minor release automatically. Existing `^0.16.0` applications can receive 0.16.1 when their lock is updated. AgentGraph 0.16 requires adapted custom stores, the additive claim-token migration, and a coordinated restart of every application process. The 0.16.1 migration safely adopts an already-present nullable `varchar(26)` claim-token column, but rejects incompatible definitions without altering them. A release-bound consuming plugin may instead require an exact dependency closure. The Filament Agentic Chatbot package must pin exact `0.16.1`, update its release contract, and refresh the host lock together. See the [Filament plugin upgrade guide](docs/guides/filament-plugin-upgrade-0.16.md) for that two-package integration.
 
 `agent-graph:install` publishes the package config and migrations. The database store uses these tables by default:
 
@@ -166,7 +166,7 @@ $run = AgentGraph::recover($runId);
 
 In 0.16, database-backed supersteps commit the checkpoint, writes, interrupt, and waiting status before notifying observers. Recovery also redrives an initial persisted queued frontier before the first checkpoint. Inconsistent legacy wait state requires reconciliation unless durable records prove the matching resume was accepted.
 
-Recovery leaves ordinary `interrupted` runs and terminal runs unchanged. For a valid `delayed` run, it requests delivery again through the bound `DelayScheduler` with the same interrupt ID and original absolute due time. It returns the unchanged waiting result without re-executing the node or resolving the interrupt. Delay recovery is part of stable 0.16.0; callers must invoke recovery explicitly, and custom schedulers must tolerate repeated scheduling. See [delay recovery](docs/guides/delay-recovery.md) for validation and transport requirements.
+Recovery leaves ordinary `interrupted` runs and terminal runs unchanged. For a valid `delayed` run, it requests delivery again through the bound `DelayScheduler` with the same interrupt ID and original absolute due time. It returns the unchanged waiting result without re-executing the node or resolving the interrupt. Delay recovery is part of stable 0.16.x; callers must invoke recovery explicitly, and custom schedulers must tolerate repeated scheduling. See [delay recovery](docs/guides/delay-recovery.md) for validation and transport requirements.
 
 In sync mode a frontier that did not reach its next checkpoint can run again. Use `$context->tasks()->once()` with stable operation keys and provider idempotency where available, and reconcile unknown external outcomes before retrying.
 
