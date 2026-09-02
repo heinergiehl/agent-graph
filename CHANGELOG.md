@@ -2,6 +2,24 @@
 
 All notable changes to AgentGraph are documented here.
 
+## 0.16.0 - 2026-09-02
+
+Target: promote the RC2 runtime to the stable pre-v1 Composer channel after the previously open consuming-plugin delay and accepted-parent-resume integration gates were closed.
+
+### Promoted
+
+- Stable installs now use `heiner/agent-graph:^0.16.0`; existing `^0.15.1` constraints remain on the 0.15 line.
+- The stable runtime is unchanged from published RC2 commit `43c570e82ab599b6dec924858160f86ac9e70220`. No new runtime code, public signature, dependency constraint, or migration was added after RC2.
+- The published RC2 GitHub matrix passed PHP 8.3/8.4 with Laravel 12/13 and Laravel AI `^0.7`. The stable-promotion checkout separately passed strict Composer validation, Pint, the complete 351-test SDK suite with one optional skip, PHPStan, and the production-dependency audit.
+- The verified Filament Agentic Chatbot candidate `08d2e7315d23ddf9368d633beaf021a35788b888` preserves repeated-delay delivery authority and recovers only an exact accepted child resume. The provider-free Agent runtime gate run on that exact commit passed 644 tests and 5,913 assertions. This closes those AgentGraph integration gates without approving the plugin's separate commercial release lifecycle.
+- RC1 and RC2 notes remain available as explicitly historical prerelease evidence; stable verification and limits are recorded in the [v0.16.0 release notes](docs/releases/v0.16.0.md).
+
+### Upgrade
+
+- 0.15.1 consumers must still adapt task-attempt and node-claim-token store contracts, apply the additive `claim_token` migration, drain all old processes, and restart the SDK and consuming application together. Never mix 0.15 and 0.16 execution against the same runtime records.
+- RC2 consumers need no additional migration or runtime adaptation. General root applications can change the exact prerelease constraint to `^0.16.0`; the release-bound Filament Agentic Chatbot package must pin exact `0.16.0`. Verify the resolved source and rerun consuming-host gates.
+- Unknown external outcomes, legacy delay checkpoints without `runtime.wait`, explicit recovery cadence, scheduler due-time enforcement, and the absence of a universal exactly-once guarantee remain unchanged. See [UPGRADE.md](UPGRADE.md).
+
 ## 0.16.0-rc.2 - 2026-08-31
 
 Target: recover delivery of committed pending delays. This remains a release candidate for integration testing; 0.15.1 remains the stable release. It includes the 0.16.0-rc.1 hardening and breaking persistence contracts below.
@@ -48,7 +66,7 @@ Target: atomic ownership and durable runtime transitions. This is a release cand
 
 See [UPGRADE.md](UPGRADE.md) for store signatures, migration commands, and the coordinated rollout checklist. Do not mix 0.15 and 0.16 PHP processes. Existing task attempts need no migration; external effects still require stable keys, provider idempotency where available, and reconciliation of unknown outcomes.
 
-The [0.16 release-candidate notes](docs/releases/v0.16.0.md) map the audit findings to fixes and record verification evidence and remaining integration gates. Select `0.16.0-rc.1` explicitly when testing; existing `^0.15.1` consumers do not receive it automatically.
+The [0.16 RC1 notes](docs/releases/v0.16.0-rc.1.md) map the audit findings to fixes and record verification evidence and remaining integration gates. RC1 required an explicit `0.16.0-rc.1` constraint; existing `^0.15.1` consumers did not receive it automatically.
 
 ## 0.15.1 - 2026-07-12
 

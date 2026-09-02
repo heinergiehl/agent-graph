@@ -2,19 +2,23 @@
 
 AgentGraph 0.16 changes the durable task and queued-node completion contracts to reject writes from workers whose claim has been replaced. The existing Filament Agentic Chatbot database-store subclasses must be updated together with the SDK. The unchanged subclasses cause PHP declaration errors when loaded; passing the plugin's memory-store tests does not establish production compatibility.
 
-This guide describes the upgrade for the `0.16.0-rc.2` integration candidate. Select that exact version in both the plugin and the root test application; reserve `^0.16.0` for the subsequent stable release. The original RC1 compatibility audit did not modify the active plugin, its Composer files, its vendor tree, or its Git index. Its patch and test results below are historical RC1 evidence, not verification of RC2's delay recovery or a complete host upgrade.
+This guide describes the upgrade to stable AgentGraph `0.16.0`. General AgentGraph root applications may use `^0.16.0`, but the Filament Agentic Chatbot release architecture freezes an exact productive dependency closure. Its package manifest and release contract must therefore pin exact `0.16.0`, and the host lock must resolve that exact stable version. The original RC1 compatibility patch and its early test results remain below as historical evidence.
 
-## Additional gate for RC2 delay recovery
+## Verified RC2-to-stable integration
 
-The [pending delay recovery addition](delay-recovery.md) in 0.16.0-rc.2 can call the bound scheduler repeatedly for an existing interrupt. The earlier compatibility evidence below does not cover this addition.
+The [pending delay recovery addition](delay-recovery.md) can call the bound scheduler repeatedly for an existing interrupt. The original RC1 evidence did not cover this behavior, and the first RC2 review correctly identified that the plugin calculated a new expected projection version after the initial wait was projected. That historical adapter would reject valid redelivery as a changed identity.
 
-Code review of plugin commit `5d853a94` identified an adapter mismatch: `AgentGraphWorkflowDelayScheduler::schedule()` calculates `expectedRunVersion` from the current `WorkflowRun::state_version + 1` on every call. `AgentGraphWorkflowProjection` increments that version when the initial wait is projected. The existing `WorkflowResumeDeliveryLedger` requires repeated scheduling of the same interrupt to match the original expected version. Redelivery after that projection can therefore be rejected as a changed delivery identity. This is a code-derived integration risk; no live host failure was reproduced in this SDK slice.
+The verified plugin integration at commit `65956f031260cff4ca4d6285b1fde5bf4c6f6879` now reuses the existing projection revision only when workflow run, SDK run, checkpoint, interrupt, deployment hash, continuation-authority token, projected state, and due time agree. Its delivery ledger returns an existing receipt only when that immutable binding agrees and does not reset leases, unknown outcomes, attempt counts, terminal receipts, or the original due time. A different checkpoint still advances the projection revision.
 
-Before adopting delay recovery, characterize scheduling before and after the initial projection and update the plugin adapter to reuse the exact existing delivery authority where valid. Do not relax checkpoint, interrupt, deployment, continuation-token, version, cancellation, or structured-concurrency checks. Test repeated recovery, lost delivery, and cancellation through the plugin's normal gateway/runtime path. No plugin files, dependencies, live bots, or deployments were changed by the SDK slice.
+Commit `c42448fd193e5f3856ece18b76c50ee299f94140` closes the separate crash boundary after a parent subgraph response is accepted but before child dispatch. Explicit recovery and an identical retry reconstruct only the exact accepted child authorization under the SDK run lock; response, resolved interrupt, source checkpoint, graph/thread/version, parent/child lineage, and current child interrupt must agree.
+
+The provider-free `composer test:agent-runtime` gate was rerun at plugin commit `08d2e7315d23ddf9368d633beaf021a35788b888` and passed **644 tests with 5,913 assertions**, including the delay, accepted-resume, and bounded-store regression files. The inspected later head `a49791607be444097ee86d08318e17bf9b7409b4` differs by two test-only commits in `AgentGraphWorkflowDelayRecoveryTest`: the combined diff invokes the unchanged delayed-resume job handler explicitly and exposes its existing `@throws` contract to Larastan. No runtime or production file differs. The 644-test result belongs to `08d2e7315d23ddf9368d633beaf021a35788b888`; no later CI or local run is represented as passed here.
+
+This closes the previously open AgentGraph-specific plugin recovery gates. It does not approve the plugin's commercial release contract, provider/model matrix, exact artifact, marketplace, external-host, MySQL, or production-deployment gates.
 
 ## Required plugin changes
 
-Apply [filament-plugin-upgrade-0.16.patch](filament-plugin-upgrade-0.16.patch) from the plugin repository root in the authorized plugin-upgrade change. Review the patch before applying it. It changes only these two overrides:
+The historical [filament-plugin-upgrade-0.16.patch](filament-plugin-upgrade-0.16.patch) records the two mandatory store-signature changes. The verified plugin candidate already contains equivalent changes; do not apply the patch again without reviewing the target. Custom consuming stores still need the same adaptation:
 
 ```diff
 --- a/src/Infrastructure/AgentGraph/Persistence/BoundedDatabaseTaskStore.php
@@ -54,17 +58,17 @@ interrupt(string $executionId, string $claimToken, array $result): array;
 fail(string $executionId, string $claimToken, array $error): array;
 ```
 
-For release-candidate testing, update the plugin's requirement in the same change as the two store overrides:
+For the stable plugin release, update both its package requirement and release-contract constraint to the exact stable version in the same reviewed change:
 
 ```json
-"heiner/agent-graph": "0.16.0-rc.2"
+"heiner/agent-graph": "0.16.0"
 ```
 
-The root test application must also explicitly require `0.16.0-rc.2`, including when it installs this plugin through a path repository. Dependencies' stability flags do not grant permission at the root. Keep the existing stable minimum-stability setting and unrelated repository definitions. Refresh the plugin package metadata and SDK together when updating the host's lock file. Changing only the plugin's own vendor directory does not update the host's SDK. After successful integration and publication of stable `0.16.0`, change both constraints to `^0.16.0` in the stable plugin release.
+Do not use `^0.16.0` in this plugin's package or release contract: that would weaken its exact immutable dependency closure. A root application that directly constrains AgentGraph must admit exact `0.16.0`; otherwise it can inherit the plugin's exact requirement. Keep the existing stable minimum-stability setting and unrelated repository definitions. Refresh the plugin package metadata and SDK together when updating the host lock, and verify the installed source/dist reference. Changing only the plugin's own vendor directory does not update the host SDK.
 
 Composer installation alone does not authorize existing immutable deployments to use a new runtime. The plugin must also review its SDK-version acceptance and artifact compatibility contract. Do not rewrite stored artifact hashes, deployment manifests, graph versions, or pinned dependency closures to bypass that check. Verify preserved releases through an explicit compatibility policy or publish newly compiled releases through the normal deployment lifecycle.
 
-The supplied patch intentionally does not modify Composer files. Do not combine the new SDK with the old overrides, or the new overrides with SDK 0.15.1; the method signatures are incompatible in both directions. Resolve dependencies and validate the plugin in its normal isolated development workflow before deploying.
+The historical patch intentionally does not modify Composer files. Do not combine the new SDK with the old overrides, or the new overrides with SDK 0.15.1; the method signatures are incompatible in both directions. Resolve dependencies and validate the plugin in its normal isolated development workflow before deploying.
 
 ## Migration and deployment order
 
@@ -88,14 +92,16 @@ Do not remove `StructuredConcurrencyGraphRuntime` or `StructuredConcurrencySubgr
 
 The existing ordinary nested resume, delayed-child handling, confirmation, cancellation, and restart characterization tests pass with the new SDK and these wrappers retained. There is no demonstrated need to weaken their ordinary child-ID guards for this upgrade.
 
-A separate, pre-existing plugin recovery defect was also reproduced. A `GraphResumed` observer was made to throw after the parent response had been persisted but before child continuation. At that point the parent is running, its interrupt is resolved, and the child still waits:
+The pre-existing plugin recovery defect was reproduced before the fix. A `GraphResumed` observer was made to throw after the parent response had been persisted but before child continuation. At that point the parent was running, its interrupt was resolved, and the child still waited:
 
 - Repeating the same accepted response is rejected by the plugin's `parentResumeBinding()` before SDK duplicate recovery can run: `Child identity is only valid for a current subgraph interrupt.`
 - Calling `recover()` does not restore the plugin's authorized-child-resume context. The parent fails because the child appears to be resumed directly, and the plugin cancels the child.
 
-The same two temporary characterization tests reproduced this behavior with installed SDK 0.15.1 and with SDK 0.16 (22 assertions for each). They assert the defect, not successful recovery. This is separate from the two-store API patch and remains unfixed in the plugin. A follow-up plugin change must reconstruct authorization for a persisted, accepted recovery response while preserving lineage, current-interrupt, terminal-parent, and root-lock checks. Do not remove wrappers or accept arbitrary child IDs to bypass the problem.
+The same two temporary characterization tests reproduced this behavior with installed SDK 0.15.1 and with the early SDK 0.16 integration (22 assertions for each). They remain historical failure evidence, not successful recovery evidence. Commit `c42448fd193e5f3856ece18b76c50ee299f94140` subsequently fixed the boundary without removing the wrappers or accepting arbitrary child IDs. Eighteen database-backed cases cover observer failure, lost in-memory execution context, identical retry, explicit recovery, duplicate delivery, cancellation, foreign responses, changed graph/checkpoint/child bindings, and a newer child interrupt. The accepted-resume and structured-concurrency group passed 30 tests with 476 assertions in the retained integration record and is also included in the measured 644-test gate above.
 
-## Compatibility evidence and limits
+## Historical RC1 compatibility evidence and limits
+
+The table below records the bounded compatibility work before the full RC2 plugin integration. It explains why the store changes were mandatory; it is not the current stable integration result.
 
 The following existing plugin test files ran unchanged against the new SDK:
 
@@ -117,4 +123,4 @@ A temporary Composer classmap/PSR-4 redirect loaded the new SDK without editing 
 
 The restart fixture explicitly loads migrations from `vendor/heiner/agent-graph/database/migrations`, even under a source-class override. Those restart runs therefore used the installed 0.15.1 migration files. They establish the tested synchronous restart behavior with that schema, not a full new-schema queue/deployment certification. The separate isolated SQLite overlay check applied all new SDK migrations, including `claim_token`, and verified the updated durable-store behavior.
 
-No live provider, external host application, production database, or release deployment was exercised. Those gates remain outside this bounded compatibility check. The active plugin contained unrelated concurrent changes, which were left untouched; review and integrate the prepared patch in its own authorized plugin change.
+At that historical RC1 stage, no live provider, external host application, production database, or release deployment was exercised. Those claims remain outside that bounded check. The later integration evidence described above closes the named AgentGraph adapter and recovery defects, but does not convert unrelated product/provider/release gates into passing evidence.

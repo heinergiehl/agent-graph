@@ -1,16 +1,18 @@
 # AgentGraph Roadmap
 
-AgentGraph `0.15.x` is the current pre-v1 release line for real Laravel app testing. The goal for v1 is a durable agent workflow SDK for Laravel, not a complete LangGraph platform clone.
+AgentGraph `0.16.x` is the current stable pre-v1 release line for real Laravel app testing. The goal for v1 is a durable agent workflow SDK for Laravel, not a complete LangGraph platform clone.
 
-## Unreleased Runtime Recovery Scope
+## 0.16 Stable Runtime Recovery Scope
 
-Implemented after 0.15:
+Released on the 0.16 line:
 
 - Atomic database transition for pending interrupt resolution, active run status, runtime options, and a bounded pending-resume recovery marker.
 - `AgentGraph::recover($runId)` for lock-protected continuation from accepted resume/state-edit transitions or the latest durable running checkpoint.
 - Exact-payload duplicate resume recovery without weakening pending-only interrupt compare-and-set semantics.
 - Atomic cancel plus pending-interrupt finalization.
 - Atomic queued-superstep frontier persistence before dispatch and durable redispatch after post-commit queue loss.
+- Attempt and claim-token fencing for durable task and queued-node final writes.
+- Redelivery of a valid committed pending delay with its existing interrupt identity and absolute due time.
 
 This does not promise exactly-once arbitrary PHP node execution. Sync recovery can rerun a frontier that did not reach a durable checkpoint; external side effects must still use `TaskRunner::once()` or provider idempotency.
 

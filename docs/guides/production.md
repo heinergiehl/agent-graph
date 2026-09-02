@@ -1,6 +1,6 @@
 # Production
 
-This guide describes the **0.16.0-rc.2 integration candidate**, including durable delay redelivery. 0.15.1 remains the published stable version. Follow the [upgrade guide](../../UPGRADE.md) before using the new store contracts and repeated-scheduling behavior.
+This guide describes stable **0.16.0**, including durable delay redelivery. Follow the [upgrade guide](../../UPGRADE.md) before using the new store contracts and repeated-scheduling behavior.
 
 Use database stores as the source of truth. Cache/Redis locks are acceleration and duplicate-execution protection, not durable storage.
 
@@ -141,7 +141,7 @@ Delayed continuation jobs are safe to retry. A delayed job no-ops when the run i
 
 Delay interrupts schedule through `DelayScheduler::class`. The default implementation dispatches `ContinueDelayedGraphJob` on the configured AgentGraph execution queue connection and queue; bind a custom scheduler only when your app needs a different delayed-execution backend. The runtime resolves the scheduler lazily, so package or app service providers can rebind the contract after the runtime has already been constructed.
 
-The delay record commits before its queue push. From 0.16.0-rc.2, if that push or an acknowledged job is lost, `recover()` can request delivery again through the bound `DelayScheduler` with the original interrupt identity and absolute due time. It leaves the wait and its checkpoint unchanged. Custom schedulers must accept repeated scheduling without changing delivery authority, and asynchronous workers must honor the due time. No stranded-run scanner is added; the host must invoke recovery. Legacy 0.15.1 delay checkpoints without the required `runtime.wait` marker need explicit reconciliation. See [delay recovery](delay-recovery.md) for validation, duplicate delivery, and transport limits.
+In 0.16.0, the delay record commits before its queue push. If that push or an acknowledged job is lost, `recover()` can request delivery again through the bound `DelayScheduler` with the original interrupt identity and absolute due time. It leaves the wait and its checkpoint unchanged. Custom schedulers must accept repeated scheduling without changing delivery authority, and asynchronous workers must honor the due time. No stranded-run scanner is added; the host must invoke recovery. Legacy 0.15.1 delay checkpoints without the required `runtime.wait` marker need explicit reconciliation. See [delay recovery](delay-recovery.md) for validation, duplicate delivery, and transport limits.
 
 Keep external side effects inside `$context->tasks()->once()` with stable operation keys. Receipt reuse prevents repeating completed work for that key and input; it cannot resolve an unknown remote outcome by itself.
 

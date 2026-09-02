@@ -1,8 +1,18 @@
 # Upgrade Guide
 
-## 0.16.0-rc.1 To 0.16.0-rc.2: Pending Delay Recovery
+## 0.16.0 RCs To 0.16.0 Stable
 
-Select `heiner/agent-graph:0.16.0-rc.2` explicitly in the root application's Composer requirements and align consuming package constraints. This is still an integration candidate, not a stable production release.
+Stable 0.16.0 promotes the RC2 runtime without another code, public-signature, dependency, or migration change. General root applications can replace an exact RC constraint with `^0.16.0`, update the host lock, and verify that Composer resolves the stable tag:
+
+```bash
+composer require heiner/agent-graph:^0.16.0 --with-all-dependencies
+```
+
+Applications already verified on RC2 do not repeat the RC1 claim-token migration. Restart long-lived web, Octane, Horizon, queue, and scheduler processes together, retain the original deployment/graph authority, and run `agent-graph:doctor` before reopening work. A consuming product whose release architecture freezes an exact dependency closure must pin exact `0.16.0`, not a caret range. Changing a Composer constraint is not permission to rewrite immutable artifacts or skip a consuming product's release gates.
+
+## Historical: 0.16.0-rc.1 To 0.16.0-rc.2 Pending Delay Recovery
+
+RC2 required `heiner/agent-graph:0.16.0-rc.2` explicitly in the root application's Composer requirements and aligned consuming-package constraints. These prerelease instructions are retained as history; new stable installs use `^0.16.0` as shown above.
 
 `AgentGraph::recover($runId)` can now request delivery again for a valid persisted delay. It returns the waiting result and preserves the original interrupt ID, absolute due time, checkpoint, and status. It does not grant approval or execute the waiting node inline. No database migration or public method signature change is introduced by this slice.
 
@@ -10,11 +20,11 @@ Custom `DelayScheduler` implementations must accept repeated scheduling for the 
 
 Missing, stale, or mismatched checkpoint/interrupt records and noncanonical persisted timestamps are rejected for reconciliation. Legacy wait records without the matching `runtime.wait` checkpoint metadata are not silently repaired. Ordinary input waits and terminal runs still do not schedule work. The caller or host recovery service must invoke recovery; no background scanner is added.
 
-This supersedes the delay-recovery no-op limitation recorded in the [historical 0.16.0-rc.1 release](docs/releases/v0.16.0.md). See [delay recovery](docs/guides/delay-recovery.md) for the design reference, tests, and transport limits. When upgrading from 0.15.1, also complete every step below; RC2 inherits RC1's breaking store contracts and migration.
+This superseded the delay-recovery no-op limitation recorded in the [historical 0.16.0-rc.1 release](docs/releases/v0.16.0-rc.1.md). See [delay recovery](docs/guides/delay-recovery.md) for the design reference, tests, and transport limits. When upgrading from 0.15.1, also complete every step below; stable 0.16.0 inherits RC1's breaking store contracts and migration.
 
-## 0.15.1 To 0.16.0-rc.2
+## 0.15.1 To 0.16.0
 
-0.16.0-rc.2 is a release candidate for integration testing; 0.15.1 remains the published stable version. Select `0.16.0-rc.2` explicitly in the root application's Composer requirements and align any consuming plugin constraint. Reserve `^0.16.0` for the subsequent stable release. This upgrade changes persistence adapter contracts and rejects unsafe resume requests. Ordinary `TaskRunner::once()` and public graph/run/resume method signatures remain unchanged.
+0.16.0 is a stable pre-v1 minor release. General root applications can select `^0.16.0`; align consuming-package constraints with their own release architecture. The Filament Agentic Chatbot's immutable productive dependency closure requires exact `0.16.0`. This upgrade changes persistence adapter contracts and rejects unsafe resume requests. Ordinary `TaskRunner::once()` and public graph/run/resume method signatures remain unchanged.
 
 ### Migration map
 
@@ -72,7 +82,7 @@ A non-recoverable Laravel AI streaming `Error` now raises `Heiner\AgentGraph\Exc
 1. Prepare the SDK and consuming application together. Adapt custom stores and runtime subclasses, preserve graph versions for active runs, and verify the affected task, interrupt/resume, subgraph, stream-error, and queue flows in staging.
 2. Back up the AgentGraph database and record active runs, tasks, leases, and queued jobs. Reconcile unknown external outcomes before deciding which work may be retried.
 3. Pause new work and drain in-flight operations. Stop every old PHP entry point that can execute AgentGraph: web processes, Octane, queue workers, Horizon, and scheduler processes. **Never run 0.15 and 0.16 processes concurrently**, even though the schema change is additive; old code can bypass the new ownership checks.
-4. Install the reviewed `0.16.0-rc.2` build and adapted application in the isolated test or staging environment while execution remains paused. A successful candidate test is required before adopting a subsequent stable 0.16 production release.
+4. Install the reviewed stable `0.16.0` build and adapted application in the isolated test or staging environment while execution remains paused. Verify the resolved source and the complete consuming application before production adoption.
 5. Publish only missing package migrations, without `--force`, then migrate and run doctor before starting application processes:
 
 ```bash
@@ -84,7 +94,7 @@ php artisan agent-graph:doctor
 The new package migration is `2026_08_31_010000_add_claim_token_to_agent_graph_node_executions.php`; Laravel may change the published timestamp. It adds nullable `claim_token` to the configured node-execution table, preserving existing rows. Do not overwrite published migrations or application config. Confirm the configured database connection and treat doctor `FAIL` output, including a missing claim-token column, as a rollout blocker.
 
 6. Start all web, Octane, Horizon, queue, and scheduler processes on the same new build. Verify the host integration before reopening normal traffic.
-7. Recover only runs with valid durable authority. In RC2, `recover()` requests delivery again for a valid pending delay through the bound scheduler with its existing identity and due time. Verify that custom schedulers preserve delivery authority across repeated calls and that real workers honor the original due time. Legacy 0.15.1 delay checkpoints without `runtime.wait` require explicit reconciliation; recovery does not synthesize that metadata.
+7. Recover only runs with valid durable authority. In 0.16.0, `recover()` requests delivery again for a valid pending delay through the bound scheduler with its existing identity and due time. Verify that custom schedulers preserve delivery authority across repeated calls and that real workers honor the original due time. Legacy 0.15.1 delay checkpoints without `runtime.wait` require explicit reconciliation; recovery does not synthesize that metadata.
 8. If rollback is required, pause and drain all execution again and reconcile work completed since cutover. Restoring database state cannot undo external effects.
 
 `once()` does not guarantee exactly-once external execution. A remote operation may succeed before its receipt is stored, or outlive its lease. Use stable operation keys and provider idempotency where available. Replay and fork create new run IDs; a task key containing the run ID changes too and can intentionally execute new work. See [idempotent tasks](docs/concepts/idempotent-tasks.md) and the [production guide](docs/guides/production.md).
