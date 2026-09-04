@@ -2,6 +2,21 @@
 
 All notable changes to AgentGraph are documented here.
 
+## 0.16.2 - 2026-09-04
+
+Target: align the stable 0.16 runtime with Laravel AI's corrected multi-step provider loop.
+
+### Changed
+
+- Raised the Laravel AI dependency from the legacy `^0.7 || ^1.0` range to the release-verified `^0.11.2` line. This includes upstream Gemini tool-loop coverage for preserving thought signatures across continuations.
+- Updated compatibility fixtures to the public `Decisions|string` Agent contract introduced by Laravel AI 0.10.
+- Kept AgentGraph runtime behavior, public runtime signatures, persistence contracts, migrations, and graph artifacts unchanged.
+
+### Upgrade
+
+- General applications should update to `heiner/agent-graph:^0.16.2` together with `laravel/ai:^0.11.2` and restart all PHP processes on one resolved dependency set.
+- The release-bound Filament Agentic Chatbot package must pin exact `0.16.2` in its package requirement and release contract.
+
 ## 0.16.1 - 2026-09-02
 
 Target: unblock upgrades where a timestamp-renamed RC or package migration already created `agent_graph_node_executions.claim_token`, while the canonical 0.16 migration is still pending.

@@ -5,6 +5,7 @@ use Heiner\AgentGraph\Facades\AgentGraph;
 use Heiner\AgentGraph\Graph\StateGraph;
 use Heiner\AgentGraph\LaravelAi\AgentNode;
 use Heiner\AgentGraph\Runtime\NodeResult;
+use Laravel\Ai\Approvals\Decisions;
 use Laravel\Ai\Contracts\Agent;
 use Laravel\Ai\Enums\Lab;
 use Laravel\Ai\Promptable;
@@ -95,7 +96,7 @@ final class StreamFailureTestAgent implements Agent
         return 'Test streaming behavior.';
     }
 
-    public function stream(string $prompt, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null, ?int $timeout = null): StreamableAgentResponse
+    public function stream(Decisions|string $prompt, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null, ?int $timeout = null): StreamableAgentResponse
     {
         return new StreamableAgentResponse('stream-1', fn () => $this->events, new Meta('fake', 'fake-model'));
     }

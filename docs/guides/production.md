@@ -1,6 +1,6 @@
 # Production
 
-This guide describes stable **0.16.1**, including durable delay redelivery and the idempotent claim-token migration patch. Follow the [upgrade guide](../../UPGRADE.md) before using the new store contracts and repeated-scheduling behavior.
+This guide describes stable **0.16.2**, including durable delay redelivery, the idempotent claim-token migration patch, and the Laravel AI 0.11.2 baseline. Follow the [upgrade guide](../../UPGRADE.md) before using the new store contracts and repeated-scheduling behavior.
 
 Use database stores as the source of truth. Cache/Redis locks are acceleration and duplicate-execution protection, not durable storage.
 

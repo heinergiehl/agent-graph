@@ -12,6 +12,7 @@ use Heiner\AgentGraph\Runtime\RunResult;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\JsonSchema\JsonSchemaTypeFactory;
 use Illuminate\Support\Facades\Event;
+use Laravel\Ai\Approvals\Decisions;
 use Laravel\Ai\Contracts\Agent;
 use Laravel\Ai\Enums\Lab;
 use Laravel\Ai\Responses\AgentResponse;
@@ -274,32 +275,32 @@ class FakeSupportAgent implements Agent
         return 'Be helpful.';
     }
 
-    public function prompt(string $prompt, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null, ?int $timeout = null): AgentResponse
+    public function prompt(Decisions|string $prompt, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null, ?int $timeout = null): AgentResponse
     {
-        return new AgentResponse('invocation-1', 'AI response to '.$prompt, new Usage(promptTokens: 3, completionTokens: 5), new Meta('fake', 'fake-model'));
+        return new AgentResponse('invocation-1', 'AI response to '.(is_string($prompt) ? $prompt : 'approval decisions'), new Usage(promptTokens: 3, completionTokens: 5), new Meta('fake', 'fake-model'));
     }
 
-    public function stream(string $prompt, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null, ?int $timeout = null): StreamableAgentResponse
+    public function stream(Decisions|string $prompt, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null, ?int $timeout = null): StreamableAgentResponse
     {
         return new StreamableAgentResponse('stream-1', fn () => []);
     }
 
-    public function queue(string $prompt, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null): QueuedAgentResponse
+    public function queue(Decisions|string $prompt, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null): QueuedAgentResponse
     {
         throw new RuntimeException('Not used.');
     }
 
-    public function broadcast(string $prompt, Channel|array $channels, array $attachments = [], bool $now = false, Lab|array|string|null $provider = null, ?string $model = null): StreamableAgentResponse
+    public function broadcast(Decisions|string $prompt, Channel|array $channels, array $attachments = [], bool $now = false, Lab|array|string|null $provider = null, ?string $model = null): StreamableAgentResponse
     {
         throw new RuntimeException('Not used.');
     }
 
-    public function broadcastNow(string $prompt, Channel|array $channels, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null): StreamableAgentResponse
+    public function broadcastNow(Decisions|string $prompt, Channel|array $channels, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null): StreamableAgentResponse
     {
         throw new RuntimeException('Not used.');
     }
 
-    public function broadcastOnQueue(string $prompt, Channel|array $channels, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null): QueuedAgentResponse
+    public function broadcastOnQueue(Decisions|string $prompt, Channel|array $channels, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null): QueuedAgentResponse
     {
         throw new RuntimeException('Not used.');
     }
@@ -307,7 +308,7 @@ class FakeSupportAgent implements Agent
 
 final class FakeStreamingSupportAgent extends FakeSupportAgent
 {
-    public function stream(string $prompt, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null, ?int $timeout = null): StreamableAgentResponse
+    public function stream(Decisions|string $prompt, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null, ?int $timeout = null): StreamableAgentResponse
     {
         return new StreamableAgentResponse('stream-1', function () {
             yield (new TextDelta('delta-1', 'message-1', 'Hello ', 1))->withInvocationId('stream-1');

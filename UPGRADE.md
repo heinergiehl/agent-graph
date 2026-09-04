@@ -1,5 +1,13 @@
 # Upgrade Guide
 
+## 0.16.1 To 0.16.2: Laravel AI 0.11 Runtime Baseline
+
+Update general applications to `heiner/agent-graph:^0.16.2` and `laravel/ai:^0.11.2`. The Filament Agentic Chatbot release must instead pin exact AgentGraph `0.16.2` in both its package requirement and release contract.
+
+This patch changes no AgentGraph runtime behavior, public runtime signature, persistence contract, graph artifact, or database migration. It raises the supported Laravel AI baseline to the versioned multi-step provider loop and updates compatibility fixtures for the SDK's public `Decisions|string` Agent contract. Applications implementing `Laravel\Ai\Contracts\Agent` directly must widen their prompt parameter signatures as described in Laravel AI's 0.10 upgrade guide; agents using the SDK's `Promptable` trait already receive the compatible signatures.
+
+Update both packages in one lock operation, keep workers stopped, run the application's normal tests and doctor checks, then restart web, queue, and scheduler processes together. Do not run mixed Laravel AI 0.7 and 0.11 processes against one active application deployment.
+
 ## 0.16.0 To 0.16.1: Idempotent Claim-Token Migration
 
 Update general applications to `heiner/agent-graph:^0.16.1`. The Filament Agentic Chatbot release must instead pin exact `0.16.1` in both its package requirement and release contract.
@@ -26,11 +34,11 @@ Stable 0.16.0 promotes the RC2 runtime without another code, public-signature, d
 composer require heiner/agent-graph:^0.16.0 --with-all-dependencies
 ```
 
-Applications already verified on RC2 did not repeat the RC1 claim-token migration. The 0.16.0 rollout still required long-lived web, Octane, Horizon, queue, and scheduler processes to restart together while retaining the original deployment/graph authority. At that promotion, a consuming product with a frozen dependency closure pinned exact `0.16.0`; current deployments must follow the 0.16.1 section above. Changing a Composer constraint is never permission to rewrite immutable artifacts or skip a consuming product's release gates.
+Applications already verified on RC2 did not repeat the RC1 claim-token migration. The 0.16.0 rollout still required long-lived web, Octane, Horizon, queue, and scheduler processes to restart together while retaining the original deployment/graph authority. At that promotion, a consuming product with a frozen dependency closure pinned exact `0.16.0`; current deployments must also follow the 0.16.2 section above. Changing a Composer constraint is never permission to rewrite immutable artifacts or skip a consuming product's release gates.
 
 ## Historical: 0.16.0-rc.1 To 0.16.0-rc.2 Pending Delay Recovery
 
-RC2 required `heiner/agent-graph:0.16.0-rc.2` explicitly in the root application's Composer requirements and aligned consuming-package constraints. These prerelease instructions are retained as history; the subsequent 0.16.0 promotion used `^0.16.0`, while current stable installs follow the 0.16.1 section above.
+RC2 required `heiner/agent-graph:0.16.0-rc.2` explicitly in the root application's Composer requirements and aligned consuming-package constraints. These prerelease instructions are retained as history; the subsequent 0.16.0 promotion used `^0.16.0`, while current stable installs follow the 0.16.2 section above.
 
 `AgentGraph::recover($runId)` can now request delivery again for a valid persisted delay. It returns the waiting result and preserves the original interrupt ID, absolute due time, checkpoint, and status. It does not grant approval or execute the waiting node inline. No database migration or public method signature change is introduced by this slice.
 
@@ -40,9 +48,9 @@ Missing, stale, or mismatched checkpoint/interrupt records and noncanonical pers
 
 This superseded the delay-recovery no-op limitation recorded in the [historical 0.16.0-rc.1 release](docs/releases/v0.16.0-rc.1.md). See [delay recovery](docs/guides/delay-recovery.md) for the design reference, tests, and transport limits. When upgrading from 0.15.1, also complete every step below; stable 0.16.x inherits RC1's breaking store contracts and migration.
 
-## 0.15.1 To 0.16.1
+## 0.15.1 To 0.16.2
 
-0.16.1 is the current stable pre-v1 patch on the 0.16 minor line. General root applications can select `^0.16.1`; align consuming-package constraints with their own release architecture. The Filament Agentic Chatbot's immutable productive dependency closure requires exact `0.16.1`. This upgrade changes persistence adapter contracts and rejects unsafe resume requests. Ordinary `TaskRunner::once()` and public graph/run/resume method signatures remain unchanged.
+0.16.2 is the current stable pre-v1 patch on the 0.16 minor line. General root applications can select `^0.16.2`; align consuming-package constraints with their own release architecture. The Filament Agentic Chatbot's immutable productive dependency closure requires exact `0.16.2`. This upgrade changes persistence adapter contracts from 0.15, rejects unsafe resume requests, and requires Laravel AI `^0.11.2`. Ordinary `TaskRunner::once()` and public graph/run/resume method signatures remain unchanged.
 
 ### Migration map
 
@@ -100,7 +108,7 @@ A non-recoverable Laravel AI streaming `Error` now raises `Heiner\AgentGraph\Exc
 1. Prepare the SDK and consuming application together. Adapt custom stores and runtime subclasses, preserve graph versions for active runs, and verify the affected task, interrupt/resume, subgraph, stream-error, and queue flows in staging.
 2. Back up the AgentGraph database and record active runs, tasks, leases, and queued jobs. Reconcile unknown external outcomes before deciding which work may be retried.
 3. Pause new work and drain in-flight operations. Stop every old PHP entry point that can execute AgentGraph: web processes, Octane, queue workers, Horizon, and scheduler processes. **Never run 0.15 and 0.16 processes concurrently**, even though the schema change is additive; old code can bypass the new ownership checks.
-4. Install the reviewed stable `0.16.1` build and adapted application in the isolated test or staging environment while execution remains paused. Verify the resolved source and the complete consuming application before production adoption.
+4. Install the reviewed stable `0.16.2` build and adapted application in the isolated test or staging environment while execution remains paused. Verify the resolved source and the complete consuming application before production adoption.
 5. Publish only missing package migrations, without `--force`, then migrate and run doctor before starting application processes:
 
 ```bash
