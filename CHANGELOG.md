@@ -2,6 +2,24 @@
 
 All notable changes to AgentGraph are documented here.
 
+## 0.16.3 - 2026-09-05
+
+Target: preserve durable execution context and reject unsafe completion or resume paths.
+
+### Fixed
+
+- Reject omitted or malformed interrupt identities for waiting runs and reject changed responses after resume acceptance. Check interrupt deadlines under the run lock even before expiry maintenance runs.
+- Recover running checkpoints from their complete persisted Send schedule, preserving duplicate destinations, local input, and metadata. An empty committed continuation completes without restarting entry nodes. Unbound state patches are rejected.
+- Preserve the active Send invocation in interrupt checkpoints for synchronous and queued execution, including state-edit resumes. Require the pending interrupt to match the checkpoint continuation before accepting it.
+- Fail prompt and streamed `AgentNode` calls with `AgentApprovalRequiredException` when Laravel AI reports pending native tool approvals. Prevent partial writes, downstream execution, and automatic retries of this unsupported approval state.
+- Return database memory write receipts directly, including for expired records, without incrementing usage or dispatching a read event. This matches the in-memory adapter's write behavior.
+
+### Upgrade
+
+- Update general applications to `heiner/agent-graph:^0.16.3`; Laravel AI remains `^0.11.2`. No new migration or public method signature change is required.
+- Follow the stricter resume rules and the native approval limitation in [UPGRADE.md](UPGRADE.md). Context already omitted by older interrupt checkpoints cannot be reconstructed automatically.
+- The release-bound Filament Agentic Chatbot package must pin exact `0.16.3` and complete its own dependency-lock and integration gates.
+
 ## 0.16.2 - 2026-09-04
 
 Target: align the stable 0.16 runtime with Laravel AI's corrected multi-step provider loop.

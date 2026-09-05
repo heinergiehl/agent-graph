@@ -10,7 +10,11 @@ Queued and delayed continuations re-check run status under the run lock before w
 
 Sync mode persists only completed superstep checkpoints. A PHP process failure inside a sync superstep can require rerunning the current frontier. Use queued supersteps for task-level recovery across workers.
 
-Normal resume continues from the latest checkpoint for a run. Time-travel APIs work from any specific checkpoint:
+Normal resume continues from the latest checkpoint for a run.
+
+The persisted continuation includes each Send's destination, local input, and metadata. Recovery preserves separate Sends to the same destination. Wait checkpoints retain the interrupted invocation in synchronous and queued modes, so ordinary and state-edit resumes reconstruct the same local context. An empty continuation means there is no remaining node to execute; recovery completes the run without replaying its entry nodes. Local context already discarded by checkpoints written before 0.16.3 cannot be reconstructed automatically.
+
+Time-travel APIs:
 
 - `AgentGraph::checkpoint($checkpointId, withWrites: true)` returns a read-only snapshot of one checkpoint and optionally its writes.
 - `AgentGraph::replay($checkpointId)` creates a new run from the checkpoint state and continues through the checkpoint's recorded `next_nodes`.
