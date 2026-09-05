@@ -9,6 +9,7 @@ use Heiner\AgentGraph\Memory\MemoryScope;
 use Heiner\AgentGraph\Persistence\Concerns\SerializesDatabaseValues;
 use Heiner\AgentGraph\Persistence\Concerns\UsesAgentGraphDatabaseConnection;
 use Illuminate\Database\DatabaseManager;
+use RuntimeException;
 
 class DatabaseMemoryStore implements EnumerableMemoryStore
 {
@@ -52,9 +53,13 @@ class DatabaseMemoryStore implements EnumerableMemoryStore
             ]));
         }
 
+        $record = $query->first()
+            ?? throw new RuntimeException('Memory record was not found after writing.');
+        $receipt = $this->decodeRecord($record, ['value', 'meta']);
+
         event(new GraphMemoryWritten(payload: ['scope' => $scope->type, 'namespace' => $namespace, 'key' => $key]));
 
-        return $this->read([$scope], $namespace, $key);
+        return $receipt;
     }
 
     public function read(array $scopes, string $namespace, string $key): ?array

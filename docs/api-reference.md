@@ -109,7 +109,7 @@ All methods are available through the `AgentGraph` facade and `AgentGraphManager
 - `manifest(string $key): GraphManifest` returns a registered graph manifest.
 - `validate(string $key): GraphValidationReport` validates one registered graph definition.
 - `graph(string $key): PendingGraphRun` creates a pending run builder for a registered graph. Calling `run()` on the builder intentionally creates a new run.
-- `resume(string $runId, array $payload = [], ?callable $onEvent = null, bool $collectEvents = false): RunResult` resumes an active run. If a pending interrupt exists, `interrupt_id` must match it. Terminal runs cannot be resumed.
+- `resume(string $runId, array $payload = [], ?callable $onEvent = null, bool $collectEvents = false): RunResult` resumes an active run. A waiting run requires the matching non-empty string `interrupt_id`, and elapsed interrupt deadlines are rejected before acceptance. An accepted answer permits only an exact retry or `recover()`. For a running run with no pending or accepted interrupt response, an empty payload delegates to recovery; unbound state patches are rejected. Terminal runs cannot be resumed.
 - `resumeStrict(string $runId, array $payload = [], ?callable $onEvent = null, bool $collectEvents = false): RunResult` resumes a run while rejecting unknown state keys.
 - `resumeContract(string $runId, array $payload = [], ?callable $onEvent = null, bool $collectEvents = false): RunResult` resumes a run after validating the response against a pending typed `InterruptContract` payload. Free-form interrupt payloads are left compatible.
 - `resumeWithStateEdit(string $runId, string $interruptId, array $statePatch, ?string $resolvedBy = null, ?callable $onEvent = null, bool $collectEvents = false): RunResult` resolves a `state_edit` interrupt on an active run after strict schema validation.
@@ -345,6 +345,8 @@ Configuration methods: `agent()`, `prompt()`, `attachments()`, `stream()`, `prov
 Errors: missing or invalid agent configuration and non-string prompts throw `RuntimeException`.
 
 In 0.16, a non-recoverable Laravel AI streaming `Error` throws `AgentStreamException`, with public readonly `nodeId` and `event` properties. The node follows normal failure/retry handling without persisting partial output as success. Already delivered deltas cannot be withdrawn. Recoverable error events may continue to a valid final response.
+
+Since 0.16.3, prompt responses with `hasPendingApprovals()` or streamed `ToolApprovalRequest` events containing pending approvals throw `Heiner\AgentGraph\Exceptions\AgentApprovalRequiredException`, with public readonly `nodeId`. The runtime does not automatically retry this exception or commit partial node writes. Native Laravel AI approval resumption is not supported by `AgentNode`; use graph approval interrupts before invoking the agent or an application-owned approval node.
 
 Stability: stable.
 

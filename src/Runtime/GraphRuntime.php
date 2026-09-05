@@ -27,6 +27,7 @@ use Heiner\AgentGraph\Events\GraphRunCancelled;
 use Heiner\AgentGraph\Events\GraphRunCompleted;
 use Heiner\AgentGraph\Events\GraphRunFailed;
 use Heiner\AgentGraph\Events\GraphRunStarted;
+use Heiner\AgentGraph\Exceptions\AgentApprovalRequiredException;
 use Heiner\AgentGraph\Exceptions\NodeExecutionClaimLostException;
 use Heiner\AgentGraph\Graph\GraphDefinition;
 use Heiner\AgentGraph\Graph\InterruptContract;
@@ -113,8 +114,12 @@ class GraphRuntime
 
             $resumeInterruptId = null;
 
-            if (isset($payload['interrupt_id'])) {
-                $resumeInterruptId = (string) $payload['interrupt_id'];
+            if (array_key_exists('interrupt_id', $payload)) {
+                if (! is_string($payload['interrupt_id']) || $payload['interrupt_id'] === '') {
+                    throw new InvalidArgumentException('interrupt_id must be a non-empty string.');
+                }
+
+                $resumeInterruptId = $payload['interrupt_id'];
 
                 if ($interrupt === null && $this->matchesPendingResumeRecovery($run, $resumeInterruptId, $resumePayload)) {
                     return $this->recoverLocked($runId, $graphs);
@@ -122,17 +127,29 @@ class GraphRuntime
 
                 $this->assertMatchingPendingInterrupt($runId, $resumeInterruptId, $interrupt);
                 $this->assertInterruptContractResponse($interrupt, $resumePayload, $validateInterruptContract);
-            } elseif ($interrupt !== null && in_array($run['status'], ['interrupted', 'delayed'], true)) {
-                throw new InvalidArgumentException("Run [{$runId}] requires interrupt_id to resume.");
+            } else {
+                if ($interrupt !== null
+                    || in_array($run['status'], [RunStatus::INTERRUPTED, RunStatus::DELAYED], true)
+                    || is_array(data_get($run, 'meta.runtime.recovery.pending_resume'))) {
+                    throw new InvalidArgumentException("Run [{$runId}] requires interrupt_id to resume.");
+                }
+
+                if ($resumePayload !== []) {
+                    throw new InvalidArgumentException("Run [{$runId}] has no pending interrupt; use recover() without a state patch.");
+                }
+
+                if (! $incomingOptions->isDefault()) {
+                    $this->runs->update($runId, ['meta' => $runtimeOptions->applyToMeta($run['meta'] ?? [])]);
+                }
+
+                return $this->recoverLocked($runId, $graphs);
             }
 
             $this->assertSubgraphResumeBinding($run, $interrupt, $resumePayload, $graphs);
 
             $state = array_merge($checkpoint['state'], $resumePayload);
-            $next = is_array($checkpoint['next_nodes'] ?? null) && $checkpoint['next_nodes'] !== []
-                ? $checkpoint['next_nodes']
-                : $graph->entryNodes();
-            $schedule = $this->scheduler()->normalize($next);
+            $schedule = $this->resumeSchedule($checkpoint, $interrupt);
+            $next = $this->scheduler()->nodeIds($schedule);
             $updates = ['status' => 'running'];
             $meta = is_array($run['meta'] ?? null) ? $run['meta'] : [];
 
@@ -140,29 +157,21 @@ class GraphRuntime
                 $meta = $runtimeOptions->applyToMeta($meta);
             }
 
-            if ($resumeInterruptId !== null) {
-                $updates['meta'] = $this->withPendingResumeRecovery(
-                    meta: $meta,
-                    kind: 'resume',
-                    interruptId: $resumeInterruptId,
-                    checkpoint: $checkpoint,
-                    resumePayload: $resumePayload,
-                    schedule: $schedule,
-                );
-                $updates['resume_at'] = null;
+            $updates['meta'] = $this->withPendingResumeRecovery(
+                meta: $meta,
+                kind: 'resume',
+                interruptId: $resumeInterruptId,
+                checkpoint: $checkpoint,
+                resumePayload: $resumePayload,
+                schedule: $schedule,
+            );
+            $updates['resume_at'] = null;
 
-                $run = $this->transaction(function () use ($resumeInterruptId, $runId, $payload, $updates): array {
-                    $this->interrupts->resolvePending($resumeInterruptId, $runId, $payload);
+            $run = $this->transaction(function () use ($resumeInterruptId, $runId, $payload, $updates): array {
+                $this->interrupts->resolvePending($resumeInterruptId, $runId, $payload);
 
-                    return $this->runs->update($runId, $updates);
-                });
-            } else {
-                if ($meta !== (is_array($run['meta'] ?? null) ? $run['meta'] : [])) {
-                    $updates['meta'] = $meta;
-                }
-
-                $run = $this->runs->update($runId, $updates);
-            }
+                return $this->runs->update($runId, $updates);
+            });
 
             $this->dispatchRunEvent('run.resumed', new GraphResumed($runId, $run['thread_id'], $graph->key(), payload: $resumePayload));
 
@@ -203,10 +212,8 @@ class GraphRuntime
             $this->assertStatePatchMatchesSchema($graph, $statePatch);
 
             $state = array_merge($checkpoint['state'], $statePatch);
-            $next = is_array($checkpoint['next_nodes'] ?? null) && $checkpoint['next_nodes'] !== []
-                ? $checkpoint['next_nodes']
-                : $graph->entryNodes();
-            $schedule = $this->scheduler()->normalize($next);
+            $schedule = $this->resumeSchedule($checkpoint, $interrupt);
+            $next = $this->scheduler()->nodeIds($schedule);
             $response = ['interrupt_id' => $interruptId, 'state' => $statePatch];
             $meta = $this->withPendingResumeRecovery(
                 meta: is_array($run['meta'] ?? null) ? $run['meta'] : [],
@@ -519,6 +526,7 @@ class GraphRuntime
                             'type' => $result->interruptType(),
                             'payload' => $result->interruptPayload(),
                             'expires_at' => $result->interruptPolicy()?->expiresAtValue(),
+                            'schedule' => data_get($execution, 'meta.schedule', $nodeId),
                         ]
                         : null,
                     'meta' => $result->meta(),
@@ -768,7 +776,7 @@ class GraphRuntime
                 }
 
                 if ($result->status() === 'interrupted') {
-                    $interrupted = ['node_id' => $nodeId, 'result' => $result];
+                    $interrupted = ['node_id' => $nodeId, 'result' => $result, 'schedule' => $scheduledNode->toArray()];
                 }
 
                 $this->recordNodeExecutionIfEnabled($run['public_id'], $step + 1, $scheduleIndex, $nodeId, $result);
@@ -803,6 +811,7 @@ class GraphRuntime
                     'type' => $interrupted['result']->interruptType(),
                     'payload' => $interrupted['result']->interruptPayload(),
                     'expires_at' => $interrupted['result']->interruptPolicy()?->expiresAtValue(),
+                    'schedule' => $interrupted['schedule'],
                 ] : null;
                 [$checkpoint, $run, $interrupt, $resumeAt] = $this->persistSuperstepCheckpoint(
                     $graph, $run, $state, $results, $nextSchedule, $step, $checkpointId, $wait,
@@ -976,7 +985,7 @@ class GraphRuntime
     {
         return $this->transaction(function () use ($graph, $run, $state, $results, $nextSchedule, $step, $parentCheckpointId, $wait): array {
             $storedSchedule = $wait !== null
-                ? $this->scheduler()->normalize([(string) $wait['node_id']])
+                ? $this->scheduler()->normalize([$wait['schedule'] ?? (string) $wait['node_id']])
                 : $nextSchedule;
             $meta = $this->checkpointMetaForResults($results, $storedSchedule);
 
@@ -1146,7 +1155,9 @@ class GraphRuntime
                 } catch (Throwable $exception) {
                     $failedAttempts++;
 
-                    if ($attempt >= $retryPolicy->maxAttempts() || ! $retryPolicy->shouldRetry($exception, $attempt, $context)) {
+                    if ($exception instanceof AgentApprovalRequiredException
+                        || $attempt >= $retryPolicy->maxAttempts()
+                        || ! $retryPolicy->shouldRetry($exception, $attempt, $context)) {
                         throw $exception;
                     }
 
@@ -1768,6 +1779,24 @@ class GraphRuntime
         if (($interrupt['interrupt_id'] ?? null) !== $interruptId) {
             throw new InvalidArgumentException("Interrupt [{$interruptId}] does not match the pending interrupt for run [{$runId}].");
         }
+
+        if (($interrupt['expires_at'] ?? null) !== null && now()->greaterThanOrEqualTo($interrupt['expires_at'])) {
+            throw new InvalidArgumentException("Interrupt [{$interruptId}] has expired and cannot be resumed.");
+        }
+    }
+
+    /** @return array<int, Send> */
+    protected function resumeSchedule(array $checkpoint, array $interrupt): array
+    {
+        $schedule = $this->scheduler()->fromCheckpoint($checkpoint);
+
+        if (($interrupt['checkpoint_id'] ?? null) !== $checkpoint['checkpoint_id']
+            || ($interrupt['run_id'] ?? null) !== $checkpoint['run_id']
+            || $this->scheduler()->nodeIds($schedule) !== [$interrupt['node_id']]) {
+            throw new InvalidArgumentException('The pending interrupt does not match the checkpoint continuation; reconciliation is required.');
+        }
+
+        return $schedule;
     }
 
     protected function assertSubgraphResumeBinding(array $run, ?array $interrupt, array $payload, array $graphs, array $ancestors = []): void

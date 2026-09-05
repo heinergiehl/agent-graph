@@ -5,6 +5,7 @@ namespace Heiner\AgentGraph\LaravelAi;
 use Closure;
 use Heiner\AgentGraph\Contracts\Node;
 use Heiner\AgentGraph\Events\GraphStreamDelta;
+use Heiner\AgentGraph\Exceptions\AgentApprovalRequiredException;
 use Heiner\AgentGraph\Exceptions\AgentStreamException;
 use Heiner\AgentGraph\Runtime\NodeContext;
 use Heiner\AgentGraph\Runtime\NodeResult;
@@ -13,6 +14,7 @@ use Illuminate\Support\Collection;
 use Laravel\Ai\Contracts\Agent;
 use Laravel\Ai\Streaming\Events\Error as StreamError;
 use Laravel\Ai\Streaming\Events\TextDelta;
+use Laravel\Ai\Streaming\Events\ToolApprovalRequest;
 use Laravel\Ai\Streaming\Events\ToolCall;
 use Laravel\Ai\Streaming\Events\ToolResult;
 use ReflectionFunction;
@@ -196,6 +198,10 @@ class AgentNode implements Node
                     throw new AgentStreamException($this->id, $event);
                 }
 
+                if ($event instanceof ToolApprovalRequest && $event->pendingApprovals->isNotEmpty()) {
+                    throw new AgentApprovalRequiredException($this->id);
+                }
+
                 if (method_exists($event, 'toArray')) {
                     $streamEvents[] = $event->toArray();
                 }
@@ -234,6 +240,11 @@ class AgentNode implements Node
             $steps = [];
         } else {
             $response = $agent->prompt($prompt, (array) $attachments, $this->provider, $this->model, $this->timeout);
+
+            if ($response->hasPendingApprovals()) {
+                throw new AgentApprovalRequiredException($this->id);
+            }
+
             $text = $response->text;
             $usage = $response->usage;
             $responseMeta = $response->meta;

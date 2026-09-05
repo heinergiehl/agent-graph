@@ -2,7 +2,7 @@
 
 AgentGraph 0.16 changes the durable task and queued-node completion contracts to reject writes from workers whose claim has been replaced. The existing Filament Agentic Chatbot database-store subclasses must be updated together with the SDK. The unchanged subclasses cause PHP declaration errors when loaded; passing the plugin's memory-store tests does not establish production compatibility.
 
-This guide describes the upgrade to stable AgentGraph `0.16.2`. General AgentGraph root applications may use `^0.16.2`, but the Filament Agentic Chatbot release architecture freezes an exact productive dependency closure. Its package manifest and release contract must therefore pin exact `0.16.2`, and the host lock must resolve that exact stable version together with Laravel AI `^0.11.2`. Patch 0.16.2 retains the 0.16.1 duplicate-column migration fix. The original RC1 compatibility patch and its early test results remain below as historical evidence.
+This guide describes the upgrade to stable AgentGraph `0.16.3`. General AgentGraph root applications may use `^0.16.3`, but the Filament Agentic Chatbot release architecture freezes an exact productive dependency closure. Its package manifest and release contract must therefore pin exact `0.16.3`, and the host lock must resolve that exact stable version together with Laravel AI `^0.11.2`. Patch 0.16.3 retains the 0.16.1 duplicate-column migration fix and adds the [context and resume safety corrections](../../UPGRADE.md#0162-to-0163-durable-context-and-resume-safety). Verify the stricter resume rules and explicit native tool-approval failure in the consuming product's own gates. The original RC1 compatibility patch and its early test results remain below as historical evidence.
 
 ## Verified RC2-to-stable integration
 
@@ -61,10 +61,10 @@ fail(string $executionId, string $claimToken, array $error): array;
 For the stable plugin release, update both its package requirement and release-contract constraint to the exact stable version in the same reviewed change:
 
 ```json
-"heiner/agent-graph": "0.16.2"
+"heiner/agent-graph": "0.16.3"
 ```
 
-Do not use `^0.16.2` in this plugin's package or release contract: that would weaken its exact immutable dependency closure. A root application that directly constrains AgentGraph must admit exact `0.16.2`; otherwise it can inherit the plugin's exact requirement. Keep the existing stable minimum-stability setting and unrelated repository definitions. Refresh the plugin package metadata, AgentGraph, and Laravel AI together when updating the host lock, and verify the installed source/dist references. Changing only the plugin's own vendor directory does not update the host SDK.
+Do not use `^0.16.3` in this plugin's package or release contract: that would weaken its exact immutable dependency closure. A root application that directly constrains AgentGraph must admit exact `0.16.3`; otherwise it can inherit the plugin's exact requirement. Keep the existing stable minimum-stability setting and unrelated repository definitions. Refresh the plugin package metadata, AgentGraph, and Laravel AI together when updating the host lock, and verify the installed source/dist references. Changing only the plugin's own vendor directory does not update the host SDK.
 
 Composer installation alone does not authorize existing immutable deployments to use a new runtime. The plugin must also review its SDK-version acceptance and artifact compatibility contract. Do not rewrite stored artifact hashes, deployment manifests, graph versions, or pinned dependency closures to bypass that check. Verify preserved releases through an explicit compatibility policy or publish newly compiled releases through the normal deployment lifecycle.
 

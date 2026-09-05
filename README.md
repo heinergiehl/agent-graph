@@ -6,7 +6,7 @@ AgentGraph does not replace Laravel AI providers, agents, tools, streaming, or s
 
 ## Release Status
 
-**0.16.2** is the current stable pre-v1 release. It retains the 0.16.1 runtime and migration behavior while moving the supported Laravel AI baseline to `^0.11.2`, including the corrected multi-step Gemini tool loop. Ordinary graph/run/resume and `TaskRunner::once()` method signatures remain unchanged; custom stores and delay schedulers still need the coordinated 0.16 upgrade. Read the [changelog](CHANGELOG.md), [0.16.2 release notes](docs/releases/v0.16.2.md), and [upgrade guide](UPGRADE.md) before adopting it.
+**0.16.3** is the current stable pre-v1 release. It preserves Send context across waits and recovery, rejects unsafe resume requests, prevents committed terminal work from restarting, and fails explicitly when a Laravel AI agent requires unsupported native tool approval. Memory writes now return receipts without read-side expiry or usage effects. The Laravel AI baseline remains `^0.11.2`; public method signatures and migrations are unchanged from 0.16.2. Read the [changelog](CHANGELOG.md), [0.16.3 release notes](docs/releases/v0.16.3.md), and [upgrade guide](UPGRADE.md) before adopting it.
 
 The v1 target is a hardened MVP: stable graph execution, checkpoints, interrupts/resume, idempotent tasks, scoped memory, traces, queues, run-event observation, Laravel AI agent nodes, graphs as tools, native subgraph nodes, and durable app workflow sessions. Experimental checkpoint inspection, replay, forking, worker-backed queued supersteps, and vector memory contracts are available for post-v1-style workflows. OpenTelemetry export and visual workflow editing remain outside the stable v1 core.
 
@@ -15,12 +15,12 @@ CI validates the pre-v1 release line against PHP 8.3/8.4, Laravel 12/13, and `la
 ## Installation
 
 ```bash
-composer require heiner/agent-graph:^0.16.2
+composer require heiner/agent-graph:^0.16.3
 php artisan agent-graph:install
 php artisan migrate
 ```
 
-Existing `^0.15.1` constraints stay on the 0.15 line and do not install this minor release automatically. Existing `^0.16.0` applications can receive 0.16.2 when their lock is updated. AgentGraph 0.16 requires adapted custom stores, the additive claim-token migration, and a coordinated restart of every application process. The 0.16.1 migration behavior retained by 0.16.2 safely adopts an already-present nullable `varchar(26)` claim-token column, but rejects incompatible definitions without altering them. A release-bound consuming plugin may instead require an exact dependency closure. The Filament Agentic Chatbot package must pin exact `0.16.2`, update its release contract, and refresh the host lock together. See the [Filament plugin upgrade guide](docs/guides/filament-plugin-upgrade-0.16.md) for that two-package integration.
+Existing `^0.15.1` constraints stay on the 0.15 line and do not install this minor release automatically. Existing `^0.16.0` applications can receive 0.16.3 when their lock is updated. AgentGraph 0.16 requires adapted custom stores, the additive claim-token migration, and a coordinated restart of every application process. The 0.16.1 migration behavior retained by 0.16.3 safely adopts an already-present nullable `varchar(26)` claim-token column, but rejects incompatible definitions without altering them. A release-bound consuming plugin may instead require an exact dependency closure. The Filament Agentic Chatbot package must pin exact `0.16.3`, update its release contract, and refresh the host lock together. See the [Filament plugin upgrade guide](docs/guides/filament-plugin-upgrade-0.16.md) for that two-package integration.
 
 `agent-graph:install` publishes the package config and migrations. The database store uses these tables by default:
 
@@ -137,6 +137,8 @@ $run = AgentGraph::resumeContract($runId, [
 Only active runs can be resumed. `completed`, `cancelled`, and `failed` runs reject `resume()` and `resumeWithStateEdit()` so terminal history is not mutated accidentally.
 
 Resume acceptance is durable before continuation starts. If a process exits after the interrupt was accepted but before the next checkpoint or queued frontier was persisted, retry the exact same resume payload or call `AgentGraph::recover($runId)`. A different payload cannot take over the accepted transition.
+
+Waiting runs require a matching, non-empty string `interrupt_id`, including after expiry. Elapsed deadlines are checked during acceptance even before `expireInterrupts()` runs. For a running run with no pending or accepted interrupt response, `resume($runId, [])` delegates to recovery and preserves the complete saved schedule, including an empty terminal continuation. State patches without a pending interrupt are rejected.
 
 The resumed node can read the original resume response separately from merged graph state:
 
@@ -454,6 +456,8 @@ AgentNode::make('answer')
 ```
 
 `AgentNode::stream()` delegates to Laravel AI's `stream()` API. In 0.16, a terminal Laravel AI streaming `Error` raises `AgentStreamException` instead of committing partial output as success. Already delivered deltas can remain visible, so consumers must check the final outcome.
+
+Pending native Laravel AI tool approvals raise `AgentApprovalRequiredException` in both prompt and stream modes. AgentGraph does not commit partial node writes, execute downstream nodes, or automatically retry this exception. Use graph approval interrupts to authorize work before invoking the agent; native Laravel AI approval resumption is not implemented by `AgentNode`.
 
 AgentGraph dispatches `GraphStreamDelta` for streamed text deltas and, when run-event observation is enabled, exposes those deltas as normalized `stream.delta` `RunEvent` objects. Use `onTextDelta()` for a direct synchronous callback to bridge deltas into app transports:
 
