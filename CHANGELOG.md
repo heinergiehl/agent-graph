@@ -2,6 +2,13 @@
 
 All notable changes to AgentGraph are documented here.
 
+## 0.18.1 - 2026-09-12
+
+- Validate accepted resume authority before recovery scheduling, receipt claims and superstep commits. Recheck resolved responses, checkpoint identity, state, complete Send schedule, graph versions and recursive subgraph bindings without mutating rejected runs.
+- Recover exact resume redeliveries after acceptance has moved from the run marker to a durable receipt, including nested child acceptance and expired parent leases.
+- Preserve valid child progress while checking its historical interrupt and response before parent completion. Inconsistent legacy recovery evidence requires reconciliation rather than bypassing current checkpoint bindings.
+- Add honest post-acceptance Fiber crash tests and database mutation snapshots. No migration or public API change; see [release and consumer upgrade notes](docs/releases/v0.18.1.md).
+
 ## 0.18.0 - 2026-09-12
 
 - Replace recursive synchronous continuation with an iterative driver shared by start, resume, recovery, replay and fork.

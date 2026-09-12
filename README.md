@@ -6,7 +6,7 @@ AgentGraph does not replace Laravel AI providers, agents, tools, streaming, or s
 
 ## Release Status
 
-**0.18.0** is the current stable pre-v1 release. It uses iterative graph execution, short coordination locks and explicit execution ownership. Node invocation and resume validation have separate responsibilities; Laravel AI remains the agent/provider layer at `^0.11.2`. Read the [changelog](CHANGELOG.md), [0.18 release notes](docs/releases/v0.18.0.md) and [upgrade guide](UPGRADE.md), especially for custom runtime subclasses.
+**0.18.1** is the current stable pre-v1 release. It validates accepted resume authority before recovery can mutate persistence or continue child work. It retains iterative graph execution, short coordination locks and explicit execution ownership; Laravel AI remains the agent/provider layer at `^0.11.2`. Read the [changelog](CHANGELOG.md), [0.18.1 release notes](docs/releases/v0.18.1.md) and [upgrade guide](UPGRADE.md), especially for custom runtime subclasses.
 
 The v1 target is a hardened MVP: stable graph execution, checkpoints, interrupts/resume, idempotent tasks, scoped memory, traces, queues, run-event observation, Laravel AI agent nodes, graphs as tools, native subgraph nodes, and durable app workflow sessions. Experimental checkpoint inspection, replay, forking, worker-backed queued supersteps, and vector memory contracts are available for post-v1-style workflows. OpenTelemetry export and visual workflow editing remain outside the stable v1 core.
 
@@ -15,7 +15,7 @@ CI validates the pre-v1 release line against PHP 8.3/8.4, Laravel 12/13, and `la
 ## Installation
 
 ```bash
-composer require heiner/agent-graph:^0.18.0
+composer require heiner/agent-graph:^0.18.1
 php artisan agent-graph:install
 php artisan migrate
 ```

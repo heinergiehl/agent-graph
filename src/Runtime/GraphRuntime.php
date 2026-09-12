@@ -126,7 +126,7 @@ class GraphRuntime
 
                 $resumeInterruptId = $payload['interrupt_id'];
 
-                if ($interrupt === null && $this->resumeProtocol()->matchesPendingResumeRecovery($run, $resumeInterruptId, $resumePayload)) {
+                if ($interrupt === null && $this->resumeProtocol()->matchesAcceptedResume($run, $resumeInterruptId, $resumePayload)) {
                     return $this->recoverLocked($runId, $graphs);
                 }
 
@@ -144,6 +144,7 @@ class GraphRuntime
                 }
 
                 if (! $incomingOptions->isDefault()) {
+                    $this->resumeProtocol()->assertRecoveryBindings($run, $graphs);
                     $this->updateRun($run, ['meta' => $runtimeOptions->applyToMeta($run['meta'] ?? [])]);
                 }
 
@@ -189,7 +190,7 @@ class GraphRuntime
             ], $runtimeOptions);
         });
 
-        return $next instanceof ExecutionFrontier ? $this->drive($graphs[$next->run['graph_key']], $next) : $next;
+        return $next instanceof ExecutionFrontier ? $this->drive($graphs[$next->run['graph_key']], $next, $graphs) : $next;
     }
 
     /**
@@ -205,7 +206,7 @@ class GraphRuntime
             $checkpoint = $this->checkpoints->latestForRun($runId) ?? throw new RuntimeException("Run [{$runId}] has no checkpoint.");
             $interrupt = $this->interrupts->pendingForRun($runId);
 
-            if ($interrupt === null && $this->resumeProtocol()->matchesPendingResumeRecovery($run, $interruptId, $statePatch)) {
+            if ($interrupt === null && $this->resumeProtocol()->matchesAcceptedResume($run, $interruptId, $statePatch)) {
                 return $this->recoverLocked($runId, $graphs);
             }
 
@@ -250,7 +251,7 @@ class GraphRuntime
             ]);
         });
 
-        return $next instanceof ExecutionFrontier ? $this->drive($graphs[$next->run['graph_key']], $next) : $next;
+        return $next instanceof ExecutionFrontier ? $this->drive($graphs[$next->run['graph_key']], $next, $graphs) : $next;
     }
 
     /**
@@ -263,7 +264,7 @@ class GraphRuntime
             fn (): RunResult|ExecutionFrontier => $this->recoverLocked($runId, $graphs),
         );
 
-        return $next instanceof ExecutionFrontier ? $this->drive($graphs[$next->run['graph_key']], $next) : $next;
+        return $next instanceof ExecutionFrontier ? $this->drive($graphs[$next->run['graph_key']], $next, $graphs) : $next;
     }
 
     public function cancel(string $runId, array $meta = []): RunResult
@@ -471,6 +472,7 @@ class GraphRuntime
         }
 
         $peers = $store->listForRunStep((string) $existing['run_id'], (int) $existing['step']);
+        $this->resumeProtocol()->assertRecoveryBindings($existingRun, $graphs);
 
         if (array_filter($peers, fn (array $peer): bool => ($peer['status'] ?? null) === 'failed') !== []) {
             if ($deliverContinuation) {
@@ -596,7 +598,7 @@ class GraphRuntime
     {
         $next = $this->commitSuperstep($runId, $step, $graphs);
 
-        return $next instanceof ExecutionFrontier ? $this->drive($graphs[$next->run['graph_key']], $next) : $next;
+        return $next instanceof ExecutionFrontier ? $this->drive($graphs[$next->run['graph_key']], $next, $graphs) : $next;
     }
 
     protected function commitSuperstep(string $runId, int $step, array $graphs): RunResult|ExecutionFrontier|null
@@ -637,6 +639,7 @@ class GraphRuntime
         $graph = $graphs[$run['graph_key']] ?? throw new RuntimeException("Graph [{$run['graph_key']}] is not defined.");
         $this->assertGraphVersionMatches($run, $graph, 'Run');
 
+        $this->resumeProtocol()->assertRecoveryBindings($run, $graphs);
         $failed = collect($executions)->first(fn (array $execution): bool => $execution['status'] === 'failed');
 
         if ($failed !== null) {
@@ -835,8 +838,9 @@ class GraphRuntime
     }
 
     /** Deliver committed receipts outside coordination locks; only scheduling and commits take the run lock. */
-    protected function drive(GraphDefinition $graph, RunResult|ExecutionFrontier $next): RunResult
+    protected function drive(GraphDefinition $graph, RunResult|ExecutionFrontier $next, array $graphs = []): RunResult
     {
+        $graphs = [$graph->key() => $graph] + $graphs;
         if ($next instanceof RunResult) {
             return $next;
         }
@@ -852,10 +856,10 @@ class GraphRuntime
                 }
                 foreach ($next->executions as $execution) {
                     $this->assertRunRevision($next->run);
-                    $this->executeNodeReceipt($execution['execution_id'], [$graph->key() => $graph], false);
+                    $this->executeNodeReceipt($execution['execution_id'], $graphs, false);
                 }
                 $this->assertRunRevision($next->run);
-                $next = $this->commitSuperstep($runId, $next->step, [$graph->key() => $graph])
+                $next = $this->commitSuperstep($runId, $next->step, $graphs)
                     ?? $this->currentResult($runId);
             }
 
@@ -1122,6 +1126,7 @@ class GraphRuntime
         $executions = $executionStore->listForRunStep($runId, $queuedStep);
         $pending = data_get($run, 'meta.runtime.recovery.pending_resume');
 
+        $this->resumeProtocol()->assertRecoveryBindings($run, $graphs);
         $this->resumeProtocol()->assertCheckpointContinuationIsSafe($run, $checkpoint, $executions);
 
         if ($executions !== []) {
@@ -1488,7 +1493,7 @@ class GraphRuntime
 
     protected function resumeProtocol(): ResumeProtocol
     {
-        return new ResumeProtocol($this->runs, $this->interrupts, $this->scheduler());
+        return new ResumeProtocol($this->runs, $this->interrupts, $this->scheduler(), $this->checkpoints, $this->nodeExecutionStore());
     }
 
     protected function inspector(): RunInspector
