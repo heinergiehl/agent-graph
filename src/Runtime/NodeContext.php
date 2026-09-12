@@ -2,8 +2,10 @@
 
 namespace Heiner\AgentGraph\Runtime;
 
+use Closure;
 use Heiner\AgentGraph\Contracts\MemoryStore;
 use Heiner\AgentGraph\Contracts\TraceStore;
+use Heiner\AgentGraph\Exceptions\NodeTimeoutException;
 
 class NodeContext
 {
@@ -19,7 +21,23 @@ class NodeContext
         protected TaskRunner $tasks,
         protected ?array $resumePayload = null,
         protected ?string $interruptId = null,
+        protected ?Closure $executionGuard = null,
+        protected ?float $deadline = null,
     ) {}
+
+    /** Cooperative check before starting another external operation. */
+    public function assertActive(): void
+    {
+        ($this->executionGuard ?? static function (): void {})();
+        if ($this->remainingSeconds() === 0.0) {
+            throw new NodeTimeoutException("Node [{$this->nodeId}] timed out.");
+        }
+    }
+
+    public function remainingSeconds(): ?float
+    {
+        return $this->deadline === null ? null : max(0.0, $this->deadline - hrtime(true) / 1e9);
+    }
 
     public function state(?string $key = null, mixed $default = null): mixed
     {

@@ -3,6 +3,7 @@
 namespace Heiner\AgentGraph\Persistence;
 
 use Heiner\AgentGraph\Contracts\RunStore;
+use Heiner\AgentGraph\Exceptions\RunStateChangedException;
 use Heiner\AgentGraph\Persistence\Concerns\SerializesDatabaseValues;
 use Heiner\AgentGraph\Persistence\Concerns\UsesAgentGraphDatabaseConnection;
 use Illuminate\Database\DatabaseManager;
@@ -102,6 +103,18 @@ class DatabaseRunStore implements RunStore
 
     public function update(string $runId, array $attributes): array
     {
+        return $this->transition($runId, (int) ($this->find($runId)['revision'] ?? -1), $attributes);
+    }
+
+    public function transition(string $runId, int $revision, array $attributes): array
+    {
+        // Keep the updated row locked through the readback: returning somebody
+        // else's later revision would accidentally grant that caller's ownership.
+        return $this->connection()->transaction(fn () => $this->persistTransition($runId, $revision, $attributes));
+    }
+
+    protected function persistTransition(string $runId, int $revision, array $attributes): array
+    {
         foreach (['input', 'error', 'meta'] as $field) {
             if (array_key_exists($field, $attributes)) {
                 $attributes[$field] = $this->encode($attributes[$field]);
@@ -118,7 +131,11 @@ class DatabaseRunStore implements RunStore
             $attributes['failed_at'] ??= now();
         }
 
-        $this->query()->where('public_id', $runId)->update($attributes);
+        $attributes['revision'] = $revision + 1;
+
+        if ($this->query()->where('public_id', $runId)->where('revision', $revision)->update($attributes) !== 1) {
+            throw new RunStateChangedException("Run [{$runId}] changed during execution.");
+        }
 
         return $this->find($runId);
     }

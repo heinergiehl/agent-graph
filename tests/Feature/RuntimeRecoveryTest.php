@@ -202,7 +202,8 @@ it('rolls back queued resume scheduling and recovers from the durable resume mar
         'answer' => 'Ada',
     ]))->toThrow(RuntimeException::class, 'Injected crash during queued scheduling.');
 
-    expect($executions->listForRun($interrupted->runId()))->toBe([])
+    expect($executions->listForRun($interrupted->runId()))->toHaveCount(1)
+        ->and($executions->listForRun($interrupted->runId())[0]['status'])->toBe('interrupted')
         ->and(data_get($runs->find($interrupted->runId()), 'meta.runtime.recovery.pending_resume.interrupt_id'))
         ->toBe($interrupted->interrupt()['interrupt_id']);
 
@@ -210,7 +211,7 @@ it('rolls back queued resume scheduling and recovers from the durable resume mar
     $recovered = $manager->recover($interrupted->runId());
 
     expect($recovered->status())->toBeIn(['running', 'completed'])
-        ->and($executions->listForRun($interrupted->runId()))->toHaveCount(1);
+        ->and($executions->listForRun($interrupted->runId()))->toHaveCount(2);
 });
 
 it('redrives durable queued executions when dispatch crashes after commit', function () {
@@ -240,7 +241,7 @@ it('redrives durable queued executions when dispatch crashes after commit', func
         'answer' => 'Ada',
     ]))->toThrow(RuntimeException::class, 'Injected crash before queued dispatch.');
 
-    expect($executions->listForRun($interrupted->runId()))->toHaveCount(1)
+    expect($executions->listForRun($interrupted->runId()))->toHaveCount(2)
         ->and(data_get($runs->find($interrupted->runId()), 'meta.runtime.recovery.pending_resume'))
         ->toBeNull()
         ->and($runtime->dispatches)->toBe(1);
@@ -366,9 +367,9 @@ final class RuntimeRecoveryCrashOnRunningRunStore extends DatabaseRunStore
 {
     public bool $crashOnRunningUpdate = false;
 
-    public function update(string $runId, array $attributes): array
+    public function transition(string $runId, int $revision, array $attributes): array
     {
-        $run = parent::update($runId, $attributes);
+        $run = parent::transition($runId, $revision, $attributes);
 
         if ($this->crashOnRunningUpdate && ($attributes['status'] ?? null) === 'running') {
             throw new RuntimeException('Injected crash during running transition.');
@@ -382,9 +383,9 @@ final class RuntimeRecoveryCrashOnCompletedRunStore extends DatabaseRunStore
 {
     public bool $crashOnCompletedUpdate = false;
 
-    public function update(string $runId, array $attributes): array
+    public function transition(string $runId, int $revision, array $attributes): array
     {
-        $run = parent::update($runId, $attributes);
+        $run = parent::transition($runId, $revision, $attributes);
 
         if ($this->crashOnCompletedUpdate && ($attributes['status'] ?? null) === 'completed') {
             throw new RuntimeException('Injected crash during completed transition.');

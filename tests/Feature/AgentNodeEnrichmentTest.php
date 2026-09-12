@@ -3,6 +3,7 @@
 use Heiner\AgentGraph\Facades\AgentGraph;
 use Heiner\AgentGraph\Graph\StateGraph;
 use Heiner\AgentGraph\LaravelAi\AgentNode;
+use Heiner\AgentGraph\Runtime\NodeContext;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Support\Collection;
 use Laravel\Ai\Approvals\Decisions;
@@ -59,13 +60,15 @@ it('writes structured output and tool metadata from public Laravel AI response D
         ->and($steps[0]['name'])->toBe('step-one');
 });
 
-it('writes stream events from public Laravel AI streaming events', function () {
+it('writes native streamed response metadata, text, usage, tools, and requested events', function () {
     app()->instance(StreamEventAgent::class, new StreamEventAgent);
 
     AgentGraph::define(
         StateGraph::make('stream_event_agent_node')
             ->state([
                 'answer' => 'string',
+                'usage' => 'array',
+                'meta' => 'array',
                 'stream_events' => 'array',
                 'tool_calls' => 'array',
                 'tool_results' => 'array',
@@ -75,6 +78,8 @@ it('writes stream events from public Laravel AI streaming events', function () {
                 ->prompt('hello')
                 ->stream()
                 ->writeTextTo('answer')
+                ->writeUsageTo('usage')
+                ->writeMetaTo('meta')
                 ->writeStreamEventsTo('stream_events')
                 ->writeToolCallsTo('tool_calls')
                 ->writeToolResultsTo('tool_results'))
@@ -89,9 +94,64 @@ it('writes stream events from public Laravel AI streaming events', function () {
 
     expect($run->status())->toBe('completed')
         ->and($run->state('answer'))->toBe('Hello')
+        ->and($run->state('usage'))->toMatchArray(['prompt_tokens' => 1, 'completion_tokens' => 1])
+        ->and($run->state('meta'))->toMatchArray(['provider' => 'fake', 'model' => 'fake-stream'])
         ->and($run->state('stream_events'))->toHaveCount(4)
         ->and($toolCalls[0]['name'])->toBe('lookup')
         ->and($toolResults[0]['result']['ok'])->toBeTrue();
+});
+
+it('rejects unsupported structured and step streaming mappings before invoking the provider', function (Closure $mapping, string $expected) {
+    $agent = new StreamEventAgent;
+
+    AgentGraph::define(
+        StateGraph::make('unsupported_stream_mapping_'.str_replace(' ', '_', $expected))
+            ->state(['answer' => 'string', 'unsupported' => 'array'])
+            ->node('answer', $mapping(
+                AgentNode::make('answer')
+                    ->agent($agent)
+                    ->prompt('hello')
+                    ->stream()
+                    ->writeTextTo('answer'),
+            ))
+            ->edge('__start__', 'answer')
+            ->compile(),
+    );
+
+    $run = AgentGraph::graph('unsupported_stream_mapping_'.str_replace(' ', '_', $expected))->run();
+
+    expect($run->failed())->toBeTrue()
+        ->and($run->error()['message'])->toContain($expected)
+        ->and($agent->streamInvocations)->toBe(0);
+})->with([
+    'structured output' => [fn (AgentNode $node): AgentNode => $node->writeStructuredTo('unsupported'), 'structured output'],
+    'steps' => [fn (AgentNode $node): AgentNode => $node->writeStepsTo('unsupported'), 'steps'],
+]);
+
+it('does not turn an optional streamed text observer failure into another provider invocation', function () {
+    $agent = new StreamEventAgent;
+
+    AgentGraph::define(
+        StateGraph::make('stream_observer_failure')
+            ->state(['answer' => 'string'])
+            ->node('answer', AgentNode::make('answer')
+                ->agent($agent)
+                ->prompt('hello')
+                ->stream()
+                ->writeTextTo('answer')
+                ->onTextDelta(function (): void {
+                    throw new RuntimeException('Optional stream observer failed.');
+                }))
+            ->retry('answer', maxAttempts: 3)
+            ->edge('__start__', 'answer')
+            ->compile(),
+    );
+
+    $run = AgentGraph::graph('stream_observer_failure')->run();
+
+    expect($run->completed())->toBeTrue()
+        ->and($run->state('answer'))->toBe('Hello')
+        ->and($agent->streamInvocations)->toBe(1);
 });
 
 class EnrichedAgent implements Agent
@@ -141,8 +201,41 @@ class EnrichedAgent implements Agent
     }
 }
 
+it('checks cancellation after prompt callbacks before admitting the native provider', function () {
+    $agent = new StreamEventAgent;
+    AgentGraph::define(StateGraph::make('cancel_before_provider')
+        ->node('agent', AgentNode::make('agent')->agent($agent)->stream()->prompt(function (array $state, NodeContext $context) {
+            AgentGraph::cancel($context->runId());
+
+            return 'never sent';
+        }))->edge(StateGraph::START, 'agent'));
+    expect(AgentGraph::graph('cancel_before_provider')->run()->status())->toBe('cancelled')
+        ->and($agent->streamInvocations)->toBe(0);
+});
+
+it('supports a one-second node budget using native whole-second provider timeouts', function () {
+    $agent = new class extends EnrichedAgent
+    {
+        public ?int $receivedTimeout = null;
+
+        public function prompt(Decisions|string $prompt, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null, ?int $timeout = null): AgentResponse
+        {
+            $this->receivedTimeout = $timeout;
+
+            return parent::prompt($prompt, $attachments, $provider, $model, $timeout);
+        }
+    };
+    AgentGraph::define(StateGraph::make('provider_deadline')
+        ->node('agent', AgentNode::make('agent')->agent($agent)->prompt('bounded'))
+        ->timeout('agent', 1)->edge(StateGraph::START, 'agent'));
+    expect(AgentGraph::graph('provider_deadline')->run()->completed())->toBeTrue()
+        ->and($agent->receivedTimeout)->toBe(1);
+});
+
 final class StreamEventAgent extends EnrichedAgent
 {
+    public int $streamInvocations = 0;
+
     public function prompt(Decisions|string $prompt, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null, ?int $timeout = null): AgentResponse
     {
         throw new RuntimeException('unused');
@@ -150,6 +243,8 @@ final class StreamEventAgent extends EnrichedAgent
 
     public function stream(Decisions|string $prompt, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null, ?int $timeout = null): StreamableAgentResponse
     {
+        $this->streamInvocations++;
+
         return new StreamableAgentResponse('stream-1', function () {
             yield (new TextDelta('delta-1', 'message-1', 'Hello', 1))->withInvocationId('stream-1');
             yield (new StreamToolCall('tool-call-event', new ResponseToolCall('call-1', 'lookup', ['id' => 1]), 2))->withInvocationId('stream-1');

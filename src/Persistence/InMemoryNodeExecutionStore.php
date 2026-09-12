@@ -5,7 +5,7 @@ namespace Heiner\AgentGraph\Persistence;
 use Heiner\AgentGraph\Contracts\NodeExecutionStore;
 use Heiner\AgentGraph\Exceptions\NodeExecutionClaimLostException;
 
-class InMemoryNodeExecutionStore implements NodeExecutionStore
+class InMemoryNodeExecutionStore extends InMemoryStore implements NodeExecutionStore
 {
     protected array $executions = [];
 

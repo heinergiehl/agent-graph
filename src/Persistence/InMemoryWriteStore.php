@@ -4,7 +4,7 @@ namespace Heiner\AgentGraph\Persistence;
 
 use Heiner\AgentGraph\Contracts\WriteStore;
 
-class InMemoryWriteStore implements WriteStore
+class InMemoryWriteStore extends InMemoryStore implements WriteStore
 {
     protected array $writes = [];
 

@@ -138,6 +138,14 @@ class DoctorCommand extends Command
                 : $this->failStatus('Node execution claim_token column: missing; publish and run the 0.16 migration.');
         }
 
+        if ($tables['runs'] ?? false) {
+            $hasRevision = $schema->hasColumn(config('agent-graph.tables.runs'), 'revision');
+            $failed = $failed || ! $hasRevision;
+            $hasRevision
+                ? $this->pass('Run revision column: present')
+                : $this->failStatus('Run revision column: missing; publish and run the 0.17 migration.');
+        }
+
         return $failed ? self::FAILURE : self::SUCCESS;
     }
 

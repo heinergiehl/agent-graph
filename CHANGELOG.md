@@ -2,6 +2,16 @@
 
 All notable changes to AgentGraph are documented here.
 
+## 0.17.0 - 2026-09-12
+
+- Unify sync and queued execution around durable node receipts; reuse successful frontier results after crashes.
+- Fence run transitions by revision, accept cancellation without waiting for the running node's cache lock, and check authority before retries and child work.
+- Share node deadlines across retries and expose cooperative cancellation/time-budget checks.
+- Isolate diagnostic failures and consume native Laravel AI stream completion metadata with one bounded trace.
+- Add the run revision migration and doctor check. Custom RunStore adapters must implement atomic `transition`.
+
+See [release notes](docs/releases/v0.17.0.md) for migration steps, verification and the limits of external-effect recovery.
+
 ## 0.16.3 - 2026-09-05
 
 Target: preserve durable execution context and reject unsafe completion or resume paths.

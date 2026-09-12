@@ -1,5 +1,9 @@
 # Upgrade Guide
 
+## 0.16.3 To 0.17.0: Shared Durable Execution
+
+Read the [0.17 release upgrade instructions](docs/releases/v0.17.0.md#upgrade) before deployment. This minor release adds the run revision migration, changes custom RunStore contracts, persists node receipts in sync mode, isolates diagnostic callbacks, and rejects unsupported stream mappings before provider execution. Stop and restart all workers together. Existing waits and identities remain intact.
+
 ## 0.16.2 To 0.16.3: Durable Context and Resume Safety
 
 Update general applications to `heiner/agent-graph:^0.16.3`. Laravel AI remains `^0.11.2`. No new migration, public method signature, or persistence adapter signature changes in this patch. Stop long-lived workers during deployment and restart all application processes on the updated dependency set.

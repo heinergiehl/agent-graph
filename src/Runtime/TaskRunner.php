@@ -18,6 +18,7 @@ class TaskRunner
         protected string $runId,
         protected string $nodeId,
         protected ?string $checkpointId = null,
+        protected ?Closure $executionGuard = null,
     ) {}
 
     public function once(string $key, array $input, Closure $handler): mixed
@@ -45,17 +46,18 @@ class TaskRunner
         }
 
         try {
-            event(new GraphTaskStarted($this->runId, nodeId: $this->nodeId, payload: ['task_key' => $key, 'input' => $input]));
+            app(RunEventDispatcher::class)->notify(fn () => event(new GraphTaskStarted($this->runId, nodeId: $this->nodeId, payload: ['task_key' => $key, 'input' => $input])));
+            ($this->executionGuard ?? static function (): void {})();
             $result = $handler();
         } catch (\Throwable $exception) {
             $this->tasks->fail($key, $attempt, $exception->getMessage());
-            event(new GraphTaskFailed($this->runId, nodeId: $this->nodeId, payload: ['task_key' => $key, 'message' => $exception->getMessage()]));
+            app(RunEventDispatcher::class)->notify(fn () => event(new GraphTaskFailed($this->runId, nodeId: $this->nodeId, payload: ['task_key' => $key, 'message' => $exception->getMessage()])));
 
             throw $exception;
         }
 
         $this->tasks->complete($key, $attempt, $result);
-        event(new GraphTaskCompleted($this->runId, nodeId: $this->nodeId, payload: ['task_key' => $key, 'result' => $result]));
+        app(RunEventDispatcher::class)->notify(fn () => event(new GraphTaskCompleted($this->runId, nodeId: $this->nodeId, payload: ['task_key' => $key, 'result' => $result])));
 
         return $result;
     }

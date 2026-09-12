@@ -91,8 +91,7 @@ it('keeps a committed receipt when its completion observer throws', function (st
     });
 
     try {
-        expect(fn () => $runner->once('observer-task', [], $handler))
-            ->toThrow(RuntimeException::class, 'Completion observer is unavailable.');
+        $runner->once('observer-task', [], $handler);
     } finally {
         app('events')->forget(GraphTaskCompleted::class);
     }

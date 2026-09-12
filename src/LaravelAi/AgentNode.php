@@ -12,11 +12,10 @@ use Heiner\AgentGraph\Runtime\NodeResult;
 use Heiner\AgentGraph\Runtime\RunEventDispatcher;
 use Illuminate\Support\Collection;
 use Laravel\Ai\Contracts\Agent;
+use Laravel\Ai\Responses\StreamedAgentResponse;
 use Laravel\Ai\Streaming\Events\Error as StreamError;
 use Laravel\Ai\Streaming\Events\TextDelta;
 use Laravel\Ai\Streaming\Events\ToolApprovalRequest;
-use Laravel\Ai\Streaming\Events\ToolCall;
-use Laravel\Ai\Streaming\Events\ToolResult;
 use ReflectionFunction;
 use RuntimeException;
 
@@ -175,6 +174,7 @@ class AgentNode implements Node
 
     public function __invoke(NodeContext $context): NodeResult
     {
+        $context->assertActive();
         $agent = $this->resolveAgent();
         $prompt = $this->resolveValue($this->prompt, $context);
         $attachments = $this->resolveValue($this->attachments, $context);
@@ -183,17 +183,34 @@ class AgentNode implements Node
             throw new RuntimeException("Agent node [{$this->id}] prompt must resolve to a string.");
         }
 
+        $context->assertActive();
+        $remaining = $context->remainingSeconds();
+        // Laravel AI accepts whole seconds; the node's monotonic deadline still
+        // governs result admission and subsequent work at subsecond precision.
+        $timeout = $remaining === null ? $this->timeout : min($this->timeout ?? PHP_INT_MAX, max(1, (int) ceil($remaining)));
+
         $writes = [];
         $meta = ['agent_node' => $this->id];
 
         if ($this->stream) {
-            $response = $agent->stream($prompt, (array) $attachments, $this->provider, $this->model, $this->timeout);
-            $text = '';
-            $streamEvents = [];
-            $toolCalls = [];
-            $toolResults = [];
+            $this->assertSupportedStreamingMappings();
+
+            $response = $agent->stream($prompt, (array) $attachments, $this->provider, $this->model, $timeout);
+            $streamedResponse = null;
+            $eventCount = 0;
+            $textDeltaCount = 0;
+            $dispatcher = app(RunEventDispatcher::class);
+
+            $response->then(function (StreamedAgentResponse $completed) use (&$streamedResponse): void {
+                $streamedResponse = $completed;
+            });
+
+            $streamEvents = $this->streamEventsChannel === null ? null : [];
 
             foreach ($response as $event) {
+                $context->assertActive();
+                $eventCount++;
+
                 if ($event instanceof StreamError && ! $event->recoverable) {
                     throw new AgentStreamException($this->id, $event);
                 }
@@ -202,12 +219,12 @@ class AgentNode implements Node
                     throw new AgentApprovalRequiredException($this->id);
                 }
 
-                if (method_exists($event, 'toArray')) {
+                if ($streamEvents !== null && method_exists($event, 'toArray')) {
                     $streamEvents[] = $event->toArray();
                 }
 
                 if ($event instanceof TextDelta) {
-                    $text .= $event->delta;
+                    $textDeltaCount++;
                     $payload = [
                         'agent_node' => $this->id,
                         'invocation_id' => $event->invocationId,
@@ -217,7 +234,7 @@ class AgentNode implements Node
                         'timestamp' => $event->timestamp,
                     ];
 
-                    app(RunEventDispatcher::class)->dispatch('stream.delta', new GraphStreamDelta(
+                    $dispatcher->dispatch('stream.delta', new GraphStreamDelta(
                         runId: $context->runId(),
                         threadId: $context->threadId(),
                         graphKey: (string) ($context->graphMeta()['key'] ?? ''),
@@ -225,21 +242,32 @@ class AgentNode implements Node
                         payload: $payload,
                     ));
 
-                    $context->traces()->record($context->runId(), 'stream.delta', $payload);
-                    $this->invokeTextDeltaCallback($event, $payload, $context);
-                } elseif ($event instanceof ToolCall) {
-                    $toolCalls[] = $event->toolCall->toArray();
-                } elseif ($event instanceof ToolResult) {
-                    $toolResults[] = $event->toolResult->toArray();
+                    $dispatcher->notify(fn () => $this->invokeTextDeltaCallback($event, $payload, $context));
                 }
             }
 
-            $usage = $response->usage;
-            $responseMeta = null;
+            if (! $streamedResponse instanceof StreamedAgentResponse) {
+                throw new RuntimeException("Agent node [{$this->id}] stream did not produce a completed Laravel AI response.");
+            }
+
+            $text = $streamedResponse->text;
+            $usage = $streamedResponse->usage;
+            $responseMeta = $streamedResponse->meta;
             $structured = null;
+            $toolCalls = $this->collectionToArray($streamedResponse->toolCalls);
+            $toolResults = $this->collectionToArray($streamedResponse->toolResults);
             $steps = [];
+
+            $dispatcher->notify(fn () => $context->traces()->record($context->runId(), 'stream.completed', [
+                'agent_node' => $this->id,
+                'invocation_id' => $streamedResponse->invocationId,
+                'event_count' => $eventCount,
+                'text_delta_count' => $textDeltaCount,
+                'tool_call_count' => count($toolCalls),
+                'tool_result_count' => count($toolResults),
+            ]));
         } else {
-            $response = $agent->prompt($prompt, (array) $attachments, $this->provider, $this->model, $this->timeout);
+            $response = $agent->prompt($prompt, (array) $attachments, $this->provider, $this->model, $timeout);
 
             if ($response->hasPendingApprovals()) {
                 throw new AgentApprovalRequiredException($this->id);
@@ -259,11 +287,11 @@ class AgentNode implements Node
             $writes[$this->textChannel] = $text;
         }
 
-        if ($this->usageChannel !== null && $usage !== null) {
+        if ($this->usageChannel !== null) {
             $writes[$this->usageChannel] = $usage->toArray();
         }
 
-        if ($this->metaChannel !== null && $responseMeta !== null) {
+        if ($this->metaChannel !== null) {
             $writes[$this->metaChannel] = $responseMeta->toArray();
         }
 
@@ -299,6 +327,27 @@ class AgentNode implements Node
         }
 
         return $agent;
+    }
+
+    protected function assertSupportedStreamingMappings(): void
+    {
+        $unsupported = [];
+
+        if ($this->structuredChannel !== null) {
+            $unsupported[] = 'structured output';
+        }
+
+        if ($this->stepsChannel !== null) {
+            $unsupported[] = 'steps';
+        }
+
+        if ($unsupported !== []) {
+            throw new RuntimeException(sprintf(
+                'Agent node [%s] cannot write %s from a Laravel AI stream.',
+                $this->id,
+                implode(' or ', $unsupported),
+            ));
+        }
     }
 
     protected function resolveValue(mixed $value, NodeContext $context): mixed

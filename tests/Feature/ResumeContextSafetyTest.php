@@ -114,7 +114,7 @@ it('rejects an interrupt bound to an earlier checkpoint before accepting its ans
         ->and($manager->inspect($run->runId())->status())->toBe('interrupted');
 })->with([false, true]);
 
-it('rejects a state patch without an interrupt while allowing empty checkpoint recovery', function () {
+it('isolates checkpoint observer failures while rejecting an unbound state patch', function () {
     $manager = resumeSafetyManager();
     $manager->define(StateGraph::make('unbound_patch')
         ->state(['answer' => 'string'])
@@ -123,17 +123,15 @@ it('rejects a state patch without an interrupt while allowing empty checkpoint r
     app('events')->listen(GraphCheckpointCreated::class, function (): void {
         throw new RuntimeException('Synthetic disconnect after checkpoint.');
     });
-    expect(fn () => $manager->graph('unbound_patch')->thread('unbound-patch')->run())
-        ->toThrow(RuntimeException::class, 'Synthetic disconnect');
-    $runId = $manager->latestForThreadGraph('unbound-patch', 'unbound_patch')['public_id'];
+    $run = $manager->graph('unbound_patch')->thread('unbound-patch')->run();
+    $runId = $run->runId();
 
     expect(fn () => $manager->resume($runId, ['answer' => 'replacement']))
-        ->toThrow(InvalidArgumentException::class, 'has no pending interrupt');
-    $result = $manager->resume($runId, []);
-    expect($result->completed())->toBeTrue()->and($result->state('answer'))->toBe('committed');
+        ->toThrow(RuntimeException::class, 'completed and cannot be resumed');
+    expect($run->completed())->toBeTrue()->and($run->state('answer'))->toBe('committed');
 });
 
-it('does not rerun committed terminal work after a checkpoint observer disconnect', function (string $continuation) {
+it('isolates a checkpoint observer disconnect after terminal work is committed', function () {
     $manager = resumeSafetyManager();
     $effects = 0;
     $manager->define(StateGraph::make('terminal_boundary')
@@ -152,22 +150,11 @@ it('does not rerun committed terminal work after a checkpoint observer disconnec
         }
     });
 
-    expect(fn () => $manager->graph('terminal_boundary')->thread('audit-terminal')->run())
-        ->toThrow(RuntimeException::class, 'Synthetic observer disconnect');
-    $runId = $manager->latestForThreadGraph('audit-terminal', 'terminal_boundary')['public_id'];
-    $snapshot = $manager->inspect($runId);
-    expect($snapshot->status())->toBe('running')
-        ->and($snapshot->checkpoint()['next_nodes'])->toBe([])
-        ->and($snapshot->state('receipt'))->toBe('already-committed')
+    $run = $manager->graph('terminal_boundary')->thread('audit-terminal')->run();
+    expect($run->completed())->toBeTrue()
+        ->and($run->state('receipt'))->toBe('already-committed')
         ->and($effects)->toBe(1);
-
-    $result = $continuation === 'recover'
-        ? $manager->recover($runId)
-        : $manager->resume($runId, []);
-
-    expect($result->completed())->toBeTrue()
-        ->and($effects)->toBe(1);
-})->with(['resume', 'recover']);
+});
 
 it('preserves local Send input and metadata across ordinary and state-edit waits', function (string $mode, bool $stateEdit) {
     config(['agent-graph.execution.mode' => $mode]);
@@ -265,7 +252,7 @@ it('preserves Send input when the target node interrupts and resumes', function 
         ->and($seen)->toBe(['order-42', 'order-42']);
 });
 
-it('preserves every Send branch and its input when resuming a running checkpoint', function (string $continuation) {
+it('preserves every Send branch and its input when a checkpoint observer fails', function () {
     $manager = resumeSafetyManager();
     $seen = [];
     $manager->define(StateGraph::make('send_resume_context')
@@ -287,20 +274,13 @@ it('preserves every Send branch and its input when resuming a running checkpoint
             throw new RuntimeException('Synthetic disconnect before the fan-out.');
         }
     });
-    expect(fn () => $manager->graph('send_resume_context')->thread('audit-send')->run())
-        ->toThrow(RuntimeException::class, 'Synthetic disconnect');
-    $runId = $manager->latestForThreadGraph('audit-send', 'send_resume_context')['public_id'];
-    expect(data_get($manager->inspect($runId)->checkpoint(), 'meta.runtime.schedule.next.1.input.item'))->toBe('B');
-
-    $result = $continuation === 'recover'
-        ? $manager->recover($runId)
-        : $manager->resume($runId, []);
+    $result = $manager->graph('send_resume_context')->thread('audit-send')->run();
 
     expect($result->completed())->toBeTrue()
         ->and($seen)->toBe(['A', 'B']);
-})->with(['resume', 'recover']);
+});
 
-it('preserves an accepted resume answer when a later caller omits interrupt_id', function (string $continuation) {
+it('isolates a resumed event listener failure after accepting an answer', function () {
     $manager = resumeSafetyManager();
     $manager->define(StateGraph::make('accepted_answer')
         ->state(['answer' => 'string'])
@@ -317,23 +297,17 @@ it('preserves an accepted resume answer when a later caller omits interrupt_id',
         }
     });
 
-    expect(fn () => $manager->resume($run->runId(), [
+    $result = $manager->resume($run->runId(), [
         'interrupt_id' => $run->interrupt()['interrupt_id'], 'answer' => 'accepted',
-    ]))->toThrow(RuntimeException::class, 'Synthetic disconnect after accepting resume.');
-    expect(data_get($manager->inspect($run->runId())->meta(), 'runtime.recovery.pending_resume.resume_payload.answer'))
-        ->toBe('accepted');
-
-    // The existing ID-aware path correctly rejects the changed answer.
-    expect(fn () => $manager->resume($run->runId(), [
-        'interrupt_id' => $run->interrupt()['interrupt_id'], 'answer' => 'replacement',
-    ]))->toThrow(InvalidArgumentException::class);
-
-    if ($continuation === 'resume') {
-        expect(fn () => $manager->resume($run->runId(), ['answer' => 'replacement']))
-            ->toThrow(InvalidArgumentException::class, 'requires interrupt_id');
-    }
-
-    $result = $manager->recover($run->runId());
+    ]);
     expect($result->completed())->toBeTrue()
         ->and($result->state('answer'))->toBe('accepted');
-})->with(['resume', 'recover']);
+
+    // Once completed, neither an ID-aware nor an unbound caller can replace the answer.
+    expect(fn () => $manager->resume($run->runId(), [
+        'interrupt_id' => $run->interrupt()['interrupt_id'], 'answer' => 'replacement',
+    ]))->toThrow(RuntimeException::class, 'completed and cannot be resumed');
+
+    expect(fn () => $manager->resume($run->runId(), ['answer' => 'replacement']))
+        ->toThrow(RuntimeException::class, 'completed and cannot be resumed');
+});

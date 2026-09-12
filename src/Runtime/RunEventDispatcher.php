@@ -13,7 +13,7 @@ class RunEventDispatcher
 
     public function dispatch(string $type, GraphEvent $event): void
     {
-        event($event);
+        $this->notify(fn () => event($event));
 
         if ($this->observers === []) {
             return;
@@ -29,11 +29,25 @@ class RunEventDispatcher
         $listener = $this->observers[$key]['listener'];
 
         if ($listener !== null) {
-            $listener($runEvent);
+            $this->notify(fn () => $listener($runEvent));
         }
 
         if ($this->observers[$key]['collect']) {
             $this->observers[$key]['events'][] = $runEvent;
+        }
+    }
+
+    /** Observers are diagnostics, never authorization or durable execution receipts. */
+    public function notify(callable $callback): void
+    {
+        try {
+            $callback();
+        } catch (\Throwable $exception) {
+            try {
+                report($exception);
+            } catch (\Throwable) {
+                // A broken diagnostics sink cannot change a business outcome.
+            }
         }
     }
 

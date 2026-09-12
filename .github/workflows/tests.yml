@@ -45,3 +45,45 @@ jobs:
 
       - name: Run checks
         run: composer check
+
+  postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_DB: agentgraph_test
+          POSTGRES_USER: agentgraph
+          POSTGRES_PASSWORD: agentgraph-test-only
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U agentgraph -d agentgraph_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      AGENT_GRAPH_POSTGRES_CONCURRENCY: '1'
+      AGENT_GRAPH_POSTGRES_HOST: 127.0.0.1
+      AGENT_GRAPH_POSTGRES_PORT: '5432'
+      AGENT_GRAPH_POSTGRES_DATABASE: agentgraph_test
+      AGENT_GRAPH_POSTGRES_USERNAME: agentgraph
+      AGENT_GRAPH_POSTGRES_PASSWORD: agentgraph-test-only
+      AGENT_GRAPH_POSTGRES_MIGRATION_TEST: '1'
+      AGENT_GRAPH_POSTGRES_MIGRATION_HOST: 127.0.0.1
+      AGENT_GRAPH_POSTGRES_MIGRATION_PORT: '5432'
+      AGENT_GRAPH_POSTGRES_MIGRATION_DATABASE: agentgraph_test
+      AGENT_GRAPH_POSTGRES_MIGRATION_USERNAME: agentgraph
+      AGENT_GRAPH_POSTGRES_MIGRATION_PASSWORD: agentgraph-test-only
+      AGENT_GRAPH_PGVECTOR_TEST: '1'
+      AGENT_GRAPH_PGVECTOR_HOST: 127.0.0.1
+      AGENT_GRAPH_PGVECTOR_PORT: '5432'
+      AGENT_GRAPH_PGVECTOR_DATABASE: agentgraph_test
+      AGENT_GRAPH_PGVECTOR_USERNAME: agentgraph
+      AGENT_GRAPH_PGVECTOR_PASSWORD: agentgraph-test-only
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: pdo_pgsql
+          coverage: none
+      - run: composer install --prefer-dist --no-interaction --no-progress
+      - run: vendor/bin/pest tests/Integration/PostgresRuntimeConcurrencyTest.php tests/Integration/PostgresClaimTokenMigrationTest.php tests/Integration/PgvectorMemoryStoreTest.php

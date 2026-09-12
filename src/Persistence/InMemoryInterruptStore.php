@@ -5,7 +5,7 @@ namespace Heiner\AgentGraph\Persistence;
 use Heiner\AgentGraph\Contracts\InterruptStore;
 use RuntimeException;
 
-class InMemoryInterruptStore implements InterruptStore
+class InMemoryInterruptStore extends InMemoryStore implements InterruptStore
 {
     protected array $interrupts = [];
 
