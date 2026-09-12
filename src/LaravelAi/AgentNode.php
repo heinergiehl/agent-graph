@@ -7,7 +7,6 @@ use Heiner\AgentGraph\Contracts\Node;
 use Heiner\AgentGraph\Events\GraphStreamDelta;
 use Heiner\AgentGraph\Exceptions\AgentApprovalRequiredException;
 use Heiner\AgentGraph\Exceptions\AgentStreamException;
-use Heiner\AgentGraph\Exceptions\NodeTimeoutException;
 use Heiner\AgentGraph\Runtime\NodeContext;
 use Heiner\AgentGraph\Runtime\NodeResult;
 use Heiner\AgentGraph\Runtime\RunEventDispatcher;
@@ -186,10 +185,9 @@ class AgentNode implements Node
 
         $context->assertActive();
         $remaining = $context->remainingSeconds();
-        if ($remaining !== null && $remaining < 1) {
-            throw new NodeTimeoutException('AgentNode requires at least one second of remaining provider timeout.');
-        }
-        $timeout = $remaining === null ? $this->timeout : min($this->timeout ?? PHP_INT_MAX, (int) floor($remaining));
+        // Laravel AI accepts whole seconds; the node's monotonic deadline still
+        // governs result admission and subsequent work at subsecond precision.
+        $timeout = $remaining === null ? $this->timeout : min($this->timeout ?? PHP_INT_MAX, max(1, (int) ceil($remaining)));
 
         $writes = [];
         $meta = ['agent_node' => $this->id];

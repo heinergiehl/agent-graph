@@ -213,6 +213,25 @@ it('checks cancellation after prompt callbacks before admitting the native provi
         ->and($agent->streamInvocations)->toBe(0);
 });
 
+it('supports a one-second node budget using native whole-second provider timeouts', function () {
+    $agent = new class extends EnrichedAgent
+    {
+        public ?int $receivedTimeout = null;
+
+        public function prompt(Decisions|string $prompt, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null, ?int $timeout = null): AgentResponse
+        {
+            $this->receivedTimeout = $timeout;
+
+            return parent::prompt($prompt, $attachments, $provider, $model, $timeout);
+        }
+    };
+    AgentGraph::define(StateGraph::make('provider_deadline')
+        ->node('agent', AgentNode::make('agent')->agent($agent)->prompt('bounded'))
+        ->timeout('agent', 1)->edge(StateGraph::START, 'agent'));
+    expect(AgentGraph::graph('provider_deadline')->run()->completed())->toBeTrue()
+        ->and($agent->receivedTimeout)->toBe(1);
+});
+
 final class StreamEventAgent extends EnrichedAgent
 {
     public int $streamInvocations = 0;
