@@ -19,6 +19,7 @@ use Heiner\AgentGraph\Persistence\DatabaseRunStore;
 use Heiner\AgentGraph\Persistence\DatabaseTaskStore;
 use Heiner\AgentGraph\Persistence\DatabaseTraceStore;
 use Heiner\AgentGraph\Persistence\DatabaseWriteStore;
+use Heiner\AgentGraph\Runtime\ExecutionFrontier;
 use Heiner\AgentGraph\Runtime\GraphRuntime;
 use Heiner\AgentGraph\Runtime\NodeContext;
 use Heiner\AgentGraph\Runtime\NodeResult;
@@ -374,7 +375,7 @@ final class SubgraphHardeningCrashBeforeContinuationRuntime extends GraphRuntime
 {
     public ?string $crashGraphKey = null;
 
-    protected function continueLocked(GraphDefinition $graph, array $run, array $state, array $nextNodes, array $resumeContext = [], ?RuntimeOptions $options = null): RunResult
+    protected function prepareContinuationLocked(GraphDefinition $graph, array $run, array $state, array $nextNodes, array $resumeContext = [], ?RuntimeOptions $options = null): RunResult|ExecutionFrontier
     {
         if ($graph->key() === $this->crashGraphKey && array_key_exists('resume_payload', $resumeContext)) {
             $this->crashGraphKey = null;
@@ -382,7 +383,7 @@ final class SubgraphHardeningCrashBeforeContinuationRuntime extends GraphRuntime
             throw new RuntimeException('Injected subgraph continuation crash.');
         }
 
-        return parent::continueLocked($graph, $run, $state, $nextNodes, $resumeContext, $options);
+        return parent::prepareContinuationLocked($graph, $run, $state, $nextNodes, $resumeContext, $options);
     }
 }
 

@@ -2,6 +2,15 @@
 
 All notable changes to AgentGraph are documented here.
 
+## 0.18.0 - 2026-09-12
+
+- Replace recursive synchronous continuation with an iterative driver shared by start, resume, recovery, replay and fork.
+- Release run and session coordination locks before delivering node work; preserve transactional acceptance, revision fencing and receipt claims.
+- Separate node invocation/retry/deadlines into `NodeExecutor`, immutable execution ownership into `ExecutionAuthority`, and wait/recovery validation into `ResumeProtocol`. Remove the old runtime implementations and hidden execution fields in run arrays.
+- Bound authority polling during text bursts while checking every control event and final result. Keep native Laravel AI responsible for agent execution and its tool loop.
+- Return current persisted results when queued work executes immediately through Laravel's sync queue driver.
+- Keep public APIs and persistence formats compatible with 0.17.0; internal `GraphRuntime` subclass hooks change. See [upgrade and verification notes](docs/releases/v0.18.0.md).
+
 ## 0.17.0 - 2026-09-12
 
 - Unify sync and queued execution around durable node receipts; reuse successful frontier results after crashes.

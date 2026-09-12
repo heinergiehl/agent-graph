@@ -1,5 +1,13 @@
 # Upgrade Guide
 
+## 0.17.0 To 0.18.0: Runtime Responsibilities and Short Coordination Locks
+
+Update to `heiner/agent-graph:^0.18.0`; existing `^0.17` and exact pins need an explicit constraint change. Public manager, session, graph, node and persistence contracts remain unchanged. No migration is added beyond 0.17. Stop and restart graph workers together. See the [release notes](docs/releases/v0.18.0.md) for behavior and verification.
+
+**Custom `GraphRuntime` subclasses must be reviewed before upgrading.** Protected implementation methods are reorganized: `invokeNode`, `invokeNodeOnce`, `nodeContext`, `callNode`, `withRetryMeta`, `assertTaskAdmission` and `assertNodeAuthority` are removed from `GraphRuntime`; their execution responsibilities now reside in `NodeExecutor` and `ExecutionAuthority`. Resume validation helpers, including `assertSubgraphResumeBinding`, now reside in `ResumeProtocol`. `continue`, `continueLocked`, `continueOwned` and `queueSuperstepLocked` are replaced by preparation, scheduling and iterative delivery; preparation/commit internals can return `ExecutionFrontier`. Old subclass overrides may no longer execute, even if PHP still accepts the subclass. Move application authorization into the application's explicit control gateway and node/tool boundaries, and migrate any instrumentation or fault injection with behavior tests. Diagnostic listeners are not authorization hooks. These internal classes and protected methods are not a stable extension contract.
+
+Nodes no longer inherit a run or session cache lock. Custom code must not use that lock as proof of authorization or exclusive access to an external resource; use explicit node concurrency policy or application resource locks. Run revisions and receipt claims still fence SDK work. Text deltas are provisional: cancellation is polled every 50 ms during dense text bursts, with immediate checks on non-text events and before accepting the final node result. This does not interrupt a blocked provider or authorize Laravel AI's inner tool calls.
+
 ## 0.16.3 To 0.17.0: Shared Durable Execution
 
 Read the [0.17 release upgrade instructions](docs/releases/v0.17.0.md#upgrade) before deployment. This minor release adds the run revision migration, changes custom RunStore contracts, persists node receipts in sync mode, isolates diagnostic callbacks, and rejects unsupported stream mappings before provider execution. Stop and restart all workers together. Existing waits and identities remain intact.
