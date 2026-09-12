@@ -1,5 +1,7 @@
 # Upgrade Guide
 
+For the Filament Agentic Chatbot currently pinned to 0.16.3, follow the [concrete 0.18 integration handoff](docs/guides/filament-plugin-upgrade-0.18.md). Its runtime subclass, bounded run store and exact deployment pins require coordinated changes before installation is considered verified.
+
 ## 0.17.0 To 0.18.0: Runtime Responsibilities and Short Coordination Locks
 
 Update to `heiner/agent-graph:^0.18.0`; existing `^0.17` and exact pins need an explicit constraint change. Public manager, session, graph, node and persistence contracts remain unchanged. No migration is added beyond 0.17. Stop and restart graph workers together. See the [release notes](docs/releases/v0.18.0.md) for behavior and verification.
