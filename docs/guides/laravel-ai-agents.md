@@ -17,7 +17,13 @@ Laravel AI native tool approval can suspend a provider response before the agent
 
 Authorize work with a graph [approval interrupt](../concepts/interrupts.md) before invoking the agent, or implement an application-owned node that durably handles native approval decisions. A streamed text prefix is provisional: consumers must inspect the final run outcome before treating it as a completed answer. Non-recoverable streaming errors likewise fail with `AgentStreamException`.
 
-When `stream()` is enabled, Laravel AI remains the source of token/model streaming. AgentGraph iterates the returned `StreamableAgentResponse` exactly as a graph node concern, dispatches the existing `GraphStreamDelta` event for `TextDelta` payloads, and records stream traces.
+When `stream()` is enabled, Laravel AI remains the source of token/model streaming. AgentGraph iterates the returned `StreamableAgentResponse`, then uses Laravel AI's completed `StreamedAgentResponse` to write the final text, usage, metadata, tool calls, and tool results. It dispatches the existing `GraphStreamDelta` event for `TextDelta` payloads and records one bounded completion trace without raw streamed text.
+
+Laravel AI 0.11.2 does not expose structured output or execution steps on `StreamedAgentResponse`. Calling `writeStructuredTo()` or `writeStepsTo()` with `stream()` therefore fails before the provider is invoked. Use a non-streaming `prompt()` call when those mappings are required.
+
+Native streaming events remain on Laravel AI's response. AgentGraph only serializes them into graph state when `writeStreamEventsTo()` is configured.
+
+Stream events and `onTextDelta()` callbacks are observational. Their failures are reported without repeating a completed provider invocation; applications must keep authorization and durable side effects in graph nodes or their gateway.
 
 If a run uses `onEvent()` or `collectEvents()`, those same text deltas are also exposed as normalized `stream.delta` `RunEvent` objects. This is useful for workflow observers and admin UIs, but it is not an SSE helper, Vercel protocol adapter, or replacement for Laravel AI streaming.
 

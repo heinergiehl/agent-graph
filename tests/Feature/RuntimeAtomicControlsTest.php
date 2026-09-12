@@ -74,7 +74,7 @@ it('resolves state edit interrupts while holding the run lock', function () {
         ->and($locks->keys)->toContain('agent-graph:run:'.$run->runId());
 });
 
-it('cancels runs while holding the run lock', function () {
+it('cancels runs through an atomic transition without taking the run lock', function () {
     $locks = new RuntimeAtomicRecordingLockProvider;
     $runs = new RuntimeAtomicRunStore($locks);
     $interrupts = new RuntimeAtomicInterruptStore($locks);
@@ -90,10 +90,11 @@ it('cancels runs while holding the run lock', function () {
     );
 
     $run = $manager->graph('atomic_cancel_graph')->thread('atomic-cancel')->run();
+    $lockCount = count($locks->keys);
     $cancelled = $manager->cancel($run->runId());
 
     expect($cancelled->status())->toBe('cancelled')
-        ->and($locks->keys)->toContain('agent-graph:run:'.$run->runId())
+        ->and($locks->keys)->toHaveCount($lockCount)
         ->and($runs->statuses)->toContain('cancelled');
 });
 
@@ -172,15 +173,15 @@ final class RuntimeAtomicRunStore extends InMemoryRunStore
 
     public function __construct(private readonly RuntimeAtomicRecordingLockProvider $locks) {}
 
-    public function update(string $runId, array $attributes): array
+    public function transition(string $runId, int $revision, array $attributes): array
     {
-        if (! $this->locks->isActive('agent-graph:run:'.$runId)) {
+        if (($attributes['status'] ?? null) !== 'cancelled' && ! $this->locks->isActive('agent-graph:run:'.$runId)) {
             throw new RuntimeException("Run [{$runId}] was updated outside the run lock.");
         }
 
         $this->statuses[] = $attributes['status'] ?? null;
 
-        return parent::update($runId, $attributes);
+        return parent::transition($runId, $revision, $attributes);
     }
 }
 
@@ -191,14 +192,18 @@ final class RuntimeAtomicInterruptStore extends InMemoryInterruptStore
     public function resolve(string $interruptId, array $response, ?string $resolvedBy = null): array
     {
         $interrupt = $this->find($interruptId);
-        $this->assertInsideRunLock($interruptId, $interrupt['run_id'] ?? null);
+        if (($response['type'] ?? null) !== 'cancelled') {
+            $this->assertInsideRunLock($interruptId, $interrupt['run_id'] ?? null);
+        }
 
         return parent::resolve($interruptId, $response, $resolvedBy);
     }
 
     public function resolvePending(string $interruptId, string $runId, array $response, ?string $resolvedBy = null): array
     {
-        $this->assertInsideRunLock($interruptId, $runId);
+        if (($response['type'] ?? null) !== 'cancelled') {
+            $this->assertInsideRunLock($interruptId, $runId);
+        }
 
         return parent::resolvePending($interruptId, $runId, $response, $resolvedBy);
     }

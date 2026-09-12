@@ -3,8 +3,9 @@
 namespace Heiner\AgentGraph\Persistence;
 
 use Heiner\AgentGraph\Contracts\RunStore;
+use Heiner\AgentGraph\Exceptions\RunStateChangedException;
 
-class InMemoryRunStore implements RunStore
+class InMemoryRunStore extends InMemoryStore implements RunStore
 {
     protected array $runs = [];
 
@@ -17,6 +18,7 @@ class InMemoryRunStore implements RunStore
             'graph_key' => $graphKey,
             'graph_version' => $graphVersion,
             'status' => 'running',
+            'revision' => 0,
             'current_checkpoint_id' => null,
             'input' => $input,
             'error' => null,
@@ -85,7 +87,16 @@ class InMemoryRunStore implements RunStore
 
     public function update(string $runId, array $attributes): array
     {
-        $this->runs[$runId] = array_merge($this->runs[$runId], $attributes, ['updated_at' => now()]);
+        return $this->transition($runId, (int) ($this->runs[$runId]['revision'] ?? -1), $attributes);
+    }
+
+    public function transition(string $runId, int $revision, array $attributes): array
+    {
+        if (! isset($this->runs[$runId]) || $this->runs[$runId]['revision'] !== $revision) {
+            throw new RunStateChangedException("Run [{$runId}] changed during execution.");
+        }
+
+        $this->runs[$runId] = array_merge($this->runs[$runId], $attributes, ['revision' => $revision + 1, 'updated_at' => now()]);
 
         return $this->runs[$runId];
     }

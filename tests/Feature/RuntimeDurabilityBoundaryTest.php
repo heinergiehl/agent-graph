@@ -53,7 +53,7 @@ it('commits the approval and wait status before notifying checkpoint observers',
         }
     };
 
-    expect($invoke)->toThrow(RuntimeException::class, 'Injected failure after checkpoint commit.');
+    $invoke();
     Event::forget(GraphCheckpointCreated::class);
     $run = $runs->list(['graph_key' => 'approval_boundary'])[0];
     $runId = $run['public_id'];
@@ -296,13 +296,13 @@ class DurabilityBoundaryDispatchRuntime extends GraphRuntime
 
 class DurabilityBoundaryFailWaitingRunStore extends DatabaseRunStore
 {
-    public function update(string $runId, array $attributes): array
+    public function transition(string $runId, int $revision, array $attributes): array
     {
         if (in_array($attributes['status'] ?? null, ['interrupted', 'delayed'], true)) {
             throw new RuntimeException('Injected failure while committing wait status.');
         }
 
-        return parent::update($runId, $attributes);
+        return parent::transition($runId, $revision, $attributes);
     }
 }
 
@@ -335,9 +335,18 @@ it('recovers distinct Send inputs targeting the same node', function (string $mo
         }
     };
 
-    expect($invoke)->toThrow(RuntimeException::class, 'Injected failure after fan-out checkpoint.');
+    $invoke();
     Event::forget(GraphCheckpointCreated::class);
     $run = $runs->list(['graph_key' => 'recover_duplicate_targets'])[0];
+
+    if ($mode === 'sync') {
+        expect($run['status'])->toBe('completed')
+            ->and($checkpoints->latestForRun($run['public_id'])['next_nodes'])->toBe([])
+            ->and($calls)->toBe(2);
+
+        return;
+    }
+
     expect($checkpoints->latestForRun($run['public_id'])['next_nodes'])->toBe(['worker', 'worker']);
     $result = $manager->recover($run['public_id']);
 

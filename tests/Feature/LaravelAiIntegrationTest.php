@@ -82,11 +82,17 @@ it('dispatches AgentGraph stream events for streamed Laravel AI deltas', functio
     Event::assertDispatched(GraphStreamDelta::class, fn (GraphStreamDelta $event): bool => $event->payload['delta'] === 'stream');
 
     $streamTraces = collect(app('agent-graph.traces')->listForRun($run->runId()))
-        ->where('event', 'stream.delta')
+        ->where('event', 'stream.completed')
         ->values();
 
-    expect($streamTraces)->toHaveCount(3)
-        ->and($streamTraces[0]['payload'])->toHaveKeys(['delta', 'message_id', 'invocation_id']);
+    expect($streamTraces)->toHaveCount(1)
+        ->and($streamTraces[0]['payload'])->toMatchArray([
+            'event_count' => 4,
+            'text_delta_count' => 3,
+            'tool_call_count' => 0,
+            'tool_result_count' => 0,
+        ])
+        ->and($streamTraces[0]['payload'])->not->toHaveKey('delta');
 });
 
 it('invokes AgentNode text delta callbacks while streaming', function () {

@@ -4,7 +4,7 @@ namespace Heiner\AgentGraph\Persistence;
 
 use Heiner\AgentGraph\Contracts\CheckpointStore;
 
-class InMemoryCheckpointStore implements CheckpointStore
+class InMemoryCheckpointStore extends InMemoryStore implements CheckpointStore
 {
     protected array $checkpoints = [];
 

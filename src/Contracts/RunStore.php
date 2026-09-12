@@ -17,4 +17,7 @@ interface RunStore
     public function listTimeTravelChildren(string $checkpointId, int $limit = 50): array;
 
     public function update(string $runId, array $attributes): array;
+
+    /** Atomically update only the expected revision; otherwise throw RunStateChangedException. */
+    public function transition(string $runId, int $revision, array $attributes): array;
 }
