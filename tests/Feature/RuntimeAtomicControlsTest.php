@@ -18,6 +18,58 @@ use Heiner\AgentGraph\Runtime\NodeContext;
 use Heiner\AgentGraph\Runtime\NodeResult;
 use Heiner\AgentGraph\Runtime\RunEventDispatcher;
 use Heiner\AgentGraph\Support\DelaySchedulerResolver;
+use Illuminate\Support\Facades\Queue;
+
+it('releases coordination locks before invoking nodes for start and resume', function (bool $session, bool $stateEdit) {
+    $locks = new RuntimeAtomicRecordingLockProvider;
+    $manager = runtimeAtomicManager($locks, new RuntimeAtomicInterruptStore($locks));
+    $observed = [];
+    $manager->define(StateGraph::make('short_locks')->state(['answer' => 'string|null'])
+        ->node('ask', function (NodeContext $context) use ($locks, &$observed, $stateEdit) {
+            $observed[] = $locks->activeKey;
+
+            return $context->state('answer') !== null
+                ? NodeResult::end()
+                : NodeResult::interrupt($stateEdit ? 'state_edit' : 'input', []);
+        })->edge(StateGraph::START, 'ask'));
+    $pending = $session
+        ? $manager->runSession('short_locks', 'session')
+        : $manager->graph('short_locks')->run();
+    $result = $stateEdit
+        ? $manager->resumeWithStateEdit($pending->runId(), $pending->interrupt()['interrupt_id'], ['answer' => 'done'])
+        : $manager->resume($pending->runId(), ['interrupt_id' => $pending->interrupt()['interrupt_id'], 'answer' => 'done']);
+    expect($result->completed())->toBeTrue()->and($observed)->toBe([null, null]);
+})->with([[false, false], [true, false], [false, true], [true, true]]);
+
+it('releases the recovery lock before delivering a persisted frontier', function () {
+    Queue::fake();
+    config()->set('agent-graph.execution.mode', 'queued_supersteps');
+    $locks = new RuntimeAtomicRecordingLockProvider;
+    $manager = runtimeAtomicManager($locks, new RuntimeAtomicInterruptStore($locks));
+    $observed = [];
+    $manager->define(StateGraph::make('recover_locks')
+        ->node('work', function () use ($locks, &$observed) {
+            $observed[] = $locks->activeKey;
+
+            return NodeResult::end();
+        })->edge(StateGraph::START, 'work'));
+    $pending = $manager->graph('recover_locks')->run();
+    config()->set('agent-graph.execution.mode', 'sync');
+    expect($manager->recover($pending->runId())->completed())->toBeTrue()
+        ->and($observed)->toBe([null]);
+});
+
+it('returns the committed result when queued delivery uses the synchronous queue driver', function () {
+    config()->set('agent-graph.execution.mode', 'queued_supersteps');
+    config()->set('queue.default', 'sync');
+    $manager = app(AgentGraphManager::class);
+    $manager->define(StateGraph::make('inline_queue')
+        ->state(['answer' => 'string'])
+        ->node('work', fn () => NodeResult::end(['answer' => 'done']))
+        ->edge(StateGraph::START, 'work'));
+    $result = $manager->graph('inline_queue')->run();
+    expect($result->completed())->toBeTrue()->and($result->state('answer'))->toBe('done');
+});
 
 it('resolves resume interrupts while holding the run lock', function () {
     $locks = new RuntimeAtomicRecordingLockProvider;

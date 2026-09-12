@@ -206,9 +206,16 @@ class AgentNode implements Node
             });
 
             $streamEvents = $this->streamEventsChannel === null ? null : [];
+            $nextAuthorityCheck = 0.0;
 
             foreach ($response as $event) {
-                $context->assertActive();
+                // Text is provisional: poll ownership at most every 50 ms during
+                // a burst. Tool/control events and expired deadlines check now.
+                $time = hrtime(true) / 1e9;
+                if (! $event instanceof TextDelta || $time >= $nextAuthorityCheck || $context->remainingSeconds() === 0.0) {
+                    $context->assertActive();
+                    $nextAuthorityCheck = $time + 0.05;
+                }
                 $eventCount++;
 
                 if ($event instanceof StreamError && ! $event->recoverable) {

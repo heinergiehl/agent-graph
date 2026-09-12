@@ -6,7 +6,7 @@ AgentGraph does not replace Laravel AI providers, agents, tools, streaming, or s
 
 ## Release Status
 
-**0.16.3** is the current stable pre-v1 release. It preserves Send context across waits and recovery, rejects unsafe resume requests, prevents committed terminal work from restarting, and fails explicitly when a Laravel AI agent requires unsupported native tool approval. Memory writes now return receipts without read-side expiry or usage effects. The Laravel AI baseline remains `^0.11.2`; public method signatures and migrations are unchanged from 0.16.2. Read the [changelog](CHANGELOG.md), [0.16.3 release notes](docs/releases/v0.16.3.md), and [upgrade guide](UPGRADE.md) before adopting it.
+**0.18.0** is the current stable pre-v1 release. It uses iterative graph execution, short coordination locks and explicit execution ownership. Node invocation and resume validation have separate responsibilities; Laravel AI remains the agent/provider layer at `^0.11.2`. Read the [changelog](CHANGELOG.md), [0.18 release notes](docs/releases/v0.18.0.md) and [upgrade guide](UPGRADE.md), especially for custom runtime subclasses.
 
 The v1 target is a hardened MVP: stable graph execution, checkpoints, interrupts/resume, idempotent tasks, scoped memory, traces, queues, run-event observation, Laravel AI agent nodes, graphs as tools, native subgraph nodes, and durable app workflow sessions. Experimental checkpoint inspection, replay, forking, worker-backed queued supersteps, and vector memory contracts are available for post-v1-style workflows. OpenTelemetry export and visual workflow editing remain outside the stable v1 core.
 
@@ -15,12 +15,12 @@ CI validates the pre-v1 release line against PHP 8.3/8.4, Laravel 12/13, and `la
 ## Installation
 
 ```bash
-composer require heiner/agent-graph:^0.16.3
+composer require heiner/agent-graph:^0.18.0
 php artisan agent-graph:install
 php artisan migrate
 ```
 
-Existing `^0.15.1` constraints stay on the 0.15 line and do not install this minor release automatically. Existing `^0.16.0` applications can receive 0.16.3 when their lock is updated. AgentGraph 0.16 requires adapted custom stores, the additive claim-token migration, and a coordinated restart of every application process. The 0.16.1 migration behavior retained by 0.16.3 safely adopts an already-present nullable `varchar(26)` claim-token column, but rejects incompatible definitions without altering them. A release-bound consuming plugin may instead require an exact dependency closure. The Filament Agentic Chatbot package must pin exact `0.16.3`, update its release contract, and refresh the host lock together. See the [Filament plugin upgrade guide](docs/guides/filament-plugin-upgrade-0.16.md) for that two-package integration.
+Existing `^0.16` or `^0.17` constraints stay on those minor lines and need an explicit change to install 0.18. Upgrades from before 0.17 also require the additive run revision migration and adapted custom stores. An exact consuming-plugin pin must be updated together with its dependency lock and integration tests. See [UPGRADE.md](UPGRADE.md).
 
 `agent-graph:install` publishes the package config and migrations. The database store uses these tables by default:
 
@@ -51,7 +51,7 @@ AGENT_GRAPH_LOCK_FAIL_WITHOUT_PROVIDER=true
 
 Use `AGENT_GRAPH_STORE=memory` only for tests and local throwaway runs. Use `AGENT_GRAPH_EXECUTION_MODE=queued_supersteps` only when workers boot the same graph definitions and process the configured queue.
 
-Set `AGENT_GRAPH_LOCK_TTL_SECONDS` longer than the longest expected node execution or active session start path. The default is 300 seconds.
+Set `AGENT_GRAPH_LOCK_TTL_SECONDS` longer than the longest protected scheduling/commit operation. If explicit node concurrency policies use the same lock provider, its TTL must also cover those node invocations. Ordinary node execution holds no run or session lock. The default is 300 seconds.
 
 Production runs require a cache store that supports atomic locks. Keep `AGENT_GRAPH_LOCK_FAIL_WITHOUT_PROVIDER=true` outside local throwaway tests.
 

@@ -16,6 +16,7 @@ use Heiner\AgentGraph\Persistence\DatabaseRunStore;
 use Heiner\AgentGraph\Persistence\DatabaseTaskStore;
 use Heiner\AgentGraph\Persistence\DatabaseTraceStore;
 use Heiner\AgentGraph\Persistence\DatabaseWriteStore;
+use Heiner\AgentGraph\Runtime\ExecutionFrontier;
 use Heiner\AgentGraph\Runtime\GraphRuntime;
 use Heiner\AgentGraph\Runtime\NodeContext;
 use Heiner\AgentGraph\Runtime\NodeResult;
@@ -345,21 +346,21 @@ final class RuntimeRecoveryCrashBeforeContinuationRuntime extends GraphRuntime
 {
     public bool $crashBeforeContinuation = false;
 
-    protected function continueLocked(
+    protected function prepareContinuationLocked(
         GraphDefinition $graph,
         array $run,
         array $state,
         array $nextNodes,
         array $resumeContext = [],
         ?RuntimeOptions $options = null,
-    ): RunResult {
+    ): RunResult|ExecutionFrontier {
         if ($this->crashBeforeContinuation && array_key_exists('resume_payload', $resumeContext)) {
             $this->crashBeforeContinuation = false;
 
             throw new RuntimeException('Injected crash before continuation.');
         }
 
-        return parent::continueLocked($graph, $run, $state, $nextNodes, $resumeContext, $options);
+        return parent::prepareContinuationLocked($graph, $run, $state, $nextNodes, $resumeContext, $options);
     }
 }
 

@@ -1,8 +1,10 @@
 <?php
 
+use Heiner\AgentGraph\Contracts\RunStore;
 use Heiner\AgentGraph\Facades\AgentGraph;
 use Heiner\AgentGraph\Graph\StateGraph;
 use Heiner\AgentGraph\LaravelAi\AgentNode;
+use Heiner\AgentGraph\Persistence\InMemoryRunStore;
 use Heiner\AgentGraph\Runtime\NodeContext;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Support\Collection;
@@ -253,3 +255,63 @@ final class StreamEventAgent extends EnrichedAgent
         }, new Meta('fake', 'fake-stream'));
     }
 }
+
+it('keeps streaming authority reads bounded across a dense burst of text fragments', function () {
+    $runs = new class extends InMemoryRunStore
+    {
+        public int $reads = 0;
+
+        public function find(string $runId): ?array
+        {
+            $this->reads++;
+
+            return parent::find($runId);
+        }
+    };
+    app()->instance(RunStore::class, $runs);
+    $agent = new class extends EnrichedAgent
+    {
+        public function stream(Decisions|string $prompt, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null, ?int $timeout = null): StreamableAgentResponse
+        {
+            return new StreamableAgentResponse('dense-stream', function () {
+                for ($i = 0; $i < 500; $i++) {
+                    yield (new TextDelta('delta-'.$i, 'message', 'x', $i))->withInvocationId('dense-stream');
+                }
+                yield (new StreamEnd('end', 'stop', new Usage(1, 1), 501))->withInvocationId('dense-stream');
+            }, new Meta('fake', 'dense'));
+        }
+    };
+    AgentGraph::define(StateGraph::make('dense_stream')->state(['answer' => 'string'])
+        ->node('agent', AgentNode::make('agent')->agent($agent)->prompt('dense')->stream()->writeTextTo('answer'))
+        ->edge(StateGraph::START, 'agent'));
+    $result = AgentGraph::graph('dense_stream')->run();
+    expect($result->error())->toBeNull();
+    expect($result->completed())->toBeTrue()->and($result->state('answer'))->toBe(str_repeat('x', 500))
+        ->and($runs->reads)->toBeLessThan(50);
+});
+
+it('checks cancellation on the next control event even inside a text polling interval', function () {
+    $agent = new class extends EnrichedAgent
+    {
+        public bool $continuedAfterControl = false;
+
+        public function stream(Decisions|string $prompt, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null, ?int $timeout = null): StreamableAgentResponse
+        {
+            return new StreamableAgentResponse('cancel-burst', function () {
+                yield (new TextDelta('delta', 'message', 'partial', 1))->withInvocationId('cancel-burst');
+                yield (new StreamToolCall('call-event', new ResponseToolCall('call', 'lookup', []), 2))->withInvocationId('cancel-burst');
+                $this->continuedAfterControl = true;
+                yield (new StreamEnd('end', 'stop', new Usage(1, 1), 3))->withInvocationId('cancel-burst');
+            }, new Meta('fake', 'cancel-burst'));
+        }
+    };
+    AgentGraph::define(StateGraph::make('cancel_burst')->state(['answer' => 'string'])
+        ->node('agent', AgentNode::make('agent')->agent($agent)->prompt('cancel')->stream()->writeTextTo('answer')
+            ->onTextDelta(function ($event, $payload, NodeContext $context) {
+                AgentGraph::cancel($context->runId());
+            }))
+        ->edge(StateGraph::START, 'agent'));
+    $result = AgentGraph::graph('cancel_burst')->run();
+    expect($result->status())->toBe('cancelled')->and($result->state('answer'))->toBeNull()
+        ->and($agent->continuedAfterControl)->toBeFalse();
+});
