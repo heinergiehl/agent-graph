@@ -472,7 +472,7 @@ class DurabilityBoundaryChildResumeCrashRuntime extends GraphRuntime
     }
 }
 
-it('requires proof of accepted approval before redriving a legacy queued wait', function (bool $accepted, string $type, string $executionStatus) {
+it('requires consistent proof of accepted approval before redriving a legacy queued wait', function (bool $accepted, string $type, string $executionStatus, bool $consistent = false) {
     config(['agent-graph.execution.mode' => 'queued_supersteps']);
     [$manager, , $runs, $checkpoints, $interrupts, $executions] = durabilityBoundaryManager();
     $effects = 0;
@@ -483,8 +483,11 @@ it('requires proof of accepted approval before redriving a legacy queued wait', 
         'graph_key' => 'approval_boundary', 'graph_version' => '1', 'step' => 1,
         'state' => [], 'next_nodes' => ['approval'], 'completed_nodes' => ['approval'],
         'interrupts' => [],
-        'meta' => ['runtime' => ['schedule' => ['next' => [['node' => 'effect', 'input' => [], 'meta' => []]]]]],
+        'meta' => ['runtime' => ['schedule' => ['next' => [['node' => $consistent ? 'approval' : 'effect', 'input' => [], 'meta' => []]]]]],
     ]);
+    if ($consistent) {
+        $runs->update($run['public_id'], ['current_checkpoint_id' => $checkpoint['checkpoint_id']]);
+    }
     $interrupt = null;
 
     if ($accepted) {
@@ -505,18 +508,20 @@ it('requires proof of accepted approval before redriving a legacy queued wait', 
         'node_state' => $accepted ? ['approved' => true] : [],
         'resume_payload' => $accepted ? ['approved' => true] : null,
         'interrupt_id' => $interrupt['interrupt_id'] ?? null,
+        'meta' => $consistent ? ['schedule' => ['node' => 'approval', 'input' => [], 'meta' => []]] : [],
     ]);
 
-    if (! $accepted) {
+    if (! $accepted || ! $consistent) {
+        $message = $accepted ? 'invalid run, checkpoint or graph binding' : 'inconsistent recovery schedule';
         expect(fn () => $manager->recover($run['public_id']))
-            ->toThrow(RuntimeException::class, 'inconsistent recovery schedule');
+            ->toThrow(RuntimeException::class, $message);
 
         if ($executionStatus === 'pending') {
             expect(fn () => $manager->executeQueuedNode($execution['execution_id']))
-                ->toThrow(RuntimeException::class, 'inconsistent recovery schedule');
+                ->toThrow(RuntimeException::class, $message);
         } else {
             expect(fn () => $manager->continueQueuedSuperstep($run['public_id'], 2))
-                ->toThrow(RuntimeException::class, 'inconsistent recovery schedule');
+                ->toThrow(RuntimeException::class, $message);
         }
 
         expect($effects)->toBe(0)
@@ -543,6 +548,8 @@ it('requires proof of accepted approval before redriving a legacy queued wait', 
     'unapproved finished successor' => [false, 'approval', 'completed'],
     'accepted legacy approval' => [true, 'approval', 'pending'],
     'accepted legacy state edit' => [true, 'state_edit', 'pending'],
+    'consistent legacy approval' => [true, 'approval', 'pending', true],
+    'consistent legacy state edit' => [true, 'state_edit', 'pending', true],
 ]);
 
 it('does not start peers after a node failure was persisted before a worker crash', function () {

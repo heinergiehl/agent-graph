@@ -2,6 +2,16 @@
 
 For the Filament Agentic Chatbot currently pinned to 0.16.3, follow the [concrete 0.18 integration handoff](docs/guides/filament-plugin-upgrade-0.18.md). Its runtime subclass, bounded run store and exact deployment pins require coordinated changes before installation is considered verified.
 
+## 0.18.0 To 0.18.1: Accepted Resume Authority
+
+Update to `heiner/agent-graph:^0.18.1`, or exact `0.18.1` for a release-bound consumer. No migrations, persistence adapter signatures or public API signatures change. Restart graph-executing processes together.
+
+Recovery now verifies the accepted response, current checkpoint, complete Send schedule, receipt state, registered graph version and child authority before scheduling, claiming receipts or committing results. A matching resume payload alone does not authorize changed persisted bindings. Inconsistent legacy evidence, including a missing run checkpoint pointer or a schedule contradicting its receipt, requires reconciliation from trusted records; it is not silently repaired. Exact redelivery can recover both a run acceptance marker and an already scheduled receipt. Existing lease and unknown-external-outcome rules still apply.
+
+Internal subclass note: `GraphRuntime::drive` now accepts an optional third `array $graphs = []` argument. Overrides must accept and forward it so synchronous recovery can validate registered child definitions. `ResumeProtocol` now also depends on `CheckpointStore` and `NodeExecutionStore`; its factory in the SDK supplies both. These remain internal implementation contracts.
+
+The consuming chatbot can remove its duplicate `StructuredConcurrencyGraphRuntime::assertRecoveryBindings` guard and call sites after installing this exact release and passing its own accepted-resume/projection-authority tests against the SDK guard. Its receipt-only `matchesAcceptedNodeResume` recovery bridge is also redundant with SDK exact redelivery, but removal needs the same integration gate. Retain application control authorization, direct-child restrictions, parent execution context and cancellation cascade. See [verification and handoff details](docs/releases/v0.18.1.md).
+
 ## 0.17.0 To 0.18.0: Runtime Responsibilities and Short Coordination Locks
 
 Update to `heiner/agent-graph:^0.18.0`; existing `^0.17` and exact pins need an explicit constraint change. Public manager, session, graph, node and persistence contracts remain unchanged. No migration is added beyond 0.17. Stop and restart graph workers together. See the [release notes](docs/releases/v0.18.0.md) for behavior and verification.

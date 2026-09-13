@@ -167,6 +167,15 @@ class SubgraphNode implements Node
             if (is_array($pending) && ($pending['interrupt_id'] ?? null) === $interruptId) {
                 $binding = $pending['resume_payload'] ?? [];
                 $acceptedPayload = is_array($binding) ? $binding : null;
+            } else {
+                foreach (app(AgentGraphManager::class)->nodeExecutions($child->runId()) as $execution) {
+                    if (($execution['checkpoint_id'] ?? null) === ($child->checkpoint()['checkpoint_id'] ?? null)
+                        && ($execution['interrupt_id'] ?? null) === $interruptId
+                        && is_array($execution['resume_payload'] ?? null)) {
+                        $binding = $acceptedPayload = $execution['resume_payload'];
+                        break;
+                    }
+                }
             }
         }
 
