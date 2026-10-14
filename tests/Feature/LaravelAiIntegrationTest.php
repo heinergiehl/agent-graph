@@ -14,10 +14,12 @@ use Illuminate\JsonSchema\JsonSchemaTypeFactory;
 use Illuminate\Support\Facades\Event;
 use Laravel\Ai\Approvals\Decisions;
 use Laravel\Ai\Contracts\Agent;
+use Laravel\Ai\Contracts\AgentInput;
 use Laravel\Ai\Enums\Lab;
+use Laravel\Ai\Messages\UserMessage;
 use Laravel\Ai\Responses\AgentResponse;
 use Laravel\Ai\Responses\Data\Meta;
-use Laravel\Ai\Responses\Data\Usage;
+use Laravel\Ai\Responses\Data\TextUsage;
 use Laravel\Ai\Responses\QueuedAgentResponse;
 use Laravel\Ai\Responses\StreamableAgentResponse;
 use Laravel\Ai\Streaming\Events\StreamEnd;
@@ -46,7 +48,7 @@ it('runs a Laravel AI agent inside an AgentNode', function () {
 
     expect($run->completed())->toBeTrue()
         ->and($run->state('answer'))->toBe('AI response to Hello')
-        ->and($run->state('usage')['prompt_tokens'])->toBe(3);
+        ->and($run->state('usage')['input_tokens'])->toBe(3);
 });
 
 it('dispatches AgentGraph stream events for streamed Laravel AI deltas', function () {
@@ -74,7 +76,7 @@ it('dispatches AgentGraph stream events for streamed Laravel AI deltas', functio
 
     expect($run->completed())->toBeTrue()
         ->and($run->state('answer'))->toBe('Hello from stream')
-        ->and($run->state('usage')['completion_tokens'])->toBe(4)
+        ->and($run->state('usage')['output_tokens'])->toBe(4)
         ->and(collect($run->events())->where(fn (RunEvent $event): bool => $event->type() === 'stream.delta'))->toHaveCount(3)
         ->and(collect($run->events())->where(fn (RunEvent $event): bool => $event->type() === 'stream.delta')->last()->payload()['delta'])->toBe('stream');
 
@@ -281,32 +283,32 @@ class FakeSupportAgent implements Agent
         return 'Be helpful.';
     }
 
-    public function prompt(Decisions|string $prompt, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null, ?int $timeout = null): AgentResponse
+    public function prompt(AgentInput|UserMessage|Decisions|string $prompt, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null, ?int $timeout = null): AgentResponse
     {
-        return new AgentResponse('invocation-1', 'AI response to '.(is_string($prompt) ? $prompt : 'approval decisions'), new Usage(promptTokens: 3, completionTokens: 5), new Meta('fake', 'fake-model'));
+        return new AgentResponse('invocation-1', 'AI response to '.(is_string($prompt) ? $prompt : 'approval decisions'), new TextUsage(inputTokens: 3, outputTokens: 5), new Meta('fake', 'fake-model'));
     }
 
-    public function stream(Decisions|string $prompt, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null, ?int $timeout = null): StreamableAgentResponse
+    public function stream(AgentInput|UserMessage|Decisions|string $prompt, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null, ?int $timeout = null): StreamableAgentResponse
     {
         return new StreamableAgentResponse('stream-1', fn () => []);
     }
 
-    public function queue(Decisions|string $prompt, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null): QueuedAgentResponse
+    public function queue(AgentInput|UserMessage|Decisions|string $prompt, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null): QueuedAgentResponse
     {
         throw new RuntimeException('Not used.');
     }
 
-    public function broadcast(Decisions|string $prompt, Channel|array $channels, array $attachments = [], bool $now = false, Lab|array|string|null $provider = null, ?string $model = null): StreamableAgentResponse
+    public function broadcast(AgentInput|UserMessage|Decisions|string $prompt, Channel|array $channels, array $attachments = [], bool $now = false, Lab|array|string|null $provider = null, ?string $model = null): StreamableAgentResponse
     {
         throw new RuntimeException('Not used.');
     }
 
-    public function broadcastNow(Decisions|string $prompt, Channel|array $channels, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null): StreamableAgentResponse
+    public function broadcastNow(AgentInput|UserMessage|Decisions|string $prompt, Channel|array $channels, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null): StreamableAgentResponse
     {
         throw new RuntimeException('Not used.');
     }
 
-    public function broadcastOnQueue(Decisions|string $prompt, Channel|array $channels, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null): QueuedAgentResponse
+    public function broadcastOnQueue(AgentInput|UserMessage|Decisions|string $prompt, Channel|array $channels, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null): QueuedAgentResponse
     {
         throw new RuntimeException('Not used.');
     }
@@ -314,13 +316,13 @@ class FakeSupportAgent implements Agent
 
 final class FakeStreamingSupportAgent extends FakeSupportAgent
 {
-    public function stream(Decisions|string $prompt, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null, ?int $timeout = null): StreamableAgentResponse
+    public function stream(AgentInput|UserMessage|Decisions|string $prompt, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null, ?int $timeout = null): StreamableAgentResponse
     {
         return new StreamableAgentResponse('stream-1', function () {
             yield (new TextDelta('delta-1', 'message-1', 'Hello ', 1))->withInvocationId('stream-1');
             yield (new TextDelta('delta-2', 'message-1', 'from ', 2))->withInvocationId('stream-1');
             yield (new TextDelta('delta-3', 'message-1', 'stream', 3))->withInvocationId('stream-1');
-            yield (new StreamEnd('end-1', 'stop', new Usage(promptTokens: 2, completionTokens: 4), 4))->withInvocationId('stream-1');
+            yield (new StreamEnd('end-1', 'stop', new TextUsage(inputTokens: 2, outputTokens: 4), 4))->withInvocationId('stream-1');
         }, new Meta('fake', 'fake-stream-model'));
     }
 }

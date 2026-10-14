@@ -5,6 +5,7 @@ namespace Heiner\AgentGraph\Persistence;
 use Heiner\AgentGraph\Contracts\EnumerableMemoryStore;
 use Heiner\AgentGraph\Events\GraphMemoryRead;
 use Heiner\AgentGraph\Events\GraphMemoryWritten;
+use Heiner\AgentGraph\Memory\MemoryIdentity;
 use Heiner\AgentGraph\Memory\MemoryScope;
 
 class InMemoryMemoryStore implements EnumerableMemoryStore
@@ -13,6 +14,8 @@ class InMemoryMemoryStore implements EnumerableMemoryStore
 
     public function write(MemoryScope $scope, string $namespace, string $key, mixed $value, string $type = 'fact', ?string $content = null, array $meta = []): array
     {
+        MemoryIdentity::assertValid($scope, $namespace, $key);
+
         $id = $this->identity($scope, $namespace, $key);
         $memory = array_merge($this->memories[$id] ?? [
             'id' => count($this->memories) + 1,

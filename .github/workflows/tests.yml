@@ -14,7 +14,7 @@ jobs:
       matrix:
         php: ['8.3', '8.4']
         laravel: ['12.*', '13.*']
-        laravel-ai: ['^0.11.2']
+        laravel-ai: ['^1.2.1']
 
     steps:
       - name: Checkout
@@ -87,3 +87,50 @@ jobs:
           coverage: none
       - run: composer install --prefer-dist --no-interaction --no-progress
       - run: vendor/bin/pest tests/Integration/PostgresRuntimeConcurrencyTest.php tests/Integration/PostgresClaimTokenMigrationTest.php tests/Integration/PgvectorMemoryStoreTest.php
+      - run: vendor/bin/pest tests/Integration/DatabaseSchemaPortabilityTest.php
+        env:
+          AGENT_GRAPH_SCHEMA_TEST_DRIVER: pgsql
+          AGENT_GRAPH_SCHEMA_TEST_HOST: 127.0.0.1
+          AGENT_GRAPH_SCHEMA_TEST_PORT: '5432'
+          AGENT_GRAPH_SCHEMA_TEST_DATABASE: agentgraph_test
+          AGENT_GRAPH_SCHEMA_TEST_USERNAME: agentgraph
+          AGENT_GRAPH_SCHEMA_TEST_PASSWORD: agentgraph-test-only
+
+  mysql-family:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - driver: mysql
+            image: mysql:8.4
+          - driver: mariadb
+            image: mariadb:11.4
+    services:
+      database:
+        image: ${{ matrix.image }}
+        env:
+          MYSQL_ROOT_PASSWORD: agentgraph-test-only
+          MYSQL_DATABASE: agentgraph_test
+          MARIADB_ROOT_PASSWORD: agentgraph-test-only
+          MARIADB_DATABASE: agentgraph_test
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -pagentgraph-test-only || healthcheck.sh --connect"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      AGENT_GRAPH_SCHEMA_TEST_DRIVER: ${{ matrix.driver }}
+      AGENT_GRAPH_SCHEMA_TEST_HOST: 127.0.0.1
+      AGENT_GRAPH_SCHEMA_TEST_PORT: '3306'
+      AGENT_GRAPH_SCHEMA_TEST_DATABASE: agentgraph_test
+      AGENT_GRAPH_SCHEMA_TEST_USERNAME: root
+      AGENT_GRAPH_SCHEMA_TEST_PASSWORD: agentgraph-test-only
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: pdo_mysql
+          coverage: none
+      - run: composer install --prefer-dist --no-interaction --no-progress
+      - run: vendor/bin/pest tests/Integration/DatabaseSchemaPortabilityTest.php

@@ -146,6 +146,14 @@ class DoctorCommand extends Command
                 : $this->failStatus('Run revision column: missing; publish and run the 0.17 migration.');
         }
 
+        if ($tables['memories'] ?? false) {
+            $hasIdentityHash = $schema->hasColumn(config('agent-graph.tables.memories'), 'identity_hash');
+            $failed = $failed || ! $hasIdentityHash;
+            $hasIdentityHash
+                ? $this->pass('Memory identity_hash column: present')
+                : $this->failStatus('Memory identity_hash column: missing; publish and run the 0.19 migration.');
+        }
+
         return $failed ? self::FAILURE : self::SUCCESS;
     }
 

@@ -2,6 +2,14 @@
 
 All notable changes to AgentGraph are documented here.
 
+## 0.19.0 - 2026-10-14
+
+- Require `laravel/ai ^1.2.1` (drop 0.11). Test fixtures follow the 1.x Agent contract; `AgentNode::writeUsageTo()` stores the 1.x `TextUsage` array (`input_tokens`, `output_tokens`, cache and reasoning subsets).
+- Make the schema install on MySQL 8.4 and MariaDB 11.4: explicit memory identity column lengths keep the composite unique index within 3,072 bytes, and the claim-token migration accepts MariaDB's `NULL` default expression.
+- Enforce portable memory identity limits (`MemoryIdentity`) in the database and in-memory stores.
+- Add a unique memory `identity_hash` with a backfilling migration and doctor check, so records without a tenant are unique too; a lost concurrent insert race updates the winning record.
+- CI runs the schema portability test on MySQL 8.4, MariaDB 11.4 and PostgreSQL 17. See [release notes](docs/releases/v0.19.0.md).
+
 ## 0.18.1 - 2026-09-12
 
 - Validate accepted resume authority before recovery scheduling, receipt claims and superstep commits. Recheck resolved responses, checkpoint identity, state, complete Send schedule, graph versions and recursive subgraph bindings without mutating rejected runs.

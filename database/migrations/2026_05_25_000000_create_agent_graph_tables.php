@@ -91,11 +91,13 @@ return new class extends AgentGraphMigration
 
         Schema::create(config('agent-graph.tables.memories', 'agent_graph_memories'), function (Blueprint $table): void {
             $table->id();
-            $table->string('scope_type')->index();
-            $table->string('scope_id')->index();
-            $table->string('tenant_id')->nullable()->index();
-            $table->string('namespace')->index();
-            $table->string('key')->index();
+            // Explicit lengths keep the composite unique index within MySQL's
+            // 3,072-byte utf8mb4 key limit; MemoryIdentity enforces them.
+            $table->string('scope_type', 64)->index();
+            $table->string('scope_id', 191)->index();
+            $table->string('tenant_id', 128)->nullable()->index();
+            $table->string('namespace', 128)->index();
+            $table->string('key', 255)->index();
             $table->string('memory_type')->index();
             $table->longText('value')->nullable();
             $table->longText('content')->nullable();

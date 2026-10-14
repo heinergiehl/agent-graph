@@ -8,11 +8,13 @@ use Heiner\AgentGraph\Runtime\NodeResult;
 use Laravel\Ai\Approvals\Decisions;
 use Laravel\Ai\Approvals\PendingApproval;
 use Laravel\Ai\Contracts\Agent;
+use Laravel\Ai\Contracts\AgentInput;
 use Laravel\Ai\Enums\Lab;
+use Laravel\Ai\Messages\UserMessage;
 use Laravel\Ai\Promptable;
 use Laravel\Ai\Responses\AgentResponse;
 use Laravel\Ai\Responses\Data\Meta;
-use Laravel\Ai\Responses\Data\Usage;
+use Laravel\Ai\Responses\Data\TextUsage;
 use Laravel\Ai\Responses\StreamableAgentResponse;
 use Laravel\Ai\Streaming\Events\StreamEnd;
 use Laravel\Ai\Streaming\Events\TextDelta;
@@ -61,7 +63,7 @@ final class ApprovalTestAgent implements Agent
         return 'Synthetic approval fixture.';
     }
 
-    public function prompt(Decisions|string $prompt, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null, ?int $timeout = null): AgentResponse
+    public function prompt(AgentInput|UserMessage|Decisions|string $prompt, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null, ?int $timeout = null): AgentResponse
     {
         $this->invocations++;
 
@@ -70,7 +72,7 @@ final class ApprovalTestAgent implements Agent
         ]);
     }
 
-    public function stream(Decisions|string $prompt, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null, ?int $timeout = null): StreamableAgentResponse
+    public function stream(AgentInput|UserMessage|Decisions|string $prompt, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null, ?int $timeout = null): StreamableAgentResponse
     {
         $this->invocations++;
 
@@ -79,7 +81,7 @@ final class ApprovalTestAgent implements Agent
             (new ToolApprovalRequest('approval', collect([
                 new PendingApproval('call-1', 'synthetic_write', ['record' => 'fixture']),
             ]), 2))->withInvocationId('fixture'),
-            (new StreamEnd('end', 'tool_calls', new Usage, 3))->withInvocationId('fixture'),
+            (new StreamEnd('end', 'tool_calls', new TextUsage, 3))->withInvocationId('fixture'),
         ], new Meta('fake', 'fixture'));
     }
 }

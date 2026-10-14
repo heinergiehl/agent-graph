@@ -40,7 +40,7 @@ final class ClaimTokenColumnDefinition
             && self::hasExpectedLength($type, $driver)
             && ($column['nullable'] ?? null) === true
             && array_key_exists('default', $column)
-            && $column['default'] === null
+            && self::hasNoDefault($column['default'], $driver)
             && ($column['auto_increment'] ?? null) === false
             && array_key_exists('generation', $column)
             && $column['generation'] === null;
@@ -66,6 +66,21 @@ final class ClaimTokenColumnDefinition
             $driver,
             $actual === false ? 'an unreadable schema definition' : $actual,
         ));
+    }
+
+    private static function hasNoDefault(mixed $default, string $driver): bool
+    {
+        if ($default === null) {
+            return true;
+        }
+
+        // MariaDB reports a nullable column without a default as the literal
+        // expression NULL (information_schema.COLUMN_DEFAULT), also when it is
+        // reached through Laravel's mysql driver. A quoted string default
+        // would be reported as 'NULL' with quotes and stays incompatible.
+        return in_array($driver, ['mysql', 'mariadb'], true)
+            && is_string($default)
+            && strcasecmp(trim($default), 'NULL') === 0;
     }
 
     private static function normalizeType(string $type): string

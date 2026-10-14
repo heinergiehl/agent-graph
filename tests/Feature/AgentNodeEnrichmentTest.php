@@ -10,12 +10,14 @@ use Illuminate\Broadcasting\Channel;
 use Illuminate\Support\Collection;
 use Laravel\Ai\Approvals\Decisions;
 use Laravel\Ai\Contracts\Agent;
+use Laravel\Ai\Contracts\AgentInput;
 use Laravel\Ai\Enums\Lab;
+use Laravel\Ai\Messages\UserMessage;
 use Laravel\Ai\Responses\AgentResponse;
 use Laravel\Ai\Responses\Data\Meta;
+use Laravel\Ai\Responses\Data\TextUsage;
 use Laravel\Ai\Responses\Data\ToolCall as ResponseToolCall;
 use Laravel\Ai\Responses\Data\ToolResult as ResponseToolResult;
-use Laravel\Ai\Responses\Data\Usage;
 use Laravel\Ai\Responses\QueuedAgentResponse;
 use Laravel\Ai\Responses\StreamableAgentResponse;
 use Laravel\Ai\Responses\StructuredAgentResponse;
@@ -96,7 +98,7 @@ it('writes native streamed response metadata, text, usage, tools, and requested 
 
     expect($run->status())->toBe('completed')
         ->and($run->state('answer'))->toBe('Hello')
-        ->and($run->state('usage'))->toMatchArray(['prompt_tokens' => 1, 'completion_tokens' => 1])
+        ->and($run->state('usage'))->toMatchArray(['input_tokens' => 1, 'output_tokens' => 1])
         ->and($run->state('meta'))->toMatchArray(['provider' => 'fake', 'model' => 'fake-stream'])
         ->and($run->state('stream_events'))->toHaveCount(4)
         ->and($toolCalls[0]['name'])->toBe('lookup')
@@ -163,13 +165,13 @@ class EnrichedAgent implements Agent
         return 'test';
     }
 
-    public function prompt(Decisions|string $prompt, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null, ?int $timeout = null): AgentResponse
+    public function prompt(AgentInput|UserMessage|Decisions|string $prompt, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null, ?int $timeout = null): AgentResponse
     {
         return (new StructuredAgentResponse(
             'invoke-1',
             ['sentiment' => 'positive'],
             'plain text',
-            new Usage(1, 1),
+            new TextUsage(1, 1),
             new Meta('fake', 'fake-model'),
         ))->withToolCallsAndResults(
             new Collection([new ResponseToolCall('call-1', 'lookup', ['id' => 1])]),
@@ -177,27 +179,27 @@ class EnrichedAgent implements Agent
         )->withSteps(new Collection([(object) ['name' => 'step-one']]));
     }
 
-    public function stream(Decisions|string $prompt, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null, ?int $timeout = null): StreamableAgentResponse
+    public function stream(AgentInput|UserMessage|Decisions|string $prompt, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null, ?int $timeout = null): StreamableAgentResponse
     {
         return new StreamableAgentResponse('unused', fn () => []);
     }
 
-    public function queue(Decisions|string $prompt, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null): QueuedAgentResponse
+    public function queue(AgentInput|UserMessage|Decisions|string $prompt, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null): QueuedAgentResponse
     {
         throw new RuntimeException('unused');
     }
 
-    public function broadcast(Decisions|string $prompt, Channel|array $channels, array $attachments = [], bool $now = false, Lab|array|string|null $provider = null, ?string $model = null): StreamableAgentResponse
+    public function broadcast(AgentInput|UserMessage|Decisions|string $prompt, Channel|array $channels, array $attachments = [], bool $now = false, Lab|array|string|null $provider = null, ?string $model = null): StreamableAgentResponse
     {
         throw new RuntimeException('unused');
     }
 
-    public function broadcastNow(Decisions|string $prompt, Channel|array $channels, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null): StreamableAgentResponse
+    public function broadcastNow(AgentInput|UserMessage|Decisions|string $prompt, Channel|array $channels, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null): StreamableAgentResponse
     {
         throw new RuntimeException('unused');
     }
 
-    public function broadcastOnQueue(Decisions|string $prompt, Channel|array $channels, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null): QueuedAgentResponse
+    public function broadcastOnQueue(AgentInput|UserMessage|Decisions|string $prompt, Channel|array $channels, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null): QueuedAgentResponse
     {
         throw new RuntimeException('unused');
     }
@@ -220,7 +222,7 @@ it('supports a one-second node budget using native whole-second provider timeout
     {
         public ?int $receivedTimeout = null;
 
-        public function prompt(Decisions|string $prompt, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null, ?int $timeout = null): AgentResponse
+        public function prompt(AgentInput|UserMessage|Decisions|string $prompt, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null, ?int $timeout = null): AgentResponse
         {
             $this->receivedTimeout = $timeout;
 
@@ -238,12 +240,12 @@ final class StreamEventAgent extends EnrichedAgent
 {
     public int $streamInvocations = 0;
 
-    public function prompt(Decisions|string $prompt, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null, ?int $timeout = null): AgentResponse
+    public function prompt(AgentInput|UserMessage|Decisions|string $prompt, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null, ?int $timeout = null): AgentResponse
     {
         throw new RuntimeException('unused');
     }
 
-    public function stream(Decisions|string $prompt, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null, ?int $timeout = null): StreamableAgentResponse
+    public function stream(AgentInput|UserMessage|Decisions|string $prompt, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null, ?int $timeout = null): StreamableAgentResponse
     {
         $this->streamInvocations++;
 
@@ -251,7 +253,7 @@ final class StreamEventAgent extends EnrichedAgent
             yield (new TextDelta('delta-1', 'message-1', 'Hello', 1))->withInvocationId('stream-1');
             yield (new StreamToolCall('tool-call-event', new ResponseToolCall('call-1', 'lookup', ['id' => 1]), 2))->withInvocationId('stream-1');
             yield (new StreamToolResult('tool-result-event', new ResponseToolResult('result-1', 'lookup', ['id' => 1], ['ok' => true]), true, null, 3))->withInvocationId('stream-1');
-            yield (new StreamEnd('end-1', 'stop', new Usage(1, 1), 4))->withInvocationId('stream-1');
+            yield (new StreamEnd('end-1', 'stop', new TextUsage(1, 1), 4))->withInvocationId('stream-1');
         }, new Meta('fake', 'fake-stream'));
     }
 }
@@ -271,13 +273,13 @@ it('keeps streaming authority reads bounded across a dense burst of text fragmen
     app()->instance(RunStore::class, $runs);
     $agent = new class extends EnrichedAgent
     {
-        public function stream(Decisions|string $prompt, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null, ?int $timeout = null): StreamableAgentResponse
+        public function stream(AgentInput|UserMessage|Decisions|string $prompt, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null, ?int $timeout = null): StreamableAgentResponse
         {
             return new StreamableAgentResponse('dense-stream', function () {
                 for ($i = 0; $i < 500; $i++) {
                     yield (new TextDelta('delta-'.$i, 'message', 'x', $i))->withInvocationId('dense-stream');
                 }
-                yield (new StreamEnd('end', 'stop', new Usage(1, 1), 501))->withInvocationId('dense-stream');
+                yield (new StreamEnd('end', 'stop', new TextUsage(1, 1), 501))->withInvocationId('dense-stream');
             }, new Meta('fake', 'dense'));
         }
     };
@@ -295,13 +297,13 @@ it('checks cancellation on the next control event even inside a text polling int
     {
         public bool $continuedAfterControl = false;
 
-        public function stream(Decisions|string $prompt, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null, ?int $timeout = null): StreamableAgentResponse
+        public function stream(AgentInput|UserMessage|Decisions|string $prompt, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null, ?int $timeout = null): StreamableAgentResponse
         {
             return new StreamableAgentResponse('cancel-burst', function () {
                 yield (new TextDelta('delta', 'message', 'partial', 1))->withInvocationId('cancel-burst');
                 yield (new StreamToolCall('call-event', new ResponseToolCall('call', 'lookup', []), 2))->withInvocationId('cancel-burst');
                 $this->continuedAfterControl = true;
-                yield (new StreamEnd('end', 'stop', new Usage(1, 1), 3))->withInvocationId('cancel-burst');
+                yield (new StreamEnd('end', 'stop', new TextUsage(1, 1), 3))->withInvocationId('cancel-burst');
             }, new Meta('fake', 'cancel-burst'));
         }
     };

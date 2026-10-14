@@ -5,10 +5,13 @@ namespace Heiner\AgentGraph\Persistence;
 use Heiner\AgentGraph\Contracts\EnumerableMemoryStore;
 use Heiner\AgentGraph\Events\GraphMemoryRead;
 use Heiner\AgentGraph\Events\GraphMemoryWritten;
+use Heiner\AgentGraph\Memory\MemoryIdentity;
 use Heiner\AgentGraph\Memory\MemoryScope;
 use Heiner\AgentGraph\Persistence\Concerns\SerializesDatabaseValues;
 use Heiner\AgentGraph\Persistence\Concerns\UsesAgentGraphDatabaseConnection;
 use Illuminate\Database\DatabaseManager;
+use Illuminate\Database\Query\Builder;
+use Illuminate\Database\UniqueConstraintViolationException;
 use RuntimeException;
 
 class DatabaseMemoryStore implements EnumerableMemoryStore
@@ -20,13 +23,10 @@ class DatabaseMemoryStore implements EnumerableMemoryStore
 
     public function write(MemoryScope $scope, string $namespace, string $key, mixed $value, string $type = 'fact', ?string $content = null, array $meta = []): array
     {
+        MemoryIdentity::assertValid($scope, $namespace, $key);
+
         $now = now();
-        $query = $this->query()
-            ->where('scope_type', $scope->type)
-            ->where('scope_id', $scope->id)
-            ->where('tenant_id', $scope->tenantId)
-            ->where('namespace', $namespace)
-            ->where('key', $key);
+        $query = $this->identityQuery($scope, $namespace, $key);
 
         $attributes = [
             'memory_type' => $type,
@@ -42,15 +42,30 @@ class DatabaseMemoryStore implements EnumerableMemoryStore
         if ($query->exists()) {
             $query->update($attributes);
         } else {
-            $this->query()->insert(array_merge($attributes, [
+            $insert = array_merge($attributes, [
                 'scope_type' => $scope->type,
                 'scope_id' => $scope->id,
                 'tenant_id' => $scope->tenantId,
                 'namespace' => $namespace,
                 'key' => $key,
+                'identity_hash' => MemoryIdentity::hash($scope, $namespace, $key),
                 'usage_count' => 0,
                 'created_at' => $now,
-            ]));
+            ]);
+
+            try {
+                // The nested transaction is a savepoint inside a caller's
+                // transaction, so a lost insert race leaves it usable.
+                $this->connection()->transaction(fn () => $this->query()->insert($insert));
+            } catch (UniqueConstraintViolationException $exception) {
+                // A concurrent writer created the same identity first. The
+                // identity hash also covers tuples with a null tenant.
+                if (! $this->identityQuery($scope, $namespace, $key)->exists()) {
+                    throw $exception;
+                }
+
+                $query->update($attributes);
+            }
         }
 
         $record = $query->first()
@@ -183,6 +198,13 @@ class DatabaseMemoryStore implements EnumerableMemoryStore
             ->where('namespace', $namespace)
             ->where('key', $key)
             ->delete();
+    }
+
+    protected function identityQuery(MemoryScope $scope, string $namespace, string $key): Builder
+    {
+        return $this->queryForScope($scope)
+            ->where('namespace', $namespace)
+            ->where('key', $key);
     }
 
     protected function queryForScope(MemoryScope $scope)
