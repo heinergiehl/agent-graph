@@ -137,6 +137,7 @@ class AgentGraphServiceProvider extends ServiceProvider
             '2026_05_30_000000_add_agent_graph_runtime_invariants.php' => 'add_agent_graph_runtime_invariants',
             '2026_08_31_010000_add_claim_token_to_agent_graph_node_executions.php' => 'add_claim_token_to_agent_graph_node_executions',
             '2026_09_12_000000_add_revision_to_agent_graph_runs.php' => 'add_revision_to_agent_graph_runs',
+            '2026_10_14_000000_add_identity_hash_to_agent_graph_memories.php' => 'add_identity_hash_to_agent_graph_memories',
         ];
 
         $paths = [];

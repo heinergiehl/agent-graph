@@ -179,6 +179,36 @@ it('requires the exact PostgreSQL claim token definition when adopting an existi
     }
 });
 
+it('accepts the MariaDB NULL default expression only on the MySQL family', function () {
+    $mariaDb = [
+        'name' => ClaimTokenColumnDefinition::NAME,
+        'type_name' => 'varchar',
+        'type' => 'varchar(26)',
+        'nullable' => true,
+        'default' => 'NULL',
+        'auto_increment' => false,
+        'generation' => null,
+    ];
+
+    ClaimTokenColumnDefinition::assertCompatible($mariaDb, 'mariadb', 'agent_graph_node_executions');
+    ClaimTokenColumnDefinition::assertCompatible($mariaDb, 'mysql', 'agent_graph_node_executions');
+    ClaimTokenColumnDefinition::assertCompatible(array_replace($mariaDb, ['default' => null]), 'mysql', 'agent_graph_node_executions');
+
+    foreach ([
+        ['mariadb', ['default' => "'NULL'"]],
+        ['mariadb', ['default' => "'token'"]],
+        ['mysql', ['default' => '']],
+        ['pgsql', ['type' => 'character varying(26)']],
+        ['sqlite', ['type' => 'varchar']],
+    ] as [$driver, $definition]) {
+        expect(fn () => ClaimTokenColumnDefinition::assertCompatible(
+            array_replace($mariaDb, $definition),
+            $driver,
+            'agent_graph_node_executions',
+        ))->toThrow(RuntimeException::class, 'is incompatible');
+    }
+});
+
 /** @return array{string|null, string} */
 function configureClaimTokenMigrationTest(string $connection, string $table): array
 {

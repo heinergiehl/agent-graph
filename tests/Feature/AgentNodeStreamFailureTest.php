@@ -7,10 +7,12 @@ use Heiner\AgentGraph\LaravelAi\AgentNode;
 use Heiner\AgentGraph\Runtime\NodeResult;
 use Laravel\Ai\Approvals\Decisions;
 use Laravel\Ai\Contracts\Agent;
+use Laravel\Ai\Contracts\AgentInput;
 use Laravel\Ai\Enums\Lab;
+use Laravel\Ai\Messages\UserMessage;
 use Laravel\Ai\Promptable;
 use Laravel\Ai\Responses\Data\Meta;
-use Laravel\Ai\Responses\Data\Usage;
+use Laravel\Ai\Responses\Data\TextUsage;
 use Laravel\Ai\Responses\StreamableAgentResponse;
 use Laravel\Ai\Streaming\Events\Error as StreamError;
 use Laravel\Ai\Streaming\Events\StreamEnd;
@@ -61,7 +63,7 @@ it('allows recoverable stream notices when the provider continues successfully',
     $events = [
         (new StreamError('notice-1', 'temporary_error', 'The provider is retrying.', true, 1))->withInvocationId('stream-1'),
         (new TextDelta('delta-1', 'message-1', 'complete answer', 2))->withInvocationId('stream-1'),
-        (new StreamEnd('end-1', 'stop', new Usage(2, 3), 3))->withInvocationId('stream-1'),
+        (new StreamEnd('end-1', 'stop', new TextUsage(2, 3), 3))->withInvocationId('stream-1'),
     ];
 
     AgentGraph::define(StateGraph::make('recovered_stream')
@@ -81,7 +83,7 @@ it('allows recoverable stream notices when the provider continues successfully',
     expect($run->completed())->toBeTrue()
         ->and($run->error())->toBeNull()
         ->and($run->state('answer'))->toBe('complete answer')
-        ->and($run->state('usage')['completion_tokens'])->toBe(3)
+        ->and($run->state('usage')['output_tokens'])->toBe(3)
         ->and($run->state('stream_events')[0]['recoverable'])->toBeTrue();
 });
 
@@ -96,7 +98,7 @@ final class StreamFailureTestAgent implements Agent
         return 'Test streaming behavior.';
     }
 
-    public function stream(Decisions|string $prompt, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null, ?int $timeout = null): StreamableAgentResponse
+    public function stream(AgentInput|UserMessage|Decisions|string $prompt, array $attachments = [], Lab|array|string|null $provider = null, ?string $model = null, ?int $timeout = null): StreamableAgentResponse
     {
         return new StreamableAgentResponse('stream-1', fn () => $this->events, new Meta('fake', 'fake-model'));
     }

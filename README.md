@@ -10,17 +10,17 @@ AgentGraph does not replace Laravel AI providers, agents, tools, streaming, or s
 
 The v1 target is a hardened MVP: stable graph execution, checkpoints, interrupts/resume, idempotent tasks, scoped memory, traces, queues, run-event observation, Laravel AI agent nodes, graphs as tools, native subgraph nodes, and durable app workflow sessions. Experimental checkpoint inspection, replay, forking, worker-backed queued supersteps, and vector memory contracts are available for post-v1-style workflows. OpenTelemetry export and visual workflow editing remain outside the stable v1 core.
 
-CI validates the pre-v1 release line against PHP 8.3/8.4, Laravel 12/13, and `laravel/ai ^0.11.2`.
+CI validates the pre-v1 release line against PHP 8.3/8.4, Laravel 12/13 and `laravel/ai ^1.2.1`. The database schema is migrated and exercised on SQLite, PostgreSQL 17, MySQL 8.4 and MariaDB 11.4.
 
 ## Installation
 
 ```bash
-composer require heiner/agent-graph:^0.18.1
+composer require heiner/agent-graph:^0.19.0
 php artisan agent-graph:install
 php artisan migrate
 ```
 
-Existing `^0.16` or `^0.17` constraints stay on those minor lines and need an explicit change to install 0.18. Upgrades from before 0.17 also require the additive run revision migration and adapted custom stores. An exact consuming-plugin pin must be updated together with its dependency lock and integration tests. See [UPGRADE.md](UPGRADE.md).
+Existing `^0.16`, `^0.17` or `^0.18` constraints stay on those minor lines and need an explicit change to install 0.19, which requires `laravel/ai ^1.2.1` and adds the memory identity migration. Upgrades from before 0.17 also require the additive run revision migration and adapted custom stores. An exact consuming-plugin pin must be updated together with its dependency lock and integration tests. See [UPGRADE.md](UPGRADE.md).
 
 `agent-graph:install` publishes the package config and migrations. The database store uses these tables by default:
 
@@ -455,6 +455,8 @@ AgentNode::make('answer')
     ->writeUsageTo('usage');
 ```
 
+`writeUsageTo()` stores Laravel AI's `TextUsage::toArray()` shape (`input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_write_input_tokens`, `reasoning_tokens`). Laravel AI 1.x counts cached input inside `input_tokens` and reasoning inside `output_tokens`.
+
 `AgentNode::stream()` delegates to Laravel AI's `stream()` API. In 0.16, a terminal Laravel AI streaming `Error` raises `AgentStreamException` instead of committing partial output as success. Already delivered deltas can remain visible, so consumers must check the final outcome.
 
 Pending native Laravel AI tool approvals raise `AgentApprovalRequiredException` in both prompt and stream modes. AgentGraph does not commit partial node writes, execute downstream nodes, or automatically retry this exception. Use graph approval interrupts to authorize work before invoking the agent; native Laravel AI approval resumption is not implemented by `AgentNode`.
@@ -557,6 +559,8 @@ AgentGraph::memory()->writeExtracted($scope, 'profile', $text, ['source' => 'cha
 AgentGraph::memory()->export($scope, 'profile');
 AgentGraph::memory()->deleteNamespace($scope, 'profile');
 ```
+
+Every bundled memory store enforces portable identity limits from `MemoryIdentity`: scope type 64, scope id 191, tenant id 128, namespace 128 and key 255 characters. Longer values raise `InvalidArgumentException`; hash longer application identifiers before using them as scope ids or keys. The database store keeps one record per scope, tenant, namespace and key, including records without a tenant.
 
 Vector memory is contract-based and optional. Laravel AI can provide embeddings; AgentGraph stores vectors only when an application binds a vector store. The default bindings are deterministic/in-memory test-safe adapters. `PgvectorMemoryStore` and `stubs/pgvector-memory-migration.stub` are optional experimental starting points for semantic memory on PostgreSQL pgvector, not core persistence for runs, checkpoints, interrupts, queues, or audit logs.
 
